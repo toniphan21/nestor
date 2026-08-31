@@ -58,11 +58,13 @@ func Build(ctx context.Context, path string, options BuildOptions, logger *slog.
 
 	logger.Info("docker build start")
 	if err := cmd.Run(); err != nil {
+		logger.Error("docker build", slog.Any("error", err))
 		return "", fmt.Errorf("docker build: %w", err)
 	}
 
 	id, err := fs.AtomicReadFile(iidPath)
 	if err != nil {
+		logger.Error("docker build: read image id", slog.Any("error", err))
 		return "", fmt.Errorf("docker build: read image id %q: %w", path, err)
 	}
 

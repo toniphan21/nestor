@@ -10,13 +10,16 @@ type Context interface {
 	Registry() Registry
 
 	Platform() Platform
+
+	Template() Template
 }
 
-func newContext(ctx context.Context, platform Platform, registry Registry) Context {
+func newContext(ctx context.Context, platform Platform, registry Registry, template Template) Context {
 	return &contextImpl{
 		Context:  ctx,
 		platform: platform,
 		registry: registry,
+		template: template,
 	}
 }
 
@@ -25,6 +28,11 @@ type contextImpl struct {
 
 	platform Platform
 	registry Registry
+	template Template
+}
+
+func (c *contextImpl) Template() Template {
+	return c.template
 }
 
 func (c *contextImpl) Platform() Platform {

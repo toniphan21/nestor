@@ -12,7 +12,12 @@ import (
 )
 
 func main() {
-	dir := "/Users/nhatp/github/toniphan21/nestor/work/.nestor"
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dir := filepath.Join(home, "github", "toniphan21", "nestor", "work", ".nestor")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Fatalf("cannot make dir: %e", err)
 	}

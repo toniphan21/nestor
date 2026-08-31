@@ -25,16 +25,13 @@ type API interface {
 	Start(ctx context.Context, spec string) error
 }
 
-const DefaultSandboxIDLength = 5
 const DefaultLogFile = "nestor.log"
-const DefaultSandboxTagTemplate = "nestor-[sandboxName]"
 
 func New(options ...Option) (API, error) {
 	o := &opts{
-		logger:             slog.New(slog.DiscardHandler),
-		registry:           newRegistry(),
-		sandboxTagTemplate: DefaultSandboxTagTemplate,
-		sandboxIDLength:    DefaultSandboxIDLength,
+		logger:   slog.New(slog.DiscardHandler),
+		registry: newRegistry(),
+		template: DefaultTemplate(),
 	}
 
 	// apply options
@@ -59,12 +56,11 @@ func New(options ...Option) (API, error) {
 	}
 
 	a := &api{
-		dir:                o.dir,
-		platform:           o.platform.Clone(o.dir),
-		logger:             o.logger,
-		registry:           o.registry,
-		sandboxTagTemplate: o.sandboxTagTemplate,
-		sandboxIDLength:    o.sandboxIDLength,
+		dir:      o.dir,
+		logger:   o.logger,
+		platform: o.platform.Clone(o.dir),
+		registry: o.registry,
+		template: o.template,
 	}
 
 	// register sandboxSpecs and profiles passed via options
@@ -81,20 +77,19 @@ func New(options ...Option) (API, error) {
 }
 
 type api struct {
-	dir                string
-	platform           Platform
-	registry           Registry
-	logger             *slog.Logger
-	sandboxTagTemplate string
-	sandboxIDLength    byte
+	dir      string
+	platform Platform
+	registry Registry
+	template Template
+	logger   *slog.Logger
 }
 
 func (a *api) makeContext(ctx context.Context) Context {
-	return newContext(ctx, a.platform, a.registry)
+	return newContext(ctx, a.platform, a.registry, a.template)
 }
 
 func (a *api) init() error {
-	a.logger.Info("Init start", slog.String("dir", a.dir))
+	a.logger.Debug("Init start", slog.String("dir", a.dir))
 	ctx := a.makeContext(context.Background())
 
 	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
@@ -171,14 +166,14 @@ func (a *api) init() error {
 			return err
 		}
 	}
-	a.logger.Info("builtin harnesses initialized")
+	a.logger.Debug("builtin harnesses initialized")
 
-	a.logger.Info("Init done", slog.String("dir", a.dir))
+	a.logger.Debug("Init done", slog.String("dir", a.dir))
 	return nil
 }
 
 func (a *api) Build(ctx context.Context, specs ...string) error {
-	a.logger.Info("Build start", slog.String("dir", a.dir))
+	a.logger.Debug("Build start", slog.String("dir", a.dir))
 	actx := a.makeContext(ctx)
 
 	var selected = make(map[string]bool)
@@ -202,7 +197,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		options := docker.BuildOptions{
 			Dockerfile: r.Profile.Dockerfile,
 			Target:     sandbox.Target,
-			Tag:        sandbox.Tag(a.sandboxTagTemplate),
+			Tag:        a.template.makeSandboxTag(&sandbox),
 		}
 
 		if _, err = docker.Build(ctx, buildPath, options, a.logger); err != nil {
@@ -210,12 +205,12 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		}
 	}
 
-	a.logger.Info("Build done", slog.String("dir", a.dir))
+	a.logger.Debug("Build done", slog.String("dir", a.dir))
 	return nil
 }
 
 func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
-	a.logger.Info("List start", slog.String("dir", a.dir))
+	a.logger.Debug("List start", slog.String("dir", a.dir))
 	ctx = a.makeContext(ctx)
 
 	if !fs.HasDir(a.platform.SandboxDir()) {
@@ -249,12 +244,12 @@ func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
 	}
 	fmt.Println(result)
 
-	a.logger.Info("List done", slog.String("dir", a.dir))
+	a.logger.Debug("List done", slog.String("dir", a.dir))
 	return result, nil
 }
 
 func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
-	a.logger.Info("Create start", slog.String("dir", a.dir))
+	a.logger.Debug("Create start", slog.String("dir", a.dir))
 	actx := a.makeContext(ctx)
 	sandbox := Sandbox{}
 
@@ -273,7 +268,7 @@ func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
 		return sandbox, err
 	}
 
-	id, err := makeID(int(a.sandboxIDLength), dirs)
+	id, err := a.template.makeSandboxID(dirs)
 	if err != nil {
 		return sandbox, err
 	}
@@ -281,25 +276,28 @@ func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
 	sandbox.ID = id
 	sandbox.Spec = ss.Name
 	sandbox.Dir = a.platform.SandboxDir(id)
-	sandbox.Tag = ss.Tag(a.sandboxTagTemplate)
+	sandbox.Tag = a.template.makeSandboxTag(&ss)
 	sandbox.Status = SandboxStatusStop
 	if err = sandbox.save(actx); err != nil {
 		return Sandbox{}, err
 	}
 
-	// TODO: init dir, worktree dance
+	if err = sandbox.MakeWorktree(actx, ss, a.logger); err != nil {
+		_ = fs.RemoveDir(sandbox.Dir)
+		return Sandbox{}, err
+	}
 
 	if err = a.SyncSandbox(ctx, sandbox); err != nil {
 		_ = fs.RemoveDir(sandbox.Dir)
 		return Sandbox{}, err
 	}
 
-	a.logger.Info("Create end", slog.String("dir", a.dir))
+	a.logger.Debug("Create end", slog.String("dir", a.dir))
 	return sandbox, nil
 }
 
 func (a *api) Sync(ctx context.Context, spec string) error {
-	a.logger.Info("Sync start", slog.String("dir", a.dir))
+	a.logger.Debug("Sync start", slog.String("dir", a.dir))
 	actx := a.makeContext(ctx)
 
 	ss, ok := a.registry.SandboxSpec(spec)
@@ -318,12 +316,12 @@ func (a *api) Sync(ctx context.Context, spec string) error {
 		}
 	}
 
-	a.logger.Info("Sync end", slog.String("dir", a.dir))
+	a.logger.Debug("Sync end", slog.String("dir", a.dir))
 	return nil
 }
 
 func (a *api) SyncSandbox(ctx context.Context, sandbox Sandbox) error {
-	a.logger.Info("SyncSandbox start", slog.String("dir", a.dir))
+	a.logger.Debug("SyncSandbox start", slog.String("dir", a.dir))
 	actx := a.makeContext(ctx)
 
 	ss, ok := a.registry.SandboxSpec(sandbox.Spec)
@@ -335,7 +333,7 @@ func (a *api) SyncSandbox(ctx context.Context, sandbox Sandbox) error {
 		return err
 	}
 
-	a.logger.Info("SyncSandbox end", slog.String("dir", a.dir))
+	a.logger.Debug("SyncSandbox end", slog.String("dir", a.dir))
 	return nil
 }
 

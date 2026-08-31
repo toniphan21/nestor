@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"nhatp.com/go/nestor/infra/fs"
+	"nhatp.com/go/nestor/infra/git"
 )
 
 type SandboxSpec struct {
@@ -93,12 +94,47 @@ type Syncer interface {
 }
 
 type Sandbox struct {
-	ID      string            `json:"id"`
-	Dir     string            `json:"dir"`
-	Spec    string            `json:"spec"`
-	Tag     string            `json:"tag"`
-	Status  string            `json:"status"`
-	Mounted map[string]string `json:"mounted"`
+	ID       string                     `json:"id"`
+	Dir      string                     `json:"dir"`
+	Spec     string                     `json:"spec"`
+	Tag      string                     `json:"tag"`
+	Status   string                     `json:"status"`
+	Worktree map[string]SandboxWorktree `json:"worktree,omitempty"`
+	Mounted  map[string]string          `json:"mounted,omitempty"`
+}
+
+func (s *Sandbox) MakeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) error {
+	worktrees := make(map[string]SandboxWorktree)
+	cleanUp := func() {
+		for _, v := range s.Worktree {
+			_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
+		}
+	}
+
+	for _, m := range spec.Mounts {
+		if m.Type == MountTypeGitWorktree {
+			template := ctx.Template()
+			id := template.makeWorktreeID(m.Path)
+			wtDir := filepath.Join(s.Dir, id)
+
+			wt := SandboxWorktree{
+				ID:            id,
+				Dir:           wtDir,
+				Repository:    m.Path,
+				InitialBranch: template.makeInitialBranch(s.ID, wtDir),
+			}
+
+			err := git.AddWorktree(wt.Repository, wt.Dir, wt.InitialBranch, log)
+			if err != nil {
+				cleanUp()
+				return fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
+			}
+			worktrees[wt.ID] = wt
+		}
+	}
+
+	s.Worktree = worktrees
+	return s.save(ctx)
 }
 
 func (s *Sandbox) save(ctx Context) error {
@@ -129,3 +165,10 @@ func readSandbox(dir string) (Sandbox, error) {
 
 const SandboxStatusStop = "stop"
 const SandboxStatusRunning = "running"
+
+type SandboxWorktree struct {
+	ID            string `json:"id"`
+	Repository    string `json:"repository"`
+	Dir           string `json:"dir"`
+	InitialBranch string `json:"initialBranch"`
+}
