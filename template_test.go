@@ -1,10 +1,26 @@
 package nestor
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestTemplate_makeAgentName_stressTest(t *testing.T) {
+	taken := make(map[string]struct{})
+	template := DefaultTemplate()
+	n := 10_000_000
+	for i := 0; i < n; i++ {
+		name := template.makeAgentID()
+		_, have := taken[name]
+		if have {
+			t.Fatalf("agent name collision at %d when doing n=%d", i, n)
+		}
+		taken[name] = struct{}{}
+	}
+	fmt.Println(template.makeAgentID())
+}
 
 func TestTemplate_sanitize(t *testing.T) {
 	tests := []struct {

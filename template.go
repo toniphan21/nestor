@@ -1,29 +1,50 @@
 package nestor
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
+	"errors"
 	"fmt"
+	"io"
+	randv2 "math/rand/v2"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const DefaultSandboxIDLength = 5
-const DefaultSandboxIDLetters = "abcdefghijklmnopqrstuvwxyz"
+const DefaultAgentIDLength = 10
+const DefaultIDLetters = "abcdefghijklmnopqrstuvwxyz"
 const maxBase = 40
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func DefaultTemplate() Template {
-	return Template{
+	template := Template{
 		SandboxTag:       "nestor-[name]",
-		SandboxID:        fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultSandboxIDLetters),
+		SandboxID:        fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
 		InitialBranch:    "nestor/initial-branch-[sandbox]-[hash]",
 		SandboxContainer: "nestor-sandbox-[id]",
+		AgentSuffix:      fmt.Sprintf("%d:%s", DefaultAgentIDLength, DefaultIDLetters),
+		AgentID:          "[alias]-[id]",
 	}
+
+	_ = LoadBuiltinAgentAliases(&template)
+	return template
+}
+
+func LoadBuiltinAgentAliases(template *Template) error {
+	f, err := builtin.Open("assets/agent-names.txt")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return template.LoadAgentAliases(f)
 }
 
 type Template struct {
@@ -32,6 +53,9 @@ type Template struct {
 	WorktreeID       string
 	InitialBranch    string
 	SandboxContainer string
+	AgentSuffix      string
+	AgentID          string
+	picker           *agentAliasPicker
 }
 
 func (t *Template) makeSandboxID(exists []string) (string, error) {
@@ -50,36 +74,34 @@ func (t *Template) makeSandboxID(exists []string) (string, error) {
 }
 
 func (t *Template) genSandboxID() string {
-	parts := strings.Split(t.SandboxID, ":")
+	return t.genRand(t.SandboxID, DefaultSandboxIDLength)
+}
+
+func (t *Template) genRand(template string, defaultLen int) string {
+	parts := strings.Split(template, ":")
 	if len(parts) != 2 {
-		return t.rand(DefaultSandboxIDLength, DefaultSandboxIDLetters)
+		return t.rand(defaultLen, DefaultIDLetters)
 	}
 
 	length, err := strconv.Atoi(parts[0])
 	if err != nil || length <= 0 {
-		return t.rand(DefaultSandboxIDLength, DefaultSandboxIDLetters)
+		return t.rand(defaultLen, DefaultIDLetters)
 	}
 
 	if strings.TrimSpace(parts[1]) == "" {
-		parts[1] = DefaultSandboxIDLetters
+		parts[1] = DefaultIDLetters
 	}
 	return t.rand(length, parts[1])
 }
 
 func (t *Template) makeSandboxTag(spec *SandboxSpec) string {
-	var vars = map[string]string{
+	return t.fillTemplate(t.SandboxTag, map[string]string{
 		"[sandbox-name]": spec.Name,
 		"[sandboxName]":  spec.Name,
 		"$sandboxName":   spec.Name,
 		"[name]":         spec.Name,
 		"$name":          spec.Name,
-	}
-
-	var out = t.SandboxTag
-	for k, v := range vars {
-		out = strings.ReplaceAll(out, k, v)
-	}
-	return out
+	})
 }
 
 func (t *Template) makeWorktreeID(repository string) string {
@@ -93,47 +115,48 @@ func (t *Template) makeWorktreeID(repository string) string {
 	if base == "" {
 		return hash
 	}
-	var vars = map[string]string{
+	return t.fillTemplate(t.WorktreeID, map[string]string{
 		"[base]": base,
 		"$base":  base,
 		"[hash]": hash,
 		"$hash":  hash,
 		"[id]":   hash,
 		"$id":    hash,
-	}
-
-	var out = t.WorktreeID
-	for k, v := range vars {
-		out = strings.ReplaceAll(out, k, v)
-	}
-	return out
+	})
 }
 
 func (t *Template) makeInitialBranch(sandboxID string, dir string) string {
 	hash := t.hashPath(dir)
-	var vars = map[string]string{
+	return t.fillTemplate(t.InitialBranch, map[string]string{
 		"[sandbox]": sandboxID,
 		"$sandbox":  sandboxID,
 		"[id]":      sandboxID,
 		"$id":       sandboxID,
 		"[hash]":    hash,
 		"$hash":     hash,
-	}
-
-	var out = t.InitialBranch
-	for k, v := range vars {
-		out = strings.ReplaceAll(out, k, v)
-	}
-	return out
+	})
 }
 
 func (t *Template) makeSandboxContainer(s *Sandbox) string {
-	var vars = map[string]string{
+	return t.fillTemplate(t.SandboxContainer, map[string]string{
 		"[id]": s.ID,
 		"$id":  s.ID,
-	}
+	})
+}
 
-	var out = t.SandboxContainer
+func (t *Template) makeAgentID() string {
+	id := t.genRand(t.AgentSuffix, DefaultSandboxIDLength)
+	alias := t.picker.pick()
+	return t.fillTemplate(t.AgentID, map[string]string{
+		"[id]":    id,
+		"$id":     id,
+		"[alias]": alias,
+		"$alias":  alias,
+	})
+}
+
+func (t *Template) fillTemplate(template string, vars map[string]string) string {
+	var out = template
 	for k, v := range vars {
 		out = strings.ReplaceAll(out, k, v)
 	}
@@ -179,4 +202,54 @@ func (t *Template) sanitize(s string) string {
 		out = strings.TrimRight(out[:maxBase], "-._")
 	}
 	return out
+}
+
+func (t *Template) LoadAgentAliases(txt io.Reader) error {
+	var names []string
+	sc := bufio.NewScanner(txt)
+	for sc.Scan() {
+		if l := strings.TrimSpace(sc.Text()); l != "" {
+			names = append(names, l)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+
+	if len(names) == 0 {
+		return errors.New("names: empty list")
+	}
+
+	t.picker = &agentAliasPicker{names: names}
+	t.picker.shuffle()
+	return nil
+}
+
+func (t *Template) PickAgentAlias() string {
+	return t.picker.pick()
+}
+
+type agentAliasPicker struct {
+	mu    sync.Mutex
+	names []string
+	idx   int
+}
+
+func (p *agentAliasPicker) pick() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	n := p.names[p.idx]
+	p.idx++
+	if p.idx == len(p.names) {
+		p.idx = 0
+		p.shuffle()
+	}
+	return n
+}
+
+func (p *agentAliasPicker) shuffle() {
+	randv2.Shuffle(len(p.names), func(i, j int) {
+		p.names[i], p.names[j] = p.names[j], p.names[i]
+	})
 }

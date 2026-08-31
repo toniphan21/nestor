@@ -10,6 +10,7 @@ import (
 //go:embed all:assets/claude.dockerfile
 //go:embed assets/profile.yml
 //go:embed assets/sandbox.yml
+//go:embed assets/agent-names.txt
 var builtin embed.FS
 
 type embedAsset struct {
