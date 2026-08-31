@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"nhatp.com/go/nestor/infra/docker"
 	"nhatp.com/go/nestor/infra/fs"
 	"nhatp.com/go/nestor/infra/git"
 )
@@ -94,16 +96,23 @@ type Syncer interface {
 }
 
 type Sandbox struct {
-	ID       string                     `json:"id"`
-	Dir      string                     `json:"dir"`
-	Spec     string                     `json:"spec"`
-	Tag      string                     `json:"tag"`
-	Status   string                     `json:"status"`
-	Worktree map[string]SandboxWorktree `json:"worktree,omitempty"`
-	Mounted  map[string]string          `json:"mounted,omitempty"`
+	ID        string                     `json:"id"`
+	Dir       string                     `json:"dir"`
+	Spec      string                     `json:"spec"`
+	Tag       string                     `json:"tag"`
+	Status    string                     `json:"status"`
+	Worktree  map[string]SandboxWorktree `json:"worktree,omitempty"`
+	Mounted   map[string]string          `json:"mounted,omitempty"`
+	CreatedAt time.Time                  `json:"created_at"`
+	UpdatedAt time.Time                  `json:"updated_at"`
 }
 
-func (s *Sandbox) MakeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) error {
+func (s *Sandbox) IsRunning(ctx Context, logger *slog.Logger) bool {
+	template := ctx.Template()
+	return docker.IsRunning(template.makeSandboxContainer(s), logger)
+}
+
+func (s *Sandbox) makeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) error {
 	worktrees := make(map[string]SandboxWorktree)
 	cleanUp := func() {
 		for _, v := range s.Worktree {
@@ -134,6 +143,24 @@ func (s *Sandbox) MakeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) 
 	}
 
 	s.Worktree = worktrees
+	return s.save(ctx)
+}
+
+func (s *Sandbox) removeWorktree(ctx Context, id string, log *slog.Logger) error {
+	v, ok := s.Worktree[id]
+	if !ok {
+		return nil
+	}
+	_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
+	delete(s.Worktree, id)
+	return s.save(ctx)
+}
+
+func (s *Sandbox) removeAllWorktrees(ctx Context, log *slog.Logger) error {
+	for _, v := range s.Worktree {
+		_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
+	}
+	s.Worktree = nil
 	return s.save(ctx)
 }
 

@@ -18,18 +18,20 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func DefaultTemplate() Template {
 	return Template{
-		SandboxID:     fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultSandboxIDLetters),
-		SandboxTag:    "nestor-[sandboxName]",
-		WorktreeID:    "[base]-[hash]",
-		InitialBranch: "nestor/initial-branch-[sandbox]-[hash]",
+		SandboxTag:       "nestor-[name]",
+		SandboxID:        fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultSandboxIDLetters),
+		WorktreeID:       "[base]-[hash]",
+		InitialBranch:    "nestor/initial-branch-[sandbox]-[hash]",
+		SandboxContainer: "nestor-sandbox-[id]",
 	}
 }
 
 type Template struct {
-	SandboxID     string
-	SandboxTag    string
-	WorktreeID    string
-	InitialBranch string
+	SandboxTag       string
+	SandboxID        string
+	WorktreeID       string
+	InitialBranch    string
+	SandboxContainer string
 }
 
 func (t *Template) makeSandboxID(exists []string) (string, error) {
@@ -69,6 +71,7 @@ func (t *Template) makeSandboxTag(spec *SandboxSpec) string {
 		"[sandbox-name]": spec.Name,
 		"[sandboxName]":  spec.Name,
 		"$sandboxName":   spec.Name,
+		"[name]":         spec.Name,
 		"$name":          spec.Name,
 	}
 
@@ -118,6 +121,19 @@ func (t *Template) makeInitialBranch(sandboxID string, dir string) string {
 	}
 
 	var out = t.InitialBranch
+	for k, v := range vars {
+		out = strings.ReplaceAll(out, k, v)
+	}
+	return out
+}
+
+func (t *Template) makeSandboxContainer(s *Sandbox) string {
+	var vars = map[string]string{
+		"[id]": s.ID,
+		"$id":  s.ID,
+	}
+
+	var out = t.SandboxContainer
 	for k, v := range vars {
 		out = strings.ReplaceAll(out, k, v)
 	}

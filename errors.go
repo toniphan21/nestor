@@ -4,4 +4,4 @@ import "fmt"
 
 var ErrNotSupported = fmt.Errorf("nestor: not supported")
 var ErrNotFound = fmt.Errorf("nestor: not found")
-var ErrInitRequired = fmt.Errorf("nestor: init required")
+var ErrNotAllowed = fmt.Errorf("nestor: not allowed")

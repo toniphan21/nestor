@@ -18,11 +18,15 @@ type API interface {
 
 	Create(ctx context.Context, spec string) (Sandbox, error)
 
-	Sync(ctx context.Context, spec string) error
+	Delete(ctx context.Context, sandbox Sandbox) error
 
-	SyncSandbox(ctx context.Context, sandbox Sandbox) error
+	Sync(ctx context.Context, sandbox Sandbox) error
 
-	Start(ctx context.Context, spec string) error
+	Start(ctx context.Context, sandbox Sandbox) error
+
+	Stop(ctx context.Context, sandbox Sandbox) error
+
+	SyncAll(ctx context.Context, spec string) error
 }
 
 const DefaultLogFile = "nestor.log"
@@ -282,12 +286,12 @@ func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
 		return Sandbox{}, err
 	}
 
-	if err = sandbox.MakeWorktree(actx, ss, a.logger); err != nil {
+	if err = sandbox.makeWorktree(actx, ss, a.logger); err != nil {
 		_ = fs.RemoveDir(sandbox.Dir)
 		return Sandbox{}, err
 	}
 
-	if err = a.SyncSandbox(ctx, sandbox); err != nil {
+	if err = a.Sync(ctx, sandbox); err != nil {
 		_ = fs.RemoveDir(sandbox.Dir)
 		return Sandbox{}, err
 	}
@@ -296,32 +300,8 @@ func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
 	return sandbox, nil
 }
 
-func (a *api) Sync(ctx context.Context, spec string) error {
+func (a *api) Sync(ctx context.Context, sandbox Sandbox) error {
 	a.logger.Debug("Sync start", slog.String("dir", a.dir))
-	actx := a.makeContext(ctx)
-
-	ss, ok := a.registry.SandboxSpec(spec)
-	if !ok {
-		return fmt.Errorf("%w: sandbox %q", ErrNotFound, spec)
-	}
-
-	sbs, err := a.List(ctx, ss.Name)
-	if err != nil {
-		return err
-	}
-
-	for _, v := range sbs {
-		if err = a.sync(actx, ss, v); err != nil {
-			return err
-		}
-	}
-
-	a.logger.Debug("Sync end", slog.String("dir", a.dir))
-	return nil
-}
-
-func (a *api) SyncSandbox(ctx context.Context, sandbox Sandbox) error {
-	a.logger.Debug("SyncSandbox start", slog.String("dir", a.dir))
 	actx := a.makeContext(ctx)
 
 	ss, ok := a.registry.SandboxSpec(sandbox.Spec)
@@ -333,7 +313,7 @@ func (a *api) SyncSandbox(ctx context.Context, sandbox Sandbox) error {
 		return err
 	}
 
-	a.logger.Debug("SyncSandbox end", slog.String("dir", a.dir))
+	a.logger.Debug("Sync end", slog.String("dir", a.dir))
 	return nil
 }
 
@@ -352,9 +332,64 @@ func (a *api) sync(ctx Context, spec SandboxSpec, sandbox Sandbox) error {
 	return nil
 }
 
-func (a *api) Start(ctx context.Context, sandbox string) error {
+func (a *api) Delete(ctx context.Context, sandbox Sandbox) error {
+	a.logger.Debug("Delete start", slog.String("dir", a.dir))
+	sbDir := a.platform.SandboxDir(sandbox.ID)
+
+	if !fs.HasDir(sbDir) {
+		a.logger.Debug("Delete end: sandbox not found, nothing to do", slog.String("sandboxDir", sbDir))
+		return nil
+	}
+
+	actx := a.makeContext(ctx)
+	if sandbox.IsRunning(actx, a.logger) {
+		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, sandbox.ID)
+	}
+
+	if err := sandbox.removeAllWorktrees(actx, a.logger); err != nil {
+		return fmt.Errorf("nestor: cannot remove sandbox worktrees: %w", err)
+	}
+
+	if err := fs.RemoveDir(sbDir); err != nil {
+		return fmt.Errorf("nestor: cannot remove sandbox dir: %w", err)
+	}
+
+	a.logger.Debug("Delete end", slog.String("dir", a.dir))
+	return nil
+}
+
+func (a *api) Start(ctx context.Context, sandbox Sandbox) error {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (a *api) Stop(ctx context.Context, sandbox Sandbox) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *api) SyncAll(ctx context.Context, spec string) error {
+	a.logger.Debug("SyncAll start", slog.String("dir", a.dir))
+	actx := a.makeContext(ctx)
+
+	ss, ok := a.registry.SandboxSpec(spec)
+	if !ok {
+		return fmt.Errorf("%w: sandbox %q", ErrNotFound, spec)
+	}
+
+	sbs, err := a.List(ctx, ss.Name)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range sbs {
+		if err = a.sync(actx, ss, v); err != nil {
+			return err
+		}
+	}
+
+	a.logger.Debug("SyncAll end", slog.String("dir", a.dir))
+	return nil
 }
 
 var _ API = (*api)(nil)
