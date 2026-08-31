@@ -14,17 +14,24 @@ import (
 type API interface {
 	Init() error
 
-	Build() error
+	Build(sandboxes ...string) error
+
+	Sync(sandbox string) error
+
+	Start(sandbox string) error
 }
 
 const DefaultLogFile = "nestor.log"
+const DefaultSandboxTagTemplate = "nestor-[sandboxName]"
 
 func New(options ...Option) (API, error) {
 	o := &opts{
-		logger:   slog.New(slog.DiscardHandler),
-		registry: newRegistry(),
+		logger:             slog.New(slog.DiscardHandler),
+		registry:           newRegistry(),
+		sandboxTagTemplate: DefaultSandboxTagTemplate,
 	}
 
+	// apply options
 	for _, v := range options {
 		v.apply(o)
 	}
@@ -46,16 +53,17 @@ func New(options ...Option) (API, error) {
 	}
 
 	a := &api{
-		dir:      o.dir,
-		platform: o.platform.Clone(o.dir),
-		logger:   o.logger,
-		registry: o.registry,
+		dir:                o.dir,
+		platform:           o.platform.Clone(o.dir),
+		logger:             o.logger,
+		registry:           o.registry,
+		sandboxTagTemplate: o.sandboxTagTemplate,
 	}
 
-	// register sandboxSpecs and harnessSpecs passed via options
-	if len(o.harnessSpecs) > 0 {
-		for _, v := range o.harnessSpecs {
-			a.registry.RegisterHardnessSpec(v)
+	// register sandboxSpecs and profiles passed via options
+	if len(o.profiles) > 0 {
+		for _, v := range o.profiles {
+			a.registry.RegisterProfile(v)
 		}
 	}
 
@@ -63,11 +71,12 @@ func New(options ...Option) (API, error) {
 }
 
 type api struct {
-	dir      string
-	platform Platform
-	registry Registry
-	logger   *slog.Logger
-	inited   bool
+	dir                string
+	platform           Platform
+	registry           Registry
+	logger             *slog.Logger
+	inited             bool
+	sandboxTagTemplate string
 }
 
 func (a *api) makeContext(ctx context.Context) Context {
@@ -82,7 +91,7 @@ func (a *api) Init() error {
 	}
 	ctx := a.makeContext(context.Background())
 
-	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/harness.yml
+	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
 	sf := a.platform.SandboxYmlFile()
 	if !fs.HasFile(sf) {
 		if err := fs.CopyFileFS(builtin, "assets/sandbox.yml", sf); err != nil {
@@ -116,38 +125,38 @@ func (a *api) Init() error {
 		a.logger.Info("use sandbox specs from WithSandboxSpecs")
 	}
 
-	// harness.yml is saved from assets for the first time in NESTOR_DIR/harness.yml
-	hf := a.platform.HarnessYmlFile()
-	if !fs.HasFile(hf) {
-		if err := fs.CopyFileFS(builtin, "assets/harness.yml", hf); err != nil {
+	// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
+	pf := a.platform.ProfileYmlFile()
+	if !fs.HasFile(pf) {
+		if err := fs.CopyFileFS(builtin, "assets/profile.yml", pf); err != nil {
 			a.logger.Error(err.Error(), slog.Any("error", err))
 			return err
 		}
-		a.logger.Info("saved builtin harness.yml file", slog.String("path", hf))
+		a.logger.Info("saved builtin profile.yml file", slog.String("path", pf))
 	}
 
-	// if there is no harness specs provided, parse from NESTOR_DIR/harness.yml
-	// for other location the caller need to parse manually add pass via WithHarnessSpecs
-	if len(a.registry.HarnessSpecs()) == 0 {
-		yml, err := fs.AtomicReadFile(hf)
+	// if there is no profiles provided, parse from NESTOR_DIR/profile.yml
+	// for other location the caller need to parse manually add pass via WithProfiles
+	if len(a.registry.Profiles()) == 0 {
+		yml, err := fs.AtomicReadFile(pf)
 		if err != nil {
-			e := fmt.Errorf("cannot read harness.yml file: %w", err)
-			a.logger.Error(e.Error(), slog.Any("error", e), slog.String("path", hf))
+			e := fmt.Errorf("cannot read profile.yml file: %w", err)
+			a.logger.Error(e.Error(), slog.Any("error", e), slog.String("path", pf))
 			return e
 		}
-		hss, err := ParseHarnessSpecs(bytes.NewBuffer(yml))
+		hss, err := ParseProfiles(bytes.NewBuffer(yml))
 		if err != nil {
-			e := fmt.Errorf("cannot parse harness.yml file: %w", err)
-			a.logger.Error(e.Error(), slog.Any("error", e), slog.String("path", hf))
+			e := fmt.Errorf("cannot parse profile.yml file: %w", err)
+			a.logger.Error(e.Error(), slog.Any("error", e), slog.String("path", pf))
 			return e
 		}
 
 		for _, v := range hss {
-			a.registry.RegisterHardnessSpec(v)
+			a.registry.RegisterProfile(v)
 		}
-		a.logger.Info("loaded harness specs", slog.String("path", hf))
+		a.logger.Info("loaded harness specs", slog.String("path", pf))
 	} else {
-		a.logger.Info("use harness specs from WithHarnessSpecs")
+		a.logger.Info("use harness specs from WithProfiles")
 	}
 
 	// initialize builtin harnesses
@@ -163,41 +172,55 @@ func (a *api) Init() error {
 	return nil
 }
 
-func (a *api) Build() error {
+func (a *api) Build(sandboxes ...string) error {
 	if !a.inited {
 		return ErrInitRequired
 	}
 	a.logger.Info("Build start", slog.String("dir", a.dir))
 
 	ctx := a.makeContext(context.Background())
+
+	var selected = make(map[string]bool)
+	if len(sandboxes) == 0 {
+		for _, v := range a.registry.SandboxSpecs() {
+			selected[v.Name] = true
+		}
+	}
+
 	for _, sandbox := range a.registry.SandboxSpecs() {
-		hn, have := a.registry.Harness(string(sandbox.Harness))
-		if !have {
-			return fmt.Errorf("%w: harness %q", ErrNotFound, sandbox.Harness)
+		if !selected[sandbox.Name] {
+			continue
 		}
-		hns, err := hn.Spec(ctx)
+
+		r, err := sandbox.ResolveHarness(ctx)
 		if err != nil {
 			return err
 		}
 
-		fmt.Println("path:", filepath.Dir(hns.Dockerfile))
-		fmt.Println("dockerfile:", hns.Dockerfile)
-		fmt.Println("target:", sandbox.Target)
-		fmt.Println("tag:", fmt.Sprintf("nestor-%s", sandbox.Name))
-
-		id, err := docker.Build(ctx, filepath.Dir(hns.Dockerfile), docker.BuildOptions{
-			Dockerfile: hns.Dockerfile,
+		buildPath := filepath.Dir(r.Profile.Dockerfile)
+		options := docker.BuildOptions{
+			Dockerfile: r.Profile.Dockerfile,
 			Target:     sandbox.Target,
-			Tag:        fmt.Sprintf("nestor-%s", sandbox.Name),
-		}, a.logger)
-		if err != nil {
+			Tag:        sandbox.Tag(a.sandboxTagTemplate),
+		}
+
+		if _, err = docker.Build(ctx, buildPath, options, a.logger); err != nil {
 			return err
 		}
-		fmt.Println("id:", id)
 	}
 
 	a.logger.Info("Build done", slog.String("dir", a.dir))
 	return nil
+}
+
+func (a *api) Sync(sandbox string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *api) Start(sandbox string) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 var _ API = (*api)(nil)

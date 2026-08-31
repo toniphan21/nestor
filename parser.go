@@ -50,31 +50,42 @@ func parseYML[T, R any](yml io.Reader, typ string, callback func(*ymlFile[T]) (R
 	return callback(&file)
 }
 
-const harnessType = "harness"
+const profileType = "profile"
 
-func ParseHarnessSpecs(yml io.Reader) ([]HarnessSpec, error) {
-	return parseYML(yml, harnessType, func(file *ymlFile[map[string]HarnessSpec]) ([]HarnessSpec, error) {
-		result := make([]HarnessSpec, 0, len(file.Data))
+func ParseProfiles(yml io.Reader) ([]Profile, error) {
+	return parseYML(yml, profileType, func(file *ymlFile[map[string]Profile]) ([]Profile, error) {
+		if file == nil {
+			return nil, nil
+		}
+
+		result := make([]Profile, 0, len(file.Data))
 		for k, v := range file.Data {
 			v.Name = k
 			result = append(result, v)
 		}
-		slices.SortFunc(result, func(a, b HarnessSpec) int {
+		slices.SortFunc(result, func(a, b Profile) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 		return result, nil
 	})
 }
 
-const specType = "sandbox"
+const sandboxSpecType = "sandbox"
 
 func ParseSandboxSpecs(yml io.Reader) ([]SandboxSpec, error) {
-	return parseYML(yml, harnessType, func(file *ymlFile[map[string]SandboxSpec]) ([]SandboxSpec, error) {
+	return parseYML(yml, sandboxSpecType, func(file *ymlFile[map[string]SandboxSpec]) ([]SandboxSpec, error) {
+		if file == nil {
+			return nil, nil
+		}
+
 		result := make([]SandboxSpec, 0, len(file.Data))
 		for k, v := range file.Data {
 			v.Name = k
 			if err := v.Validate(); err != nil {
 				return nil, fmt.Errorf("%w: sandbox %q", err, k)
+			}
+			if v.Profile == "" {
+				v.Profile = string(v.Harness)
 			}
 			result = append(result, v)
 		}

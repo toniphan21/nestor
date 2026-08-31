@@ -72,3 +72,80 @@ func CopyDirFS(src iofs.FS, root, dst string) error {
 		return CopyFileFS(sub, name, target)
 	})
 }
+
+// MergeDir copies the tree rooted at src onto dst. Files present in src
+// replace their counterparts in dst; files present only in dst are left
+// untouched. Missing directories are created.
+func MergeDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case d.IsDir():
+			if err := os.MkdirAll(target, fi.Mode().Perm()); err != nil {
+				return fmt.Errorf("merge %q: %w", rel, err)
+			}
+			return nil
+		case fi.Mode().IsRegular():
+			if err := copyFile(path, target, fi.Mode().Perm()); err != nil {
+				return fmt.Errorf("merge %q: %w", rel, err)
+			}
+			return nil
+		default:
+			return nil // skip symlinks, sockets, devices
+		}
+	})
+}
+
+// CopyFile copies the regular file src to dst, overwriting it and matching
+// src's permissions.
+func CopyFile(src, dst string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return copyFile(src, dst, fi.Mode().Perm())
+}
+
+func copyFile(src, dst string, mode os.FileMode) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	// mode above only applies on creation; force it for existing files too.
+	if err := out.Chmod(mode); err != nil {
+		return err
+	}
+
+	_, err = io.Copy(out, in)
+	return err
+}

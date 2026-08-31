@@ -2,8 +2,8 @@ package nestor
 
 func newRegistry() Registry {
 	return &registry{
-		sandboxSpecs:   make(map[string]SandboxSpec),
-		harnessesSpecs: make(map[string]HarnessSpec),
+		sandboxSpecs: make(map[string]SandboxSpec),
+		profiles:     make(map[string]Profile),
 		harnesses: map[string]Harness{
 			string(HarnessClaudeCode): newHarnessClaude(),
 		},
@@ -13,7 +13,7 @@ func newRegistry() Registry {
 type Registry interface {
 	RegisterSandboxSpec(spec SandboxSpec) Registry
 
-	RegisterHardnessSpec(spec HarnessSpec) Registry
+	RegisterProfile(profile Profile) Registry
 
 	RegisterHarness(harness Harness) Registry
 
@@ -21,9 +21,9 @@ type Registry interface {
 
 	SandboxSpecs() []SandboxSpec
 
-	HarnessSpec(name string) (HarnessSpec, bool)
+	Profile(name string) (Profile, bool)
 
-	HarnessSpecs() []HarnessSpec
+	Profiles() []Profile
 
 	Harness(name string) (Harness, bool)
 
@@ -31,9 +31,9 @@ type Registry interface {
 }
 
 type registry struct {
-	harnesses      map[string]Harness
-	sandboxSpecs   map[string]SandboxSpec
-	harnessesSpecs map[string]HarnessSpec
+	sandboxSpecs map[string]SandboxSpec
+	harnesses    map[string]Harness
+	profiles     map[string]Profile
 }
 
 func (r *registry) RegisterSandboxSpec(spec SandboxSpec) Registry {
@@ -41,8 +41,8 @@ func (r *registry) RegisterSandboxSpec(spec SandboxSpec) Registry {
 	return r
 }
 
-func (r *registry) RegisterHardnessSpec(spec HarnessSpec) Registry {
-	r.harnessesSpecs[spec.Name] = spec
+func (r *registry) RegisterProfile(spec Profile) Registry {
+	r.profiles[spec.Name] = spec
 	return r
 }
 
@@ -64,14 +64,14 @@ func (r *registry) SandboxSpecs() []SandboxSpec {
 	return out
 }
 
-func (r *registry) HarnessSpec(name string) (HarnessSpec, bool) {
-	s, ok := r.harnessesSpecs[name]
+func (r *registry) Profile(name string) (Profile, bool) {
+	s, ok := r.profiles[name]
 	return s, ok
 }
 
-func (r *registry) HarnessSpecs() []HarnessSpec {
-	out := make([]HarnessSpec, 0, len(r.harnessesSpecs))
-	for _, v := range r.harnessesSpecs {
+func (r *registry) Profiles() []Profile {
+	out := make([]Profile, 0, len(r.profiles))
+	for _, v := range r.profiles {
 		out = append(out, v)
 	}
 	return out

@@ -1,7 +1,8 @@
 version: "1"
-type: "harness"
+type: "profile"
 data:
   claude:
+    auth: "credentials"
     default_target: base
     default_model: claude-opus-5
     targets:

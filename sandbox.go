@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -8,8 +9,8 @@ import (
 type SandboxSpec struct {
 	Name         string         `yaml:"-"`
 	Harness      harness        `yaml:"harness"`
+	Profile      string         `yaml:"profile,omitempty"`
 	Target       string         `yaml:"target"`
-	Auth         auth           `yaml:"auth"`
 	MaxInstances int            `yaml:"max_instances"`
 	Mounts       []SandboxMount `yaml:"mounts"`
 }
@@ -27,6 +28,41 @@ func (s *SandboxSpec) Resolve(workDir string) (string, bool) {
 		return filepath.Join(m.At, rel), true
 	}
 	return "", false
+}
+
+func (s *SandboxSpec) Tag(template string) string {
+	var vars = map[string]string{
+		"[sandbox-name]": s.Name,
+		"[sandboxName]":  s.Name,
+		"$sandboxName":   s.Name,
+		"$name":          s.Name,
+	}
+
+	var out = template
+	for k, v := range vars {
+		out = strings.ReplaceAll(out, k, v)
+	}
+	return out
+}
+
+func (s *SandboxSpec) ResolveHarness(ctx Context) (*ResolvedHarness, error) {
+	h, have := ctx.Registry().Harness(string(s.Harness))
+	if !have {
+		return nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
+	}
+
+	p, have := ctx.Registry().Profile(h.Name())
+	if have {
+		h.FillProfileDefaultValues(ctx, &p)
+		return &ResolvedHarness{Harness: h, Profile: p}, nil
+	}
+
+	return nil, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
+}
+
+type ResolvedHarness struct {
+	Harness Harness
+	Profile Profile
 }
 
 type SandboxMount struct {

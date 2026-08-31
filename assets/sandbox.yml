@@ -1,10 +1,9 @@
 version: "1"
-type: "harness"
+type: "sandbox"
 data:
   claude-go:
     harness: "claude"
     target: "go"
-    auth: "credentials"
     max_instances: 2
     mounts:
       - type: "direct"

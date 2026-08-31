@@ -8,20 +8,20 @@ import (
 	"testing"
 )
 
-//go:embed testdata/harness
-var harnessFixtures embed.FS
+//go:embed testdata/profile
+var fixtures embed.FS
 
-func Test_ParseHarnessSpec(t *testing.T) {
+func Test_ParseProfiles(t *testing.T) {
 	cases := []struct {
 		name     string
 		file     string
 		err      error
-		expected []HarnessSpec
+		expected []Profile
 	}{
 		{
 			name: "happy path",
 			file: "default.yml",
-			expected: []HarnessSpec{
+			expected: []Profile{
 				{
 					Name:          "claude",
 					DefaultTarget: "base",
@@ -42,12 +42,12 @@ func Test_ParseHarnessSpec(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Helper()
-			b, err := harnessFixtures.ReadFile(filepath.Join("testdata", "harness", tc.file))
+			b, err := fixtures.ReadFile(filepath.Join("testdata", "profile", tc.file))
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			result, err := ParseHarnessSpecs(bytes.NewBuffer(b))
+			result, err := ParseProfiles(bytes.NewBuffer(b))
 			if tc.err != nil {
 				if err == nil {
 					t.Errorf("expected error, got none")

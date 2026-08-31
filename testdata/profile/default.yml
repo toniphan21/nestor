@@ -1,5 +1,5 @@
 version: "1"
-type: "harness"
+type: "profile"
 data:
   claude:
     default_target: base

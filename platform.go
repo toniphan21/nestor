@@ -21,7 +21,7 @@ type Platform interface {
 
 	NestorDir(path ...string) string
 
-	HarnessYmlFile() string
+	ProfileYmlFile() string
 
 	SandboxYmlFile() string
 
@@ -79,8 +79,8 @@ func (p *platform) NestorDir(path ...string) string {
 	return filepath.Join(args...)
 }
 
-func (p *platform) HarnessYmlFile() string {
-	return p.NestorDir("harness.yml")
+func (p *platform) ProfileYmlFile() string {
+	return p.NestorDir("profile.yml")
 }
 
 func (p *platform) SandboxYmlFile() string {

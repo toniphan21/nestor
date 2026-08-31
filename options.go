@@ -13,12 +13,13 @@ type optionFunc func(*opts)
 func (f optionFunc) apply(opts *opts) { f(opts) }
 
 type opts struct {
-	dir          string
-	logger       *slog.Logger
-	platform     Platform
-	registry     Registry
-	sandboxSpecs []SandboxSpec
-	harnessSpecs []HarnessSpec
+	dir                string
+	logger             *slog.Logger
+	platform           Platform
+	registry           Registry
+	sandboxSpecs       []SandboxSpec
+	profiles           []Profile
+	sandboxTagTemplate string
 }
 
 func WithDir(dir string) Option {
@@ -41,8 +42,14 @@ func WithSandboxSpecs(specs []SandboxSpec) Option {
 	})
 }
 
-func WithHarnessSpecs(specs []HarnessSpec) Option {
+func WithProfiles(specs []Profile) Option {
 	return optionFunc(func(opts *opts) {
-		opts.harnessSpecs = specs
+		opts.profiles = specs
+	})
+}
+
+func WithSandboxTagTemplate(template string) Option {
+	return optionFunc(func(opts *opts) {
+		opts.sandboxTagTemplate = template
 	})
 }

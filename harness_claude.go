@@ -1,7 +1,6 @@
 package nestor
 
 import (
-	"fmt"
 	"log/slog"
 	"path/filepath"
 )
@@ -15,41 +14,30 @@ func newHarnessClaude() Harness {
 }
 
 type harnessClaude struct {
-	assets      embedAssets
-	specManager *registry
+	assets embedAssets
 }
 
 func (h *harnessClaude) Name() string {
 	return string(HarnessClaudeCode)
 }
 
-func (h *harnessClaude) fillDefaultValues(ctx Context, spec *HarnessSpec) {
-	if spec.Dockerfile == "" {
-		spec.Dockerfile = ctx.Platform().NestorDir("claude", "Dockerfile")
+func (h *harnessClaude) FillProfileDefaultValues(ctx Context, profile *Profile) {
+	if profile.Dockerfile == "" {
+		profile.Dockerfile = ctx.Platform().NestorDir("claude", "Dockerfile")
 	}
-	if spec.Options == nil {
-		spec.Options = make(map[string]string)
+	if profile.Options == nil {
+		profile.Options = make(map[string]string)
 	}
 
-	cf, have := spec.Options[".claude"]
+	cf, have := profile.Options[".claude"]
 	if !have || cf == "" {
-		spec.Options[".claude"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude")
+		profile.Options[".claude"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude")
 	}
 
-	cfj, have := spec.Options[".claude.json"]
+	cfj, have := profile.Options[".claude.json"]
 	if !have || cfj == "" {
-		spec.Options[".claude.json"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude.json")
+		profile.Options[".claude.json"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude.json")
 	}
-}
-
-func (h *harnessClaude) Spec(ctx Context) (HarnessSpec, error) {
-	s, have := ctx.Registry().HarnessSpec(h.Name())
-	if have {
-		h.fillDefaultValues(ctx, &s)
-		return s, nil
-	}
-
-	return HarnessSpec{}, fmt.Errorf("%w: harness spec %q", ErrNotFound, h.Name())
 }
 
 func (h *harnessClaude) Init(ctx Context, dir string, log *slog.Logger) error {

@@ -8,7 +8,7 @@ import (
 )
 
 //go:embed all:assets/claude.dockerfile
-//go:embed assets/harness.yml
+//go:embed assets/profile.yml
 //go:embed assets/sandbox.yml
 var builtin embed.FS
 
