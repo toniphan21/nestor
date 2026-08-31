@@ -1,9 +1,13 @@
 package nestor
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
+
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type SandboxSpec struct {
@@ -81,3 +85,47 @@ type mountType string
 
 const MountTypeDirect = mountType("direct")
 const MountTypeGitWorktree = mountType("git_worktree")
+
+type Syncer interface {
+	fmt.Stringer
+
+	Sync(sandbox Sandbox, log *slog.Logger) error
+}
+
+type Sandbox struct {
+	ID      string            `json:"id"`
+	Dir     string            `json:"dir"`
+	Spec    string            `json:"spec"`
+	Tag     string            `json:"tag"`
+	Status  string            `json:"status"`
+	Mounted map[string]string `json:"mounted"`
+}
+
+func (s *Sandbox) save(ctx Context) error {
+	s.Dir = ctx.Platform().SandboxDir(s.ID)
+	err := fs.MkdirAll(s.Dir)
+	if err != nil {
+		return err
+	}
+
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fs.AtomicWriteFile(filepath.Join(s.Dir, "sandbox.json"), b)
+}
+
+func readSandbox(dir string) (Sandbox, error) {
+	b, err := fs.AtomicReadFile(filepath.Join(dir, "sandbox.json"))
+	if err != nil {
+		return Sandbox{}, err
+	}
+	var s Sandbox
+	if err := json.Unmarshal(b, &s); err != nil {
+		return Sandbox{}, err
+	}
+	return s, nil
+}
+
+const SandboxStatusStop = "stop"
+const SandboxStatusRunning = "running"

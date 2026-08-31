@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -15,6 +17,8 @@ func main() {
 		log.Fatalf("cannot make dir: %e", err)
 	}
 
+	ctx := context.Background()
+
 	logger, closer, err := nestor.NewCLILogger(filepath.Join(dir, nestor.DefaultLogFile), os.Stdout, slog.LevelDebug)
 	if err != nil {
 		log.Fatal(err)
@@ -25,13 +29,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = api.Init()
+	sb, err := api.Create(ctx, "claude-go")
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(sb)
 
-	err = api.Build()
+	out, err := api.List(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(out)
 }

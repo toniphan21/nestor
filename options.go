@@ -20,6 +20,7 @@ type opts struct {
 	sandboxSpecs       []SandboxSpec
 	profiles           []Profile
 	sandboxTagTemplate string
+	sandboxIDLength    byte
 }
 
 func WithDir(dir string) Option {
@@ -51,5 +52,11 @@ func WithProfiles(specs []Profile) Option {
 func WithSandboxTagTemplate(template string) Option {
 	return optionFunc(func(opts *opts) {
 		opts.sandboxTagTemplate = template
+	})
+}
+
+func WithSandboxIDLength(length byte) Option {
+	return optionFunc(func(opts *opts) {
+		opts.sandboxIDLength = length
 	})
 }

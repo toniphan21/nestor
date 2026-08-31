@@ -21,6 +21,8 @@ type Platform interface {
 
 	NestorDir(path ...string) string
 
+	SandboxDir(path ...string) string
+
 	ProfileYmlFile() string
 
 	SandboxYmlFile() string
@@ -75,6 +77,17 @@ func (p *platform) NestorDir(path ...string) string {
 	}
 
 	args := []string{p.nestorDir}
+	args = append(args, path...)
+	return filepath.Join(args...)
+}
+
+func (p *platform) SandboxDir(path ...string) string {
+	sbd := filepath.Join(p.nestorDir, "sandbox")
+	if len(path) == 0 {
+		return sbd
+	}
+
+	args := []string{sbd}
 	args = append(args, path...)
 	return filepath.Join(args...)
 }

@@ -120,6 +120,33 @@ func CopyFile(src, dst string) error {
 	return copyFile(src, dst, fi.Mode().Perm())
 }
 
+// ListDirs returns the names of the directories directly inside dir,
+// sorted by filename. Files, symlinks and other non-directory entries
+// are skipped. Only the entry names are returned, not full paths.
+func ListDirs(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	dirs := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	return dirs, nil
+}
+
+// RemoveDir removes dir and everything inside it, like rm -rf.
+// It returns nil if dir does not exist.
+func RemoveDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove dir %q: %w", dir, err)
+	}
+	return nil
+}
+
 func copyFile(src, dst string, mode os.FileMode) (err error) {
 	in, err := os.Open(src)
 	if err != nil {

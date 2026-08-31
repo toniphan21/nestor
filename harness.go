@@ -14,5 +14,7 @@ type Harness interface {
 
 	FillProfileDefaultValues(ctx Context, profile *Profile)
 
+	Syncers(ctx Context, profile Profile) []Syncer
+
 	Init(ctx Context, dir string, log *slog.Logger) error
 }

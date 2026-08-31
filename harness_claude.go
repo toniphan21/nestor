@@ -55,4 +55,8 @@ func (h *harnessClaude) Init(ctx Context, dir string, log *slog.Logger) error {
 	return nil
 }
 
+func (h *harnessClaude) Syncers(ctx Context, profile Profile) []Syncer {
+	return nil
+}
+
 var _ Harness = (*harnessClaude)(nil)
