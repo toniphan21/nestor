@@ -1,0 +1,29 @@
+version: "1"
+type: "harness"
+data:
+  claude:
+    default_target: base
+    default_model: claude-opus-5
+    targets:
+      - base
+      - go
+    models:
+      claude-opus-5:
+        - opus
+        - opus:latest
+        - opus:5
+      claude-opus-4-8:
+        - opus:4
+        - opus:4.8
+      claude-sonnet-5:
+        - sonnet
+        - sonnet:latest
+        - sonnet:5
+      claude-sonnet-4-6:
+        - sonnet:4
+        - sonnet:4.6
+      claude-haiku-4-5:
+        - haiku
+        - haiku:latest
+        - haiku:4
+        - haiku:4.5
