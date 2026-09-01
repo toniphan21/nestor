@@ -24,13 +24,25 @@ func main() {
 
 	ctx := context.Background()
 
-	logger, closer, err := nestor.NewCLILogger(filepath.Join(dir, nestor.DefaultLogFile), os.Stdout, slog.LevelDebug)
+	logger, closer, err := nestor.NewCLILogger(
+		filepath.Join(dir, nestor.DefaultLogFile), os.Stdout, slog.LevelDebug,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closer.Close()
-	api, err := nestor.New(nestor.WithDir(dir), nestor.WithLogger(logger))
+
+	api, err := nestor.New(
+		nestor.WithDir(dir),
+		nestor.WithLogger(logger),
+		nestor.WithGit(nestor.NoopGit),
+		nestor.WithDocker(nestor.NoopDocker),
+	)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := api.Build(ctx, "claude-go"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -46,9 +58,9 @@ func main() {
 	}
 	for _, sandbox := range sandboxes {
 		fmt.Println(sandbox)
-		//if err := api.Delete(ctx, sandbox); err != nil {
-		//	logger.Error(err.Error())
-		//	log.Fatal(err)
-		//}
+		if err := sandbox.Delete(ctx); err != nil {
+			logger.Error(err.Error())
+			log.Fatal(err)
+		}
 	}
 }

@@ -7,4 +7,7 @@ type Runtime struct {
 	Platform Platform
 	Template Template
 	Logger   *slog.Logger
+
+	newGitFunc    NewGitFunc
+	newDockerFunc NewDockerFunc
 }

@@ -44,33 +44,26 @@ func Build(ctx context.Context, path string, options BuildOptions, logger *slog.
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 
-	if logger == nil {
-		logger = slog.New(slog.DiscardHandler)
-	}
-
-	log := logger.WithGroup("run").With(
-		slog.String("cmd", "docker"),
-		slog.Any("args", args),
-	)
+	log := logger.WithGroup("docker").With(slog.Any("args", args))
 	w := &logWriter{log, slog.LevelDebug}
 	cmd.Stdout = w
 	cmd.Stderr = w
 
-	logger.Info("docker build start")
+	log.Info("build start")
 	if err := cmd.Run(); err != nil {
-		logger.Error("docker build", slog.Any("error", err))
+		log.Error("build error", slog.Any("error", err))
 		return "", fmt.Errorf("docker build: %w", err)
 	}
 
 	id, err := fs.AtomicReadFile(iidPath)
 	if err != nil {
-		logger.Error("docker build: read image id", slog.Any("error", err))
+		log.Error("cannot read image id", slog.Any("error", err))
 		return "", fmt.Errorf("docker build: read image id %q: %w", path, err)
 	}
 
-	logger.Info("docker build finished")
+	log.Info("build finished")
 	if err = fs.RemoveFile(iidPath); err != nil {
-		logger.Error("docker build: remove image id %q failed", slog.Any("error", err), slog.String("path", iidPath))
+		log.Error("docker build: remove image id %q failed", slog.Any("error", err), slog.String("path", iidPath))
 	}
 	return strings.TrimSpace(string(id)), nil
 }

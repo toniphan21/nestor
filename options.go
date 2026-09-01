@@ -13,13 +13,15 @@ type optionFunc func(*opts)
 func (f optionFunc) apply(opts *opts) { f(opts) }
 
 type opts struct {
-	dir          string
-	logger       *slog.Logger
-	platform     Platform
-	registry     Registry
-	template     Template
-	sandboxSpecs []SandboxSpec
-	profiles     []Profile
+	dir           string
+	logger        *slog.Logger
+	platform      Platform
+	registry      Registry
+	template      Template
+	sandboxSpecs  []SandboxSpec
+	profiles      []Profile
+	newGitFunc    NewGitFunc
+	newDockerFunc NewDockerFunc
 }
 
 func WithDir(dir string) Option {
@@ -51,5 +53,17 @@ func WithProfiles(specs []Profile) Option {
 func WithTemplate(template Template) Option {
 	return optionFunc(func(opts *opts) {
 		opts.template = template
+	})
+}
+
+func WithGit(fn NewGitFunc) Option {
+	return optionFunc(func(opts *opts) {
+		opts.newGitFunc = fn
+	})
+}
+
+func WithDocker(fn NewDockerFunc) Option {
+	return optionFunc(func(opts *opts) {
+		opts.newDockerFunc = fn
 	})
 }

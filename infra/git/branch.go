@@ -18,20 +18,20 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func RemoveBranchForce(repository, branch string, logger *slog.Logger) error {
+func RemoveBranchForce(ctx context.Context, repository, branch string, logger *slog.Logger) error {
 	args := []string{
 		"-C", repository, "branch", "-D", branch,
 	}
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
 
-	log := logger.WithGroup("run").With(slog.String("cmd", "git"), slog.Any("args", args))
+	log := logger.WithGroup("git").With(slog.Any("args", args))
 	w := &logWriter{log, slog.LevelDebug}
 	cmd.Stdout = w
 	cmd.Stderr = w
 
-	logger.Info("git branch -D", slog.String("repository", repository), slog.String("branch", branch))
+	log.Info("git branch -D", slog.String("repository", repository), slog.String("branch", branch))
 	if err := cmd.Run(); err != nil {
-		logger.Error("git branch -D", slog.Any("error", err))
+		log.Error("git branch -D", slog.Any("error", err))
 		return fmt.Errorf("git branch -D: %w", err)
 	}
 	return nil

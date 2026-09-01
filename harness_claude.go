@@ -41,6 +41,7 @@ func (h *harnessClaude) FillProfileDefaultValues(runtime Runtime, profile *Profi
 }
 
 func (h *harnessClaude) Init(runtime Runtime) error {
+	log := runtime.Logger
 	cp := filepath.Join(runtime.Platform.NestorDir(), "claude")
 	have, err := h.assets.save(cp)
 	if err != nil {
@@ -48,9 +49,9 @@ func (h *harnessClaude) Init(runtime Runtime) error {
 	}
 
 	if have {
-		runtime.Logger.Info("claude harness already exists, skip", slog.String("path", cp))
+		log.Info("claude harness already exists, skip", slog.String("path", cp))
 	} else {
-		runtime.Logger.Info("saved builtin harness claude", slog.String("path", cp))
+		log.Info("saved builtin harness claude", slog.String("path", cp))
 	}
 	return nil
 }

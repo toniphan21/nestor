@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
-	"nhatp.com/go/nestor/infra/git"
 )
 
 type Sandbox interface {
@@ -46,6 +45,29 @@ type SandboxWorktree struct {
 	InitialBranch string `yaml:"initialBranch"`
 }
 
+func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*sandboxImpl, error) {
+	h, p, err := spec.resolveHarness(runtime)
+	if err != nil {
+		return nil, err
+	}
+
+	log := runtime.Logger.With("layer", "sandbox")
+	rt := runtime
+	rt.Logger = log
+
+	sb := &sandboxImpl{
+		data:    data,
+		runtime: rt,
+		spec:    spec,
+		harness: h,
+		profile: p,
+		git:     rt.newGitFunc(log),
+		docker:  rt.newDockerFunc(log),
+		log:     log,
+	}
+	return sb, nil
+}
+
 func parseSandbox(runtime Runtime, dir string) (Sandbox, error) {
 	data, err := readSandboxData(dir)
 	if err != nil {
@@ -56,23 +78,13 @@ func parseSandbox(runtime Runtime, dir string) (Sandbox, error) {
 	if !have {
 		return nil, fmt.Errorf("%w: sandbox %q", ErrNotFound, data.Spec)
 	}
-	h, p, err := spec.resolveHarness(runtime)
-
-	sb := &sandboxImpl{
-		data:    data,
-		runtime: runtime,
-		spec:    spec,
-		harness: h,
-		profile: p,
-	}
 
 	// TODO: validate, the file can be modified manually so we need to validate again
-	return sb, nil
+	return makeSandboxImpl(data, runtime, spec)
 }
 
 func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox, error) {
-	h, p, err := spec.resolveHarness(runtime)
-	if err = fs.MkdirAll(runtime.Platform.SandboxDir()); err != nil {
+	if err := fs.MkdirAll(runtime.Platform.SandboxDir()); err != nil {
 		return nil, err
 	}
 
@@ -91,12 +103,10 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	sandbox := &sandboxImpl{
-		data:    data,
-		runtime: runtime,
-		spec:    spec,
-		harness: h,
-		profile: p,
+
+	sandbox, err := makeSandboxImpl(data, runtime, spec)
+	if err != nil {
+		return nil, err
 	}
 
 	if err = sandbox.save(ctx); err != nil {
@@ -121,6 +131,9 @@ type sandboxImpl struct {
 	spec    SandboxSpec
 	harness Harness
 	profile Profile
+	git     Git
+	docker  Docker
+	log     *slog.Logger
 }
 
 func (s *sandboxImpl) ID() string {
@@ -176,7 +189,7 @@ func (s *sandboxImpl) UpdatedAt() time.Time {
 }
 
 func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
-	panic("implement me")
+	return s.docker.IsRunning(ctx, s.Container())
 }
 
 func (s *sandboxImpl) Start(ctx context.Context) error {
@@ -198,10 +211,9 @@ func (s *sandboxImpl) Sync(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Delete(ctx context.Context) error {
-	log := s.runtime.Logger
-	log.Debug("Delete sandbox", slog.String("dir", s.ID()))
+	s.log.Debug("Delete sandbox", slog.String("dir", s.ID()))
 	if !fs.HasDir(s.Dir()) {
-		log.Debug("Delete sandbox: dir not found, nothing to do", slog.String("dir", s.Dir()))
+		s.log.Debug("Delete sandbox: dir not found, nothing to do", slog.String("dir", s.Dir()))
 		return nil
 	}
 
@@ -213,7 +225,7 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 		return err
 	}
 
-	log.Debug("Delete sandbox done", slog.String("dir", s.Dir()))
+	s.log.Debug("Delete sandbox done", slog.String("dir", s.Dir()))
 	return nil
 }
 
@@ -236,7 +248,7 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 	worktrees := make(map[string]SandboxWorktree)
 	cleanUp := func() {
 		for _, v := range s.data.Worktree {
-			_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
+			_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 		}
 	}
 
@@ -252,7 +264,7 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 				InitialBranch: s.runtime.Template.makeInitialBranch(s.ID(), wtDir),
 			}
 
-			err := git.AddWorktree(wt.Repository, wt.Dir, wt.InitialBranch, s.runtime.Logger)
+			err := s.git.AddWorktree(ctx, wt.Repository, wt.Dir, wt.InitialBranch)
 			if err != nil {
 				cleanUp()
 				return fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
@@ -270,14 +282,14 @@ func (s *sandboxImpl) removeWorktree(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
+	_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 	delete(s.data.Worktree, s.ID())
 	return s.save(ctx)
 }
 
 func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
 	for _, v := range s.data.Worktree {
-		_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
+		_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 	}
 	s.data.Worktree = nil
 	return s.save(ctx)
