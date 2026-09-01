@@ -67,3 +67,14 @@ func Build(ctx context.Context, path string, options BuildOptions, logger *slog.
 	}
 	return strings.TrimSpace(string(id)), nil
 }
+
+func HasImage(ctx context.Context, ref string, logger *slog.Logger) bool {
+	args := []string{"image", "inspect", ref}
+	cmd := exec.CommandContext(ctx, "docker", args...)
+
+	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	w := &logWriter{log, slog.LevelDebug}
+	cmd.Stdout = w
+	cmd.Stderr = w
+	return cmd.Run() == nil
+}

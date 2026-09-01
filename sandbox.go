@@ -31,6 +31,8 @@ type Sandbox interface {
 	Stop(ctx context.Context) error
 	Sync(ctx context.Context) error
 	Delete(ctx context.Context) error
+
+	Acquire(ctx context.Context, path string) (*Lease, error)
 }
 
 type Syncer interface {
@@ -189,8 +191,8 @@ func (s *sandboxImpl) Worktrees() []SandboxWorktree {
 
 func (s *sandboxImpl) Mounts() []string {
 	var out []string
-	for h, _ := range s.data.Mounts {
-		out = append(out, h)
+	for h, c := range s.data.Mounts {
+		out = append(out, fmt.Sprintf("%s:%s", h, c))
 	}
 	sort.Strings(out)
 	return out
@@ -213,7 +215,13 @@ func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
 }
 
 func (s *sandboxImpl) Start(ctx context.Context) error {
-	panic("implement me")
+	image := s.runtime.Template.makeSandboxTag(s.spec.Name)
+	container := s.runtime.Template.makeSandboxContainer(s.ID())
+	_, err := s.docker.Run(ctx, image, container, DockerRunOption{
+		Mounts: s.Mounts(),
+	})
+
+	return err
 }
 
 func (s *sandboxImpl) Stop(ctx context.Context) error {
@@ -247,6 +255,12 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 
 	s.log.Debug("Delete sandbox done", slog.String("dir", s.Dir()))
 	return nil
+}
+
+func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
+	return &Lease{sandbox: s, path: path}, nil
+
+	return nil, ErrNotAvailable
 }
 
 func (s *sandboxImpl) clear(ctx context.Context) error {

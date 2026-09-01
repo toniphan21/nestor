@@ -3,19 +3,23 @@ package nestor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sync"
 
 	"nhatp.com/go/nestor/infra/fs"
 )
 
 type API interface {
+	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
+
 	Build(ctx context.Context, specs ...string) error
 
-	List(ctx context.Context, specs ...string) ([]Sandbox, error)
+	ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, error)
 
-	Create(ctx context.Context, spec string) (Sandbox, error)
+	CreateSandbox(ctx context.Context, spec string) (Sandbox, error)
 }
 
 const DefaultLogFile = "nestor.log"
@@ -82,6 +86,7 @@ func New(options ...Option) (API, error) {
 }
 
 type api struct {
+	mu            sync.Mutex
 	dir           string
 	platform      Platform
 	registry      Registry
@@ -214,7 +219,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		}
 
 		buildPath := filepath.Dir(profile.Dockerfile)
-		options := DockerBuildOptions{
+		options := DockerBuildOption{
 			Dockerfile: profile.Dockerfile,
 			Target:     spec.Target,
 			Tag:        a.template.makeSandboxTag(spec.Name),
@@ -229,8 +234,19 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 	return nil
 }
 
-func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
-	a.log.Debug("List start", slog.String("dir", a.dir))
+func (a *api) ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.log.Debug("ListSandboxes start", slog.String("dir", a.dir))
+
+	result, err := a.listSandboxesLocked(ctx, specs...)
+
+	a.log.Debug("ListSandboxes done", slog.String("dir", a.dir))
+	return result, err
+}
+
+func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandbox, error) {
 	if !fs.HasDir(a.platform.SandboxDir()) {
 		return nil, nil
 	}
@@ -265,28 +281,88 @@ func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
 			result = append(result, sb)
 		}
 	}
-	fmt.Println(result)
-
-	a.log.Debug("List done", slog.String("dir", a.dir))
 	return result, nil
 }
 
-func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
-	a.log.Debug("Create start", slog.String("dir", a.dir))
+func (a *api) CreateSandbox(ctx context.Context, spec string) (Sandbox, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.log.Debug("CreateSandbox start", slog.String("dir", a.dir))
+
+	sandbox, err := a.createSandboxLocked(ctx, spec)
+
+	a.log.Debug("CreateSandbox end", slog.String("dir", a.dir))
+	return sandbox, err
+}
+
+func (a *api) createSandboxLocked(ctx context.Context, spec string) (Sandbox, error) {
+	ss, ok := a.registry.SandboxSpec(spec)
+	if !ok {
+		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, spec)
+	}
+
+	available, err := a.listSandboxesLocked(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	if len(available) == ss.MaxInstances {
+		return nil, fmt.Errorf("%w: exceed maximum instances", ErrNotAllowed)
+	}
+
+	sandbox, err := newSandbox(ctx, a.makeRuntime(), ss)
+	if err != nil {
+		return nil, err
+	}
+	return sandbox, nil
+}
+
+func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.log.Debug("Acquire start", slog.String("dir", a.dir))
 
 	ss, ok := a.registry.SandboxSpec(spec)
 	if !ok {
 		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, spec)
 	}
 
-	// TODO: validate max_instances
-	sandbox, err := newSandbox(ctx, a.makeRuntime(), ss)
+	if !a.docker.HasImage(ctx, a.template.makeSandboxTag(ss.Name)) {
+		a.log.Debug("no image, build fresh one", slog.String("dir", a.dir))
+		if err := a.Build(ctx, spec); err != nil {
+			return nil, err
+		}
+	}
+
+	// search exists first
+	sandboxes, err := a.listSandboxesLocked(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
 
-	a.log.Debug("Create end", slog.String("dir", a.dir))
-	return sandbox, nil
+	for _, sandbox := range sandboxes {
+		lease, err := sandbox.Acquire(ctx, path)
+		if err == nil {
+			return lease, nil
+		}
+
+		if !errors.Is(err, ErrNotAvailable) {
+			return nil, err
+		}
+	}
+
+	// create new one
+	sandbox, err := a.createSandboxLocked(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	lease, err := sandbox.Acquire(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	a.log.Debug("Acquire end", slog.String("dir", a.dir))
+	return lease, nil
 }
 
 var _ API = (*api)(nil)

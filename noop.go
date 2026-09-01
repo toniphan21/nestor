@@ -3,6 +3,7 @@ package nestor
 import (
 	"context"
 	"log/slog"
+	"time"
 )
 
 func NoopGit(logger *slog.Logger) Git {
@@ -47,9 +48,14 @@ type noopDocker struct {
 	log *slog.Logger
 }
 
-func (n *noopDocker) Build(ctx context.Context, path string, options DockerBuildOptions) (string, error) {
-	n.log.Debug("RemoveWorktree", slog.String("path", path), slog.Any("options", options))
+func (n *noopDocker) Build(ctx context.Context, path string, opt DockerBuildOption) (string, error) {
+	n.log.Debug("RemoveWorktree", slog.String("path", path), slog.Any("options", opt))
 	return "", nil
+}
+
+func (n *noopDocker) HasImage(ctx context.Context, ref string) bool {
+	n.log.Debug("HasImage", slog.String("ref", ref))
+	return false
 }
 
 func (n *noopDocker) IsRunning(ctx context.Context, container string) bool {
@@ -60,6 +66,16 @@ func (n *noopDocker) IsRunning(ctx context.Context, container string) bool {
 func (n *noopDocker) Kill(ctx context.Context, container string) error {
 	n.log.Debug("Kill", slog.String("container", container))
 	return nil
+}
+
+func (n *noopDocker) Stop(ctx context.Context, container string, timeout time.Duration) error {
+	n.log.Debug("Stop", slog.String("container", container))
+	return nil
+}
+
+func (n *noopDocker) Run(ctx context.Context, image, name string, opt DockerRunOption) (string, error) {
+	n.log.Debug("Run", slog.String("image", image), slog.String("name", name), slog.Any("opt", opt))
+	return "", nil
 }
 
 var _ Docker = (*noopDocker)(nil)

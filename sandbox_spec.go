@@ -69,21 +69,6 @@ func (s *SandboxSpec) Resolve(workDir string) (string, bool) {
 	return "", false
 }
 
-func (s *SandboxSpec) Tag(template string) string {
-	var vars = map[string]string{
-		"[sandbox-name]": s.Name,
-		"[sandboxName]":  s.Name,
-		"$sandboxName":   s.Name,
-		"$name":          s.Name,
-	}
-
-	var out = template
-	for k, v := range vars {
-		out = strings.ReplaceAll(out, k, v)
-	}
-	return out
-}
-
 func (s *SandboxSpec) resolveHarness(runtime Runtime) (Harness, Profile, error) {
 	h, have := runtime.Registry.Harness(string(s.Harness))
 	if !have {
