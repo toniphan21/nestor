@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
@@ -33,8 +34,6 @@ type Sandbox interface {
 }
 
 type Syncer interface {
-	fmt.Stringer
-
 	Sync(ctx context.Context, sandbox Sandbox) error
 }
 
@@ -181,11 +180,20 @@ func (s *sandboxImpl) Profile() Profile {
 }
 
 func (s *sandboxImpl) Worktrees() []SandboxWorktree {
-	panic("implement me")
+	var out []SandboxWorktree
+	for _, wt := range s.data.Worktree {
+		out = append(out, wt)
+	}
+	return out
 }
 
 func (s *sandboxImpl) Mounts() []string {
-	panic("implement me")
+	var out []string
+	for h, _ := range s.data.Mounts {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *sandboxImpl) Leases() []Lease {
@@ -193,11 +201,11 @@ func (s *sandboxImpl) Leases() []Lease {
 }
 
 func (s *sandboxImpl) CreatedAt() time.Time {
-	panic("implement me")
+	return s.data.CreatedAt
 }
 
 func (s *sandboxImpl) UpdatedAt() time.Time {
-	panic("implement me")
+	return s.data.UpdatedAt
 }
 
 func (s *sandboxImpl) IsRunning(ctx context.Context) bool {

@@ -30,3 +30,11 @@ func WriteFile(path string, data []byte) error {
 func RemoveFile(path string) error {
 	return os.Remove(path)
 }
+
+// MakePrivate restricts path to owner read/write only (0600).
+func MakePrivate(path string) error {
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("chmod %q: %w", path, err)
+	}
+	return nil
+}
