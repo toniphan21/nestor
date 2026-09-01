@@ -17,16 +17,6 @@ type API interface {
 	List(ctx context.Context, specs ...string) ([]Sandbox, error)
 
 	Create(ctx context.Context, spec string) (Sandbox, error)
-
-	Delete(ctx context.Context, sandbox Sandbox) error
-
-	Sync(ctx context.Context, sandbox Sandbox) error
-
-	Start(ctx context.Context, sandbox Sandbox) error
-
-	Stop(ctx context.Context, sandbox Sandbox) error
-
-	SyncAll(ctx context.Context, spec string) error
 }
 
 const DefaultLogFile = "nestor.log"
@@ -88,13 +78,12 @@ type api struct {
 	logger   *slog.Logger
 }
 
-func (a *api) makeContext(ctx context.Context) Context {
-	return newContext(ctx, a.platform, a.registry, a.template)
+func (a *api) makeRuntime() Runtime {
+	return Runtime{Registry: a.registry, Platform: a.platform, Template: a.template, Logger: a.logger}
 }
 
 func (a *api) init() error {
 	a.logger.Debug("Init start", slog.String("dir", a.dir))
-	ctx := a.makeContext(context.Background())
 
 	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
 	sf := a.platform.SandboxYmlFile()
@@ -165,8 +154,9 @@ func (a *api) init() error {
 	}
 
 	// initialize builtin harnesses
+	runtime := a.makeRuntime()
 	for _, v := range a.registry.Harnesses() {
-		if err := v.Init(ctx, a.dir, a.logger); err != nil {
+		if err := v.Init(runtime); err != nil {
 			return err
 		}
 	}
@@ -178,7 +168,7 @@ func (a *api) init() error {
 
 func (a *api) Build(ctx context.Context, specs ...string) error {
 	a.logger.Debug("Build start", slog.String("dir", a.dir))
-	actx := a.makeContext(ctx)
+	runtime := a.makeRuntime()
 
 	var selected = make(map[string]bool)
 	if len(specs) == 0 {
@@ -187,21 +177,21 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		}
 	}
 
-	for _, sandbox := range a.registry.SandboxSpecs() {
-		if !selected[sandbox.Name] {
+	for _, spec := range a.registry.SandboxSpecs() {
+		if !selected[spec.Name] {
 			continue
 		}
 
-		r, err := sandbox.ResolveHarness(actx)
+		_, profile, err := spec.resolveHarness(runtime)
 		if err != nil {
 			return err
 		}
 
-		buildPath := filepath.Dir(r.Profile.Dockerfile)
+		buildPath := filepath.Dir(profile.Dockerfile)
 		options := docker.BuildOptions{
-			Dockerfile: r.Profile.Dockerfile,
-			Target:     sandbox.Target,
-			Tag:        a.template.makeSandboxTag(&sandbox),
+			Dockerfile: profile.Dockerfile,
+			Target:     spec.Target,
+			Tag:        a.template.makeSandboxTag(spec.Name),
 		}
 
 		if _, err = docker.Build(ctx, buildPath, options, a.logger); err != nil {
@@ -215,8 +205,6 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 
 func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
 	a.logger.Debug("List start", slog.String("dir", a.dir))
-	ctx = a.makeContext(ctx)
-
 	if !fs.HasDir(a.platform.SandboxDir()) {
 		return nil, nil
 	}
@@ -234,15 +222,16 @@ func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
 		return nil, err
 	}
 
+	runtime := a.makeRuntime()
 	for _, v := range dirs {
 		dir := a.platform.SandboxDir(v)
-		sb, err := readSandbox(dir)
+		sb, err := parseSandbox(runtime, dir)
 		if err != nil {
-			a.logger.Warn("cannot read sandbox.json", slog.String("dir", dir))
+			a.logger.Warn("cannot read sandbox", slog.String("dir", dir))
 			continue
 		}
 
-		if selected[sb.Spec] {
+		if selected[sb.Spec().Name] {
 			result = append(result, sb)
 		}
 	}
@@ -254,142 +243,20 @@ func (a *api) List(ctx context.Context, specs ...string) ([]Sandbox, error) {
 
 func (a *api) Create(ctx context.Context, spec string) (Sandbox, error) {
 	a.logger.Debug("Create start", slog.String("dir", a.dir))
-	actx := a.makeContext(ctx)
-	sandbox := Sandbox{}
 
 	ss, ok := a.registry.SandboxSpec(spec)
 	if !ok {
-		return sandbox, fmt.Errorf("%w: sandbox %q", ErrNotFound, spec)
+		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, spec)
 	}
 
 	// TODO: validate max_instances
-
-	if err := fs.MkdirAll(a.platform.SandboxDir()); err != nil {
-		return sandbox, err
-	}
-	dirs, err := fs.ListDirs(a.platform.SandboxDir())
+	sandbox, err := newSandbox(ctx, a.makeRuntime(), ss)
 	if err != nil {
-		return sandbox, err
-	}
-
-	id, err := a.template.makeSandboxID(dirs)
-	if err != nil {
-		return sandbox, err
-	}
-
-	sandbox.ID = id
-	sandbox.Spec = ss.Name
-	sandbox.Dir = a.platform.SandboxDir(id)
-	sandbox.Tag = a.template.makeSandboxTag(&ss)
-	sandbox.Status = SandboxStatusStop
-	if err = sandbox.save(actx); err != nil {
-		return Sandbox{}, err
-	}
-
-	if err = sandbox.makeWorktree(actx, ss, a.logger); err != nil {
-		_ = fs.RemoveDir(sandbox.Dir)
-		return Sandbox{}, err
-	}
-
-	if err = a.Sync(ctx, sandbox); err != nil {
-		_ = fs.RemoveDir(sandbox.Dir)
-		return Sandbox{}, err
+		return nil, err
 	}
 
 	a.logger.Debug("Create end", slog.String("dir", a.dir))
 	return sandbox, nil
-}
-
-func (a *api) Sync(ctx context.Context, sandbox Sandbox) error {
-	a.logger.Debug("Sync start", slog.String("dir", a.dir))
-	actx := a.makeContext(ctx)
-
-	ss, ok := a.registry.SandboxSpec(sandbox.Spec)
-	if !ok {
-		return fmt.Errorf("%w: sandbox %q", ErrNotFound, sandbox.Spec)
-	}
-
-	if err := a.sync(actx, ss, sandbox); err != nil {
-		return err
-	}
-
-	a.logger.Debug("Sync end", slog.String("dir", a.dir))
-	return nil
-}
-
-func (a *api) sync(ctx Context, spec SandboxSpec, sandbox Sandbox) error {
-	r, err := spec.ResolveHarness(ctx)
-	if err != nil {
-		return err
-	}
-
-	syncers := r.Harness.Syncers(ctx, r.Profile)
-	for _, v := range syncers {
-		if err = v.Sync(sandbox, a.logger); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *api) Delete(ctx context.Context, sandbox Sandbox) error {
-	a.logger.Debug("Delete start", slog.String("dir", a.dir))
-	sbDir := a.platform.SandboxDir(sandbox.ID)
-
-	if !fs.HasDir(sbDir) {
-		a.logger.Debug("Delete end: sandbox not found, nothing to do", slog.String("sandboxDir", sbDir))
-		return nil
-	}
-
-	actx := a.makeContext(ctx)
-	if sandbox.IsRunning(actx, a.logger) {
-		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, sandbox.ID)
-	}
-
-	if err := sandbox.removeAllWorktrees(actx, a.logger); err != nil {
-		return fmt.Errorf("nestor: cannot remove sandbox worktrees: %w", err)
-	}
-
-	if err := fs.RemoveDir(sbDir); err != nil {
-		return fmt.Errorf("nestor: cannot remove sandbox dir: %w", err)
-	}
-
-	a.logger.Debug("Delete end", slog.String("dir", a.dir))
-	return nil
-}
-
-func (a *api) Start(ctx context.Context, sandbox Sandbox) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (a *api) Stop(ctx context.Context, sandbox Sandbox) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (a *api) SyncAll(ctx context.Context, spec string) error {
-	a.logger.Debug("SyncAll start", slog.String("dir", a.dir))
-	actx := a.makeContext(ctx)
-
-	ss, ok := a.registry.SandboxSpec(spec)
-	if !ok {
-		return fmt.Errorf("%w: sandbox %q", ErrNotFound, spec)
-	}
-
-	sbs, err := a.List(ctx, ss.Name)
-	if err != nil {
-		return err
-	}
-
-	for _, v := range sbs {
-		if err = a.sync(actx, ss, v); err != nil {
-			return err
-		}
-	}
-
-	a.logger.Debug("SyncAll end", slog.String("dir", a.dir))
-	return nil
 }
 
 var _ API = (*api)(nil)

@@ -94,13 +94,13 @@ func (t *Template) genRand(template string, defaultLen int) string {
 	return t.rand(length, parts[1])
 }
 
-func (t *Template) makeSandboxTag(spec *SandboxSpec) string {
+func (t *Template) makeSandboxTag(specName string) string {
 	return t.fillTemplate(t.SandboxTag, map[string]string{
-		"[sandbox-name]": spec.Name,
-		"[sandboxName]":  spec.Name,
-		"$sandboxName":   spec.Name,
-		"[name]":         spec.Name,
-		"$name":          spec.Name,
+		"[sandbox-name]": specName,
+		"[sandboxName]":  specName,
+		"$sandboxName":   specName,
+		"[name]":         specName,
+		"$name":          specName,
 	})
 }
 
@@ -137,10 +137,10 @@ func (t *Template) makeInitialBranch(sandboxID string, dir string) string {
 	})
 }
 
-func (t *Template) makeSandboxContainer(s *Sandbox) string {
+func (t *Template) makeSandboxContainer(sandboxID string) string {
 	return t.fillTemplate(t.SandboxContainer, map[string]string{
-		"[id]": s.ID,
-		"$id":  s.ID,
+		"[id]": sandboxID,
+		"$id":  sandboxID,
 	})
 }
 

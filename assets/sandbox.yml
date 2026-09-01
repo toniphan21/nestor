@@ -1,5 +1,5 @@
 version: "1"
-type: "sandbox"
+type: "sandbox-spec"
 data:
   claude-go:
     harness: "claude"

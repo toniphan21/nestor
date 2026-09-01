@@ -34,11 +34,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	//sb, err := api.Create(ctx, "claude-go")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//fmt.Println(sb)
+	sb, err := api.Create(ctx, "claude-go")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(sb)
 
 	sandboxes, err := api.List(ctx)
 	if err != nil {
@@ -46,9 +46,9 @@ func main() {
 	}
 	for _, sandbox := range sandboxes {
 		fmt.Println(sandbox)
-		if err := api.Delete(ctx, sandbox); err != nil {
-			logger.Error(err.Error())
-			log.Fatal(err)
-		}
+		//if err := api.Delete(ctx, sandbox); err != nil {
+		//	logger.Error(err.Error())
+		//	log.Fatal(err)
+		//}
 	}
 }

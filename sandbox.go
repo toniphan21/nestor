@@ -1,139 +1,258 @@
 package nestor
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"nhatp.com/go/nestor/infra/docker"
 	"nhatp.com/go/nestor/infra/fs"
 	"nhatp.com/go/nestor/infra/git"
 )
 
-type SandboxSpec struct {
-	Name         string         `yaml:"-"`
-	Harness      harness        `yaml:"harness"`
-	Profile      string         `yaml:"profile,omitempty"`
-	Target       string         `yaml:"target"`
-	MaxInstances int            `yaml:"max_instances"`
-	Mounts       []SandboxMount `yaml:"mounts"`
+type Sandbox interface {
+	ID() string
+	Runtime() Runtime
+	Dir() string
+	Tag() string
+	Spec() SandboxSpec
+	Container() string
+	Harness() Harness
+	Profile() Profile
+	Worktrees() []SandboxWorktree
+	Mounts() []string
+	Leases() []Lease
+	CreatedAt() time.Time
+	UpdatedAt() time.Time
+
+	IsRunning(ctx context.Context) bool
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	Sync(ctx context.Context) error
+	Delete(ctx context.Context) error
 }
-
-func (s *SandboxSpec) Validate() error {
-	return nil
-}
-
-func (s *SandboxSpec) Resolve(workDir string) (string, bool) {
-	for _, m := range s.Mounts {
-		rel, err := filepath.Rel(m.Path, workDir)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		return filepath.Join(m.At, rel), true
-	}
-	return "", false
-}
-
-func (s *SandboxSpec) Tag(template string) string {
-	var vars = map[string]string{
-		"[sandbox-name]": s.Name,
-		"[sandboxName]":  s.Name,
-		"$sandboxName":   s.Name,
-		"$name":          s.Name,
-	}
-
-	var out = template
-	for k, v := range vars {
-		out = strings.ReplaceAll(out, k, v)
-	}
-	return out
-}
-
-func (s *SandboxSpec) ResolveHarness(ctx Context) (*ResolvedHarness, error) {
-	h, have := ctx.Registry().Harness(string(s.Harness))
-	if !have {
-		return nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
-	}
-
-	p, have := ctx.Registry().Profile(h.Name())
-	if have {
-		h.FillProfileDefaultValues(ctx, &p)
-		return &ResolvedHarness{Harness: h, Profile: p}, nil
-	}
-
-	return nil, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
-}
-
-type ResolvedHarness struct {
-	Harness Harness
-	Profile Profile
-}
-
-type SandboxMount struct {
-	Type     mountType `yaml:"type"`
-	Path     string    `yaml:"path"`
-	At       string    `yaml:"at,omitempty"`
-	ReadOnly bool      `yaml:"read_only"`
-}
-
-type auth string
-
-const AuthCredentials = auth("credentials")
-const AuthAPIKey = auth("api_key")
-
-type mountType string
-
-const MountTypeDirect = mountType("direct")
-const MountTypeGitWorktree = mountType("git_worktree")
 
 type Syncer interface {
 	fmt.Stringer
 
-	Sync(sandbox Sandbox, log *slog.Logger) error
+	Sync(ctx context.Context, sandbox Sandbox) error
 }
 
-type Sandbox struct {
-	ID        string                     `json:"id"`
-	Dir       string                     `json:"dir"`
-	Spec      string                     `json:"spec"`
-	Tag       string                     `json:"tag"`
-	Status    string                     `json:"status"`
-	Worktree  map[string]SandboxWorktree `json:"worktree,omitempty"`
-	Mounted   map[string]string          `json:"mounted,omitempty"`
-	CreatedAt time.Time                  `json:"created_at"`
-	UpdatedAt time.Time                  `json:"updated_at"`
+type SandboxWorktree struct {
+	ID            string `yaml:"id"`
+	Repository    string `yaml:"repository"`
+	Dir           string `yaml:"dir"`
+	InitialBranch string `yaml:"initialBranch"`
 }
 
-func (s *Sandbox) IsRunning(ctx Context, logger *slog.Logger) bool {
-	template := ctx.Template()
-	return docker.IsRunning(template.makeSandboxContainer(s), logger)
+func parseSandbox(runtime Runtime, dir string) (Sandbox, error) {
+	data, err := readSandboxData(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	spec, have := runtime.Registry.SandboxSpec(data.Spec)
+	if !have {
+		return nil, fmt.Errorf("%w: sandbox %q", ErrNotFound, data.Spec)
+	}
+	h, p, err := spec.resolveHarness(runtime)
+
+	sb := &sandboxImpl{
+		data:    data,
+		runtime: runtime,
+		spec:    spec,
+		harness: h,
+		profile: p,
+	}
+
+	// TODO: validate, the file can be modified manually so we need to validate again
+	return sb, nil
 }
 
-func (s *Sandbox) makeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) error {
+func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox, error) {
+	h, p, err := spec.resolveHarness(runtime)
+	if err = fs.MkdirAll(runtime.Platform.SandboxDir()); err != nil {
+		return nil, err
+	}
+
+	taken, err := fs.ListDirs(runtime.Platform.SandboxDir())
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := runtime.Template.makeSandboxID(taken)
+	if err != nil {
+		return nil, err
+	}
+	data := &sandboxData{
+		ID:        id,
+		Spec:      spec.Name,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	sandbox := &sandboxImpl{
+		data:    data,
+		runtime: runtime,
+		spec:    spec,
+		harness: h,
+		profile: p,
+	}
+
+	if err = sandbox.save(ctx); err != nil {
+		return nil, err
+	}
+
+	if err = sandbox.makeWorktree(ctx); err != nil {
+		_ = sandbox.clear(ctx)
+		return nil, err
+	}
+
+	if err = sandbox.Sync(ctx); err != nil {
+		_ = sandbox.clear(ctx)
+		return nil, err
+	}
+	return sandbox, nil
+}
+
+type sandboxImpl struct {
+	data    *sandboxData
+	runtime Runtime
+	spec    SandboxSpec
+	harness Harness
+	profile Profile
+}
+
+func (s *sandboxImpl) ID() string {
+	return s.data.ID
+}
+
+func (s *sandboxImpl) Runtime() Runtime {
+	return s.runtime
+}
+
+func (s *sandboxImpl) Dir() string {
+	return s.runtime.Platform.SandboxDir(s.ID())
+}
+
+func (s *sandboxImpl) Tag() string {
+	return s.runtime.Template.makeSandboxTag(s.spec.Name)
+}
+
+func (s *sandboxImpl) Spec() SandboxSpec {
+	return s.spec
+}
+
+func (s *sandboxImpl) Container() string {
+	return s.runtime.Template.makeSandboxContainer(s.ID())
+}
+
+func (s *sandboxImpl) Harness() Harness {
+	return s.harness
+}
+
+func (s *sandboxImpl) Profile() Profile {
+	return s.profile
+}
+
+func (s *sandboxImpl) Worktrees() []SandboxWorktree {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) Mounts() []string {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) Leases() []Lease {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) CreatedAt() time.Time {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) UpdatedAt() time.Time {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) Start(ctx context.Context) error {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) Stop(ctx context.Context) error {
+	panic("implement me")
+}
+
+func (s *sandboxImpl) Sync(ctx context.Context) error {
+	syncers := s.harness.Syncers(s.runtime, s.profile)
+	for _, v := range syncers {
+		if err := v.Sync(ctx, s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sandboxImpl) Delete(ctx context.Context) error {
+	log := s.runtime.Logger
+	log.Debug("Delete sandbox", slog.String("dir", s.ID()))
+	if !fs.HasDir(s.Dir()) {
+		log.Debug("Delete sandbox: dir not found, nothing to do", slog.String("dir", s.Dir()))
+		return nil
+	}
+
+	if s.IsRunning(ctx) {
+		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, s.ID())
+	}
+
+	if err := s.clear(ctx); err != nil {
+		return err
+	}
+
+	log.Debug("Delete sandbox done", slog.String("dir", s.Dir()))
+	return nil
+}
+
+func (s *sandboxImpl) clear(ctx context.Context) error {
+	if err := s.removeAllWorktrees(ctx); err != nil {
+		return fmt.Errorf("nestor: cannot remove sandbox worktrees: %w", err)
+	}
+
+	if err := fs.RemoveDir(s.Dir()); err != nil {
+		return fmt.Errorf("nestor: cannot remove sandbox dir: %w", err)
+	}
+	return nil
+}
+
+func (s *sandboxImpl) save(ctx context.Context) error {
+	return s.data.save(ctx, s.Dir())
+}
+
+func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 	worktrees := make(map[string]SandboxWorktree)
 	cleanUp := func() {
-		for _, v := range s.Worktree {
-			_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
+		for _, v := range s.data.Worktree {
+			_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
 		}
 	}
 
-	for _, m := range spec.Mounts {
+	for _, m := range s.spec.Mounts {
 		if m.Type == MountTypeGitWorktree {
-			template := ctx.Template()
-			id := template.makeWorktreeID(m.Path)
-			wtDir := filepath.Join(s.Dir, id)
+			id := s.runtime.Template.makeWorktreeID(m.Path)
+			wtDir := filepath.Join(s.Dir(), id)
 
 			wt := SandboxWorktree{
 				ID:            id,
 				Dir:           wtDir,
 				Repository:    m.Path,
-				InitialBranch: template.makeInitialBranch(s.ID, wtDir),
+				InitialBranch: s.runtime.Template.makeInitialBranch(s.ID(), wtDir),
 			}
 
-			err := git.AddWorktree(wt.Repository, wt.Dir, wt.InitialBranch, log)
+			err := git.AddWorktree(wt.Repository, wt.Dir, wt.InitialBranch, s.runtime.Logger)
 			if err != nil {
 				cleanUp()
 				return fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
@@ -142,60 +261,24 @@ func (s *Sandbox) makeWorktree(ctx Context, spec SandboxSpec, log *slog.Logger) 
 		}
 	}
 
-	s.Worktree = worktrees
+	s.data.Worktree = worktrees
 	return s.save(ctx)
 }
 
-func (s *Sandbox) removeWorktree(ctx Context, id string, log *slog.Logger) error {
-	v, ok := s.Worktree[id]
+func (s *sandboxImpl) removeWorktree(ctx context.Context) error {
+	v, ok := s.data.Worktree[s.ID()]
 	if !ok {
 		return nil
 	}
-	_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
-	delete(s.Worktree, id)
+	_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
+	delete(s.data.Worktree, s.ID())
 	return s.save(ctx)
 }
 
-func (s *Sandbox) removeAllWorktrees(ctx Context, log *slog.Logger) error {
-	for _, v := range s.Worktree {
-		_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, log)
+func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
+	for _, v := range s.data.Worktree {
+		_ = git.RemoveWorktree(v.Repository, v.Dir, v.InitialBranch, s.runtime.Logger)
 	}
-	s.Worktree = nil
+	s.data.Worktree = nil
 	return s.save(ctx)
-}
-
-func (s *Sandbox) save(ctx Context) error {
-	s.Dir = ctx.Platform().SandboxDir(s.ID)
-	err := fs.MkdirAll(s.Dir)
-	if err != nil {
-		return err
-	}
-
-	b, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return fs.AtomicWriteFile(filepath.Join(s.Dir, "sandbox.json"), b)
-}
-
-func readSandbox(dir string) (Sandbox, error) {
-	b, err := fs.AtomicReadFile(filepath.Join(dir, "sandbox.json"))
-	if err != nil {
-		return Sandbox{}, err
-	}
-	var s Sandbox
-	if err := json.Unmarshal(b, &s); err != nil {
-		return Sandbox{}, err
-	}
-	return s, nil
-}
-
-const SandboxStatusStop = "stop"
-const SandboxStatusRunning = "running"
-
-type SandboxWorktree struct {
-	ID            string `json:"id"`
-	Repository    string `json:"repository"`
-	Dir           string `json:"dir"`
-	InitialBranch string `json:"initialBranch"`
 }

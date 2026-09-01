@@ -21,9 +21,9 @@ func (h *harnessClaude) Name() string {
 	return string(HarnessClaudeCode)
 }
 
-func (h *harnessClaude) FillProfileDefaultValues(ctx Context, profile *Profile) {
+func (h *harnessClaude) FillProfileDefaultValues(runtime Runtime, profile *Profile) {
 	if profile.Dockerfile == "" {
-		profile.Dockerfile = ctx.Platform().NestorDir("claude", "Dockerfile")
+		profile.Dockerfile = runtime.Platform.NestorDir("claude", "Dockerfile")
 	}
 	if profile.Options == nil {
 		profile.Options = make(map[string]string)
@@ -31,31 +31,31 @@ func (h *harnessClaude) FillProfileDefaultValues(ctx Context, profile *Profile) 
 
 	cf, have := profile.Options[".claude"]
 	if !have || cf == "" {
-		profile.Options[".claude"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude")
+		profile.Options[".claude"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude")
 	}
 
 	cfj, have := profile.Options[".claude.json"]
 	if !have || cfj == "" {
-		profile.Options[".claude.json"] = ctx.Platform().HarnessDefaultOption(h.Name(), ".claude.json")
+		profile.Options[".claude.json"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude.json")
 	}
 }
 
-func (h *harnessClaude) Init(ctx Context, dir string, log *slog.Logger) error {
-	cp := filepath.Join(dir, "claude")
+func (h *harnessClaude) Init(runtime Runtime) error {
+	cp := filepath.Join(runtime.Platform.NestorDir(), "claude")
 	have, err := h.assets.save(cp)
 	if err != nil {
 		return err
 	}
 
 	if have {
-		log.Info("claude harness already exists, skip", slog.String("path", cp))
+		runtime.Logger.Info("claude harness already exists, skip", slog.String("path", cp))
 	} else {
-		log.Info("saved builtin harness claude", slog.String("path", cp))
+		runtime.Logger.Info("saved builtin harness claude", slog.String("path", cp))
 	}
 	return nil
 }
 
-func (h *harnessClaude) Syncers(ctx Context, profile Profile) []Syncer {
+func (h *harnessClaude) Syncers(runtime Runtime, profile Profile) []Syncer {
 	return nil
 }
 

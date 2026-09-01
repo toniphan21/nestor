@@ -70,7 +70,7 @@ func ParseProfiles(yml io.Reader) ([]Profile, error) {
 	})
 }
 
-const sandboxSpecType = "sandbox"
+const sandboxSpecType = "sandbox-spec"
 
 func ParseSandboxSpecs(yml io.Reader) ([]SandboxSpec, error) {
 	return parseYML(yml, sandboxSpecType, func(file *ymlFile[map[string]SandboxSpec]) ([]SandboxSpec, error) {

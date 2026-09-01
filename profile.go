@@ -1,5 +1,10 @@
 package nestor
 
+type auth string
+
+const AuthCredentials = auth("credentials")
+const AuthAPIKey = auth("api_key")
+
 type Profile struct {
 	Name          string              `yaml:"-"`
 	Auth          auth                `yaml:"auth"`
