@@ -58,9 +58,9 @@ func main() {
 	}
 	for _, sandbox := range sandboxes {
 		fmt.Println(sandbox)
-		if err := sandbox.Delete(ctx); err != nil {
-			logger.Error(err.Error())
-			log.Fatal(err)
-		}
+		//if err := sandbox.Delete(ctx); err != nil {
+		//	logger.Error(err.Error())
+		//	log.Fatal(err)
+		//}
 	}
 }

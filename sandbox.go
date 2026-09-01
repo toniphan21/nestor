@@ -13,7 +13,7 @@ import (
 type Sandbox interface {
 	ID() string
 	Runtime() Runtime
-	Dir() string
+	Dir(elem ...string) string
 	Tag() string
 	Spec() SandboxSpec
 	Container() string
@@ -122,6 +122,11 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 		_ = sandbox.clear(ctx)
 		return nil, err
 	}
+
+	if err = sandbox.collectMounts(ctx); err != nil {
+		_ = sandbox.clear(ctx)
+		return nil, err
+	}
 	return sandbox, nil
 }
 
@@ -144,8 +149,15 @@ func (s *sandboxImpl) Runtime() Runtime {
 	return s.runtime
 }
 
-func (s *sandboxImpl) Dir() string {
-	return s.runtime.Platform.SandboxDir(s.ID())
+func (s *sandboxImpl) Dir(elem ...string) string {
+	b := s.runtime.Platform.SandboxDir(s.ID())
+	if len(elem) == 0 {
+		return b
+	}
+
+	args := []string{s.ID()}
+	args = append(args, elem...)
+	return s.runtime.Platform.SandboxDir(args...)
 }
 
 func (s *sandboxImpl) Tag() string {
@@ -292,5 +304,34 @@ func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
 		_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 	}
 	s.data.Worktree = nil
+	return s.save(ctx)
+}
+
+func (s *sandboxImpl) collectMounts(ctx context.Context) error {
+	hm, err := s.harness.Mounts(s.runtime, s.profile, s)
+	if err != nil {
+		return err
+	}
+
+	var mounts = make(map[string]string)
+	for _, m := range s.spec.Mounts {
+		at, err := m.Target()
+		if err != nil {
+			return err
+		}
+		mounts[m.Path] = at
+
+		if m.Type == MountTypeGitWorktree {
+			for _, wt := range s.data.Worktree {
+				if wt.Repository != m.Path {
+					continue
+				}
+				mounts[wt.Dir] = fmt.Sprintf("%s:rw", wt.Dir)
+			}
+		}
+	}
+
+	s.data.Mounts = mounts
+	s.data.HarnessMounts = hm
 	return s.save(ctx)
 }

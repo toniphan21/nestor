@@ -12,18 +12,20 @@ import (
 )
 
 type sandboxData struct {
-	ID        string                     `yaml:"id"`
-	Spec      string                     `yaml:"spec"`
-	Worktree  map[string]SandboxWorktree `yaml:"worktree,omitempty"`
-	Mounted   map[string]string          `yaml:"mounted,omitempty"`
-	CreatedAt time.Time                  `yaml:"created_at"`
-	UpdatedAt time.Time                  `yaml:"updated_at"`
+	ID            string                     `yaml:"id"`
+	Spec          string                     `yaml:"spec"`
+	Worktree      map[string]SandboxWorktree `yaml:"worktree,omitempty"`
+	Mounts        map[string]string          `yaml:"mounts,omitempty"`
+	HarnessMounts map[string]string          `yaml:"harness_mounts,omitempty"`
+	CreatedAt     time.Time                  `yaml:"created_at"`
+	UpdatedAt     time.Time                  `yaml:"updated_at"`
 }
 
 const sandboxType = "sandbox"
 const sandboxDataFileName = "data.yml"
 
 func (s *sandboxData) save(ctx context.Context, dir string) error {
+	s.UpdatedAt = time.Now()
 	file := ymlFile[*sandboxData]{
 		Version: "1",
 		Type:    "sandbox",

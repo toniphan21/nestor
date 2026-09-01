@@ -13,4 +13,6 @@ type Harness interface {
 	Syncers(runtime Runtime, profile Profile) []Syncer
 
 	Init(runtime Runtime) error
+
+	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]string, error)
 }

@@ -13,6 +13,33 @@ type SandboxMount struct {
 	ReadOnly bool      `yaml:"read_only"`
 }
 
+func (m *SandboxMount) Target() (string, error) {
+	switch m.Type {
+	case MountTypeDirect:
+		at := m.At
+		if at == "" {
+			at = m.Path
+		}
+		mode := "rw"
+		if m.ReadOnly {
+			mode = "ro"
+		}
+		return at + ":" + mode, nil
+
+	case MountTypeGitWorktree:
+		if m.ReadOnly {
+			return "", fmt.Errorf("%w: git_worktree mount %q cannot be read-only", ErrNotAllowed, m.Path)
+		}
+		if m.At != "" && m.At != m.Path {
+			return "", fmt.Errorf("%w: git_worktree mount %q cannot set at=%q", ErrNotAllowed, m.Path, m.At)
+		}
+		return m.Path + ":rw", nil
+
+	default:
+		return "", fmt.Errorf("%w: mount %q has type %q", ErrNotSupported, m.Path, m.Type)
+	}
+}
+
 type mountType string
 
 const MountTypeDirect = mountType("direct")

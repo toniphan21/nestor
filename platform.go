@@ -19,9 +19,9 @@ const OSWindows OSKind = "windows"
 type Platform interface {
 	UserHomeDir() string
 
-	NestorDir(path ...string) string
+	NestorDir(elem ...string) string
 
-	SandboxDir(path ...string) string
+	SandboxDir(elem ...string) string
 
 	ProfileYmlFile() string
 
@@ -81,14 +81,14 @@ func (p *platform) NestorDir(path ...string) string {
 	return filepath.Join(args...)
 }
 
-func (p *platform) SandboxDir(path ...string) string {
+func (p *platform) SandboxDir(elem ...string) string {
 	sbd := filepath.Join(p.nestorDir, "sandbox")
-	if len(path) == 0 {
+	if len(elem) == 0 {
 		return sbd
 	}
 
 	args := []string{sbd}
-	args = append(args, path...)
+	args = append(args, elem...)
 	return filepath.Join(args...)
 }
 
