@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,22 @@ type API interface {
 
 const DefaultLogFile = "nestor.log"
 
+func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer, error) {
+	o := &opts{
+		template: DefaultTemplate(),
+	}
+	for _, v := range options {
+		v.apply(o)
+	}
+
+	if strings.TrimSpace(o.dir) == "" {
+		o.dir = o.platform.NestorDir()
+	}
+	fp := filepath.Join(o.dir, DefaultLogFile)
+
+	return NewLogger(fp, io.Discard, level)
+}
+
 func New(options ...Option) (API, error) {
 	o := &opts{
 		registry: newRegistry(),
@@ -36,6 +53,10 @@ func New(options ...Option) (API, error) {
 	// apply options
 	for _, v := range options {
 		v.apply(o)
+	}
+
+	if strings.TrimSpace(o.dir) == "" {
+		o.dir = o.platform.NestorDir()
 	}
 
 	if o.logger == nil {
@@ -56,10 +77,6 @@ func New(options ...Option) (API, error) {
 
 	if o.newDockerFunc == nil {
 		o.newDockerFunc = newDockerCLI
-	}
-
-	if strings.TrimSpace(o.dir) == "" {
-		o.dir = o.platform.NestorDir()
 	}
 
 	if err := fs.MkdirAll(o.dir); err != nil {
@@ -106,40 +123,7 @@ type api struct {
 
 func (a *api) init() error {
 	a.log.Debug("Init start", slog.String("dir", a.dir))
-
-	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
-	sf := a.platform.SandboxYmlFile()
-	if !fs.HasFile(sf) {
-		if err := fs.CopyFileFS(builtin, "assets/sandbox.yml", sf); err != nil {
-			a.log.Error(err.Error(), slog.Any("error", err))
-			return err
-		}
-		a.log.Info("saved builtin sandbox.yml file", slog.String("path", sf))
-	}
-
-	// if there is no sandbox provided, parse from NESTOR_DIR/sandbox.yml
-	// for other location the caller need to parse manually add pass via WithSandboxSpecs
-	if len(a.registry.SandboxSpecs()) == 0 {
-		yml, err := fs.AtomicReadFile(sf)
-		if err != nil {
-			e := fmt.Errorf("cannot read sandbox.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
-			return e
-		}
-		sbs, err := ParseSandboxSpecs(bytes.NewBuffer(yml))
-		if err != nil {
-			e := fmt.Errorf("cannot parse sandbox.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
-			return e
-		}
-
-		for _, v := range sbs {
-			a.registry.RegisterSandboxSpec(v)
-		}
-		a.log.Info("loaded sandbox specs", slog.String("path", sf))
-	} else {
-		a.log.Info("use sandbox specs from WithSandboxSpecs")
-	}
+	runtime := a.Runtime()
 
 	// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
 	pf := a.platform.ProfileYmlFile()
@@ -176,13 +160,46 @@ func (a *api) init() error {
 	}
 
 	// initialize builtin harnesses
-	runtime := a.Runtime()
 	for _, v := range a.registry.Harnesses() {
 		if err := v.Init(runtime); err != nil {
 			return err
 		}
 	}
 	a.log.Debug("builtin harnesses initialized")
+
+	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
+	sf := a.platform.SandboxYmlFile()
+	if !fs.HasFile(sf) {
+		if err := fs.CopyFileFS(builtin, "assets/sandbox.yml", sf); err != nil {
+			a.log.Error(err.Error(), slog.Any("error", err))
+			return err
+		}
+		a.log.Info("saved builtin sandbox.yml file", slog.String("path", sf))
+	}
+
+	// if there is no sandbox provided, parse from NESTOR_DIR/sandbox.yml
+	// for other location the caller need to parse manually add pass via WithSandboxSpecs
+	if len(a.registry.SandboxSpecs()) == 0 {
+		yml, err := fs.AtomicReadFile(sf)
+		if err != nil {
+			e := fmt.Errorf("cannot read sandbox.yml file: %w", err)
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
+			return e
+		}
+		sbs, err := ParseSandboxSpecs(runtime, bytes.NewBuffer(yml))
+		if err != nil {
+			e := fmt.Errorf("cannot parse sandbox.yml file: %w", err)
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
+			return e
+		}
+
+		for _, v := range sbs {
+			a.registry.RegisterSandboxSpec(v)
+		}
+		a.log.Info("loaded sandbox specs", slog.String("path", sf))
+	} else {
+		a.log.Info("use sandbox specs from WithSandboxSpecs")
+	}
 
 	a.log.Debug("Init done", slog.String("dir", a.dir))
 	return nil

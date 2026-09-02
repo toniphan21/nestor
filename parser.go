@@ -72,7 +72,7 @@ func ParseProfiles(yml io.Reader) ([]Profile, error) {
 
 const sandboxSpecType = "sandbox-spec"
 
-func ParseSandboxSpecs(yml io.Reader) ([]SandboxSpec, error) {
+func ParseSandboxSpecs(runtime Runtime, yml io.Reader) ([]SandboxSpec, error) {
 	return parseYML(yml, sandboxSpecType, func(file *ymlFile[map[string]SandboxSpec]) ([]SandboxSpec, error) {
 		if file == nil {
 			return nil, nil
@@ -81,7 +81,7 @@ func ParseSandboxSpecs(yml io.Reader) ([]SandboxSpec, error) {
 		result := make([]SandboxSpec, 0, len(file.Data))
 		for k, v := range file.Data {
 			v.Name = k
-			if err := v.Validate(); err != nil {
+			if err := v.Validate(runtime); err != nil {
 				return nil, fmt.Errorf("%w: sandbox %q", err, k)
 			}
 			if v.Profile == "" {

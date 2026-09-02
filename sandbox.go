@@ -11,6 +11,8 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
+const DefaultStopContainerTimeout = 2 * time.Second
+
 type Sandbox interface {
 	ID() string
 	Runtime() Runtime
@@ -225,7 +227,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Stop(ctx context.Context) error {
-	panic("implement me")
+	return s.docker.Stop(ctx, s.Container(), DefaultStopContainerTimeout)
 }
 
 func (s *sandboxImpl) Sync(ctx context.Context) error {

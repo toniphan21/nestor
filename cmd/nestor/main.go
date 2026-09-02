@@ -2,21 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
 )
-
-// nestor [view] -d|--dir
-// nestor setup -d|--dir
-// nestor destroy -d|--dir
-// nestor prompt -d|--dir -s|--spec
-// nestor build -d|--dir -s|--spec
-// nestor down -d|--dir
-// nestor proxy -d|--dir
-// nestor view -d|--dir
-// nestor version
 
 var shortDesc = map[string]string{
 	"root":    "Inspect and manage the nestor directory",
@@ -62,14 +57,38 @@ func runWithAPI(fn func(nestor.API, ...string) error) func(cmd *cobra.Command, a
 	return func(cmd *cobra.Command, args []string) error {
 		dir, err := cmd.Flags().GetString("dir")
 		if err != nil {
-			return err
+			fmt.Println(pterm.Red("cannot read the --dir flag ", err.Error()))
+			return nil
 		}
 
-		api, err := nestor.New(nestor.WithDir(dir))
-		if err != nil {
-			return err
+		if strings.TrimSpace(dir) != "" {
+			abs, err := filepath.Abs(dir)
+			if err != nil {
+				fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot resolve absolute path %q", err.Error(), dir)))
+				return nil
+			}
+			dir = abs
 		}
-		return fn(api, args...)
+
+		options := []nestor.Option{nestor.WithDir(dir)}
+		logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)
+		if err != nil {
+			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger %q", err.Error(), dir)))
+			return nil
+		}
+		defer closer.Close()
+
+		api, err := nestor.New(append(options, nestor.WithLogger(logger))...)
+		if err != nil {
+			fmt.Println(pterm.Red("cannot create nestor API: ", err.Error()))
+			return nil
+		}
+
+		err = fn(api, args...)
+		if err != nil {
+			fmt.Println(pterm.Red("Error: ", err.Error()))
+		}
+		return nil
 	}
 }
 
@@ -85,36 +104,40 @@ func printVersion(cmd *cobra.Command, args []string) {
 }
 
 func setup(api nestor.API, args ...string) error {
-	fmt.Println("setup", api.Runtime().Platform.NestorDir())
-	return nil
+	result, err := cli.View(api)
+	if err == nil {
+		result.PrintWithSetupMessage()
+	}
+	return err
 }
 
 func destroy(api nestor.API, args ...string) error {
-	fmt.Println("setup", api.Runtime().Platform.NestorDir())
+	fmt.Println("destroy is not implemented yet", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
 func build(api nestor.API, args ...string) error {
-	fmt.Println("build", api.Runtime().Platform.NestorDir())
-	return nil
+	return cli.Build(api, args)
 }
 
 func prompt(api nestor.API, args ...string) error {
-	fmt.Println("prompt", api.Runtime().Platform.NestorDir())
+	fmt.Println("prompt is not implemented yet", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
 func down(api nestor.API, args ...string) error {
-	fmt.Println("down", api.Runtime().Platform.NestorDir())
-	return nil
+	return cli.Down(api)
 }
 
 func proxy(api nestor.API, args ...string) error {
-	fmt.Println("proxy", api.Runtime().Platform.NestorDir())
+	fmt.Println("proxy is not implemented yet", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
 func view(api nestor.API, args ...string) error {
-	fmt.Println("view", api.Runtime().Platform.NestorDir())
-	return nil
+	result, err := cli.View(api)
+	if err == nil {
+		result.Print()
+	}
+	return err
 }

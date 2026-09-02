@@ -54,7 +54,17 @@ type SandboxSpec struct {
 	Mounts       []SandboxSpecMount `yaml:"mounts"`
 }
 
-func (s *SandboxSpec) Validate() error {
+func (s *SandboxSpec) Validate(runtime Runtime) error {
+	_, p, err := s.findHarnessAndProfile(runtime)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(s.Target) == "" {
+		s.Target = p.DefaultTarget
+	}
+
+	// TODO: continue
 	return nil
 }
 
