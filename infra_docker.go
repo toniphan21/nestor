@@ -14,8 +14,14 @@ type DockerBuildOption struct {
 	Dockerfile string
 }
 
+type DockerMount struct {
+	Source   string
+	Target   string
+	ReadOnly bool
+}
+
 type DockerRunOption struct {
-	Mounts []string
+	Mounts []DockerMount
 }
 
 type NewDockerFunc func(*slog.Logger) Docker
@@ -70,8 +76,12 @@ func (d *dockerCLI) Stop(ctx context.Context, container string, timeout time.Dur
 }
 
 func (d *dockerCLI) Run(ctx context.Context, image, name string, opt DockerRunOption) (string, error) {
+	var mounts []docker.Mount
+	for _, v := range opt.Mounts {
+		mounts = append(mounts, docker.Mount{Source: v.Source, Target: v.Target, ReadOnly: v.ReadOnly})
+	}
 	o := docker.RunOptions{
-		Mounts: opt.Mounts,
+		Mounts: mounts,
 	}
 	return docker.Run(ctx, image, name, o, d.log)
 }

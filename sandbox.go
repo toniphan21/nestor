@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"sort"
+	"strings"
 	"time"
 
+	"github.com/rs/xid"
 	"nhatp.com/go/nestor/infra/fs"
 )
 
 const DefaultStopContainerTimeout = 2 * time.Second
+const DefaultLeaseInitDuration = time.Minute
+const DefaultLeaseExtendDuration = 15 * time.Minute
 
 type Sandbox interface {
 	ID() string
@@ -23,8 +26,9 @@ type Sandbox interface {
 	Harness() Harness
 	Profile() Profile
 	Worktrees() []SandboxWorktree
-	Mounts() []string
-	Leases() []Lease
+	Paths() []string
+	Mounts() []SandboxMount
+	Leases() []*Lease
 	CreatedAt() time.Time
 	UpdatedAt() time.Time
 
@@ -45,7 +49,13 @@ type SandboxWorktree struct {
 	ID            string `yaml:"id"`
 	Repository    string `yaml:"repository"`
 	Dir           string `yaml:"dir"`
-	InitialBranch string `yaml:"initialBranch"`
+	InitialBranch string `yaml:"initial_branch"`
+}
+
+type SandboxMount struct {
+	Host     string `yaml:"host"`
+	Target   string `yaml:"target"`
+	ReadOnly bool   `yaml:"read_only"`
 }
 
 func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*sandboxImpl, error) {
@@ -191,17 +201,43 @@ func (s *sandboxImpl) Worktrees() []SandboxWorktree {
 	return out
 }
 
-func (s *sandboxImpl) Mounts() []string {
-	var out []string
-	for h, c := range s.data.Mounts {
-		out = append(out, fmt.Sprintf("%s:%s", h, c))
+func (s *sandboxImpl) Mounts() []SandboxMount {
+	var out []SandboxMount
+	for _, v := range s.data.Mounts {
+		out = append(out, v)
 	}
-	sort.Strings(out)
 	return out
 }
 
-func (s *sandboxImpl) Leases() []Lease {
-	panic("implement me")
+func (s *sandboxImpl) Paths() []string {
+	var out []string
+	for h, _ := range s.data.Mounts {
+		out = append(out, h)
+	}
+	return out
+}
+
+func (s *sandboxImpl) Leases() []*Lease {
+	var out []*Lease
+	if s.data.Leases == nil {
+		s.data.Leases = make(map[string]leaseData)
+	}
+
+	var save bool
+	for _, ld := range s.data.Leases {
+		if ld.ExpiresAt.Before(time.Now()) {
+			delete(s.data.Leases, ld.Path)
+			save = true
+			continue
+		}
+
+		out = append(out, s.makeLease(ld))
+	}
+
+	if save {
+		_ = s.save(context.Background())
+	}
+	return out
 }
 
 func (s *sandboxImpl) CreatedAt() time.Time {
@@ -219,9 +255,15 @@ func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
 func (s *sandboxImpl) Start(ctx context.Context) error {
 	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
-	_, err := s.docker.Run(ctx, image, container, DockerRunOption{
-		Mounts: s.Mounts(),
-	})
+	options := DockerRunOption{}
+	for _, v := range s.Mounts() {
+		options.Mounts = append(options.Mounts, DockerMount{
+			Source:   v.Host,
+			Target:   v.Host,
+			ReadOnly: v.ReadOnly,
+		})
+	}
+	_, err := s.docker.Run(ctx, image, container, options)
 
 	return err
 }
@@ -260,9 +302,20 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
-	return &Lease{sandbox: s, path: path}, nil
+	workDir, ok := s.resolveWorkDir(path)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q is not under any mount", ErrNotAllowed, path)
+	}
 
-	return nil, ErrNotAvailable
+	if s.data.Leases == nil {
+		s.data.Leases = make(map[string]leaseData)
+	}
+
+	ld, ok := s.data.Leases[path]
+	if !ok || ld.ExpiresAt.Before(time.Now()) {
+		return s.newLease(ctx, path, workDir)
+	}
+	return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
 }
 
 func (s *sandboxImpl) clear(ctx context.Context) error {
@@ -337,20 +390,20 @@ func (s *sandboxImpl) collectMounts(ctx context.Context) error {
 		return err
 	}
 
-	var mounts = make(map[string]string)
+	mounts := make(map[string]SandboxMount)
 	for _, m := range s.spec.Mounts {
-		at, err := m.Target()
+		target, err := m.Target()
 		if err != nil {
 			return err
 		}
-		mounts[m.Path] = at
+		mounts[m.Path] = SandboxMount{Host: m.Path, Target: target, ReadOnly: m.ReadOnly}
 
 		if m.Type == MountTypeGitWorktree {
 			for _, wt := range s.data.Worktree {
 				if wt.Repository != m.Path {
 					continue
 				}
-				mounts[wt.Dir] = fmt.Sprintf("%s:rw", wt.Dir)
+				mounts[wt.Dir] = SandboxMount{Host: wt.Dir, Target: wt.Dir}
 			}
 		}
 	}
@@ -358,4 +411,45 @@ func (s *sandboxImpl) collectMounts(ctx context.Context) error {
 	s.data.Mounts = mounts
 	s.data.HarnessMounts = hm
 	return s.save(ctx)
+}
+
+func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Lease, error) {
+	ld := leaseData{
+		ID:        xid.New().String(),
+		Path:      path,
+		WorkDir:   workDir,
+		Status:    leaseStatusInit,
+		ExpiresAt: time.Now().Add(DefaultLeaseInitDuration),
+	}
+
+	if s.data.Leases == nil {
+		s.data.Leases = make(map[string]leaseData)
+	}
+	s.data.Leases[path] = ld
+
+	if err := s.save(ctx); err != nil {
+		return nil, err
+	}
+	return s.makeLease(ld), nil
+}
+
+func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
+	for _, m := range s.Mounts() {
+		rel, err := filepath.Rel(m.Host, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return filepath.Join(m.Target, rel), true
+	}
+	return "", false
+}
+
+func (s *sandboxImpl) makeLease(ld leaseData) *Lease {
+	return &Lease{
+		id:        ld.ID,
+		hostPath:  ld.Path,
+		workDir:   ld.WorkDir,
+		expiresAt: ld.ExpiresAt,
+		sandbox:   s,
+	}
 }

@@ -2,7 +2,6 @@ package nestor
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -20,11 +19,7 @@ func (m *SandboxSpecMount) Target() (string, error) {
 		if at == "" {
 			at = m.Path
 		}
-		mode := "rw"
-		if m.ReadOnly {
-			mode = "ro"
-		}
-		return at + ":" + mode, nil
+		return at, nil
 
 	case MountTypeGitWorktree:
 		if m.ReadOnly {
@@ -33,7 +28,7 @@ func (m *SandboxSpecMount) Target() (string, error) {
 		if m.At != "" && m.At != m.Path {
 			return "", fmt.Errorf("%w: git_worktree mount %q cannot set at=%q", ErrNotAllowed, m.Path, m.At)
 		}
-		return m.Path + ":rw", nil
+		return m.Path, nil
 
 	default:
 		return "", fmt.Errorf("%w: mount %q has type %q", ErrNotSupported, m.Path, m.Type)
@@ -66,17 +61,6 @@ func (s *SandboxSpec) Validate(runtime Runtime) error {
 
 	// TODO: continue
 	return nil
-}
-
-func (s *SandboxSpec) Resolve(workDir string) (string, bool) {
-	for _, m := range s.Mounts {
-		rel, err := filepath.Rel(m.Path, workDir)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		return filepath.Join(m.At, rel), true
-	}
-	return "", false
 }
 
 func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {

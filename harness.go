@@ -14,5 +14,5 @@ type Harness interface {
 
 	Init(runtime Runtime) error
 
-	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]string, error)
+	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error)
 }

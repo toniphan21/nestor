@@ -15,14 +15,26 @@ type sandboxData struct {
 	ID            string                     `yaml:"id"`
 	Spec          string                     `yaml:"spec"`
 	Worktree      map[string]SandboxWorktree `yaml:"worktree,omitempty"`
-	Mounts        map[string]string          `yaml:"mounts,omitempty"`
-	HarnessMounts map[string]string          `yaml:"harness_mounts,omitempty"`
+	Mounts        map[string]SandboxMount    `yaml:"mounts,omitempty"`
+	HarnessMounts map[string]SandboxMount    `yaml:"harness_mounts,omitempty"`
+	Leases        map[string]leaseData       `yaml:"leases,omitempty"`
 	CreatedAt     time.Time                  `yaml:"created_at"`
 	UpdatedAt     time.Time                  `yaml:"updated_at"`
 }
 
+type leaseData struct {
+	ID        string    `yaml:"id"`
+	Path      string    `yaml:"path"`
+	WorkDir   string    `yaml:"work_dir"`
+	Status    string    `yaml:"status"`
+	ExpiresAt time.Time `yaml:"expires_at"`
+}
+
 const sandboxType = "sandbox"
 const sandboxDataFileName = "data.yml"
+
+const leaseStatusInit = "init"
+const leaseStatusRunning = "running"
 
 func (s *sandboxData) save(ctx context.Context, dir string) error {
 	s.UpdatedAt = time.Now()

@@ -15,27 +15,27 @@ func TestSandboxMountTarget(t *testing.T) {
 		{
 			name:  "direct rw",
 			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src"},
-			want:  "/src:rw",
+			want:  "/src",
 		},
 		{
 			name:  "direct ro",
 			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src", ReadOnly: true},
-			want:  "/src:ro",
+			want:  "/src",
 		},
 		{
 			name:  "direct with at",
 			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src", At: "/work"},
-			want:  "/work:rw",
+			want:  "/work",
 		},
 		{
 			name:  "worktree",
 			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src"},
-			want:  "/src:rw",
+			want:  "/src",
 		},
 		{
 			name:  "worktree with same at",
 			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src", At: "/src"},
-			want:  "/src:rw",
+			want:  "/src",
 		},
 		{
 			name:  "worktree read-only",

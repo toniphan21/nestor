@@ -80,15 +80,18 @@ func (h *harnessClaude) Syncers(runtime Runtime, profile Profile) []Syncer {
 	return []Syncer{s}
 }
 
-func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]string, error) {
+func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error) {
 	// .claude and .claude.json is copied from profile options to the sandbox.Dir() in Syncer
 	ch := profile.Options["container-home-dir"]
 	if ch == "" {
 		ch = "/"
 	}
-	mounts := map[string]string{
-		sandbox.Dir(".claude"):      filepath.Join(ch, ".claude:rw"),
-		sandbox.Dir(".claude.json"): filepath.Join(ch, ".claude.json:rw"),
+
+	cd := sandbox.Dir(".claude")
+	cj := sandbox.Dir(".claude.json")
+	mounts := map[string]SandboxMount{
+		cd: {Host: cd, Target: filepath.Join(ch, ".claude:rw")},
+		cj: {Host: cj, Target: filepath.Join(ch, ".claude.json:rw")},
 	}
 	return mounts, nil
 }

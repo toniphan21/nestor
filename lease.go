@@ -8,7 +8,8 @@ import (
 
 type Lease struct {
 	id        string
-	path      string
+	hostPath  string
+	workDir   string
 	expiresAt time.Time
 	sandbox   Sandbox
 }
@@ -17,8 +18,12 @@ func (l *Lease) Sandbox() Sandbox {
 	return l.sandbox
 }
 
-func (l *Lease) Path() string {
-	return l.path
+func (l *Lease) HostPath() string {
+	return l.hostPath
+}
+
+func (l *Lease) WorkDir() string {
+	return l.workDir
 }
 
 func (l *Lease) ExpiresAt() time.Time {

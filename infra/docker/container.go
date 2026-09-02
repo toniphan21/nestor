@@ -80,14 +80,27 @@ func Stop(ctx context.Context, container string, timeout time.Duration, logger *
 	return nil
 }
 
+type Mount struct {
+	Source   string
+	Target   string
+	ReadOnly bool
+}
+
+func (m Mount) arg() string {
+	if m.ReadOnly {
+		return fmt.Sprintf("%s:%s:ro", m.Source, m.Target)
+	}
+	return fmt.Sprintf("%s:%s:rw", m.Source, m.Target)
+}
+
 type RunOptions struct {
-	Mounts []string
+	Mounts []Mount
 }
 
 func Run(ctx context.Context, image, name string, options RunOptions, logger *slog.Logger) (string, error) {
 	args := []string{"run", "--rm", "-d", "--name", name}
 	for _, m := range options.Mounts {
-		args = append(args, "-v", m)
+		args = append(args, "-v", m.arg())
 	}
 	args = append(args, image)
 
