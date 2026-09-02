@@ -1,13 +1,15 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
 )
 
 func main() {
@@ -17,57 +19,26 @@ func main() {
 	}
 
 	dir := filepath.Join(home, "github", "toniphan21", "nestor", "work", ".nestor")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Fatalf("cannot make dir: %e", err)
-	}
 
-	ctx := context.Background()
-
-	logger, closer, err := nestor.NewCLILogger(
-		filepath.Join(dir, nestor.DefaultLogFile), os.Stdout, slog.LevelDebug,
-	)
+	options := []nestor.Option{nestor.WithDir(dir)}
+	logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)
 	if err != nil {
+		fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger %q", err.Error(), dir)))
 		log.Fatal(err)
 	}
 	defer closer.Close()
 
-	api, err := nestor.New(
-		nestor.WithDir(dir),
-		nestor.WithLogger(logger),
-	)
+	api, err := nestor.New(append(options, nestor.WithLogger(logger))...)
 	if err != nil {
+		fmt.Println(pterm.Red("cannot create nestor API: ", err.Error()))
 		log.Fatal(err)
 	}
 
-	lease, err := api.Acquire(ctx, "claude-go", "/Users/nhatp/github/toniphan21/nestor/work/chats")
+	spec := "claude-go"
+	path := "/Users/nhatp/github/toniphan21/nestor/work/chats"
+	prompt := "test"
+	err = cli.DoPrompt(api, spec, path, prompt)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	_, err = lease.Run(ctx, "test", nestor.ExecIO{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//if err := api.Build(ctx, "claude-go"); err != nil {
-	//	log.Fatal(err)
-	//}
-	//
-	//sb, err := api.CreateSandbox(ctx, "claude-go")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//fmt.Println(sb)
-	//
-	//sandboxes, err := api.ListSandboxes(ctx)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//for _, sandbox := range sandboxes {
-	//	fmt.Println(sandbox)
-	//	//if err := sandbox.Delete(ctx); err != nil {
-	//	//	logger.Error(err.Error())
-	//	//	log.Fatal(err)
-	//	//}
-	//}
 }

@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -93,11 +94,11 @@ func (m Mount) arg() string {
 	return fmt.Sprintf("%s:%s:rw", m.Source, m.Target)
 }
 
-type RunOptions struct {
+type RunOption struct {
 	Mounts []Mount
 }
 
-func Run(ctx context.Context, image, name string, options RunOptions, logger *slog.Logger) (string, error) {
+func Run(ctx context.Context, image, name string, options RunOption, logger *slog.Logger) (string, error) {
 	args := []string{"run", "--rm", "-d", "--name", name}
 	for _, m := range options.Mounts {
 		args = append(args, "-v", m.arg())
@@ -121,30 +122,44 @@ func Run(ctx context.Context, image, name string, options RunOptions, logger *sl
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-//func Exec(ctx context.Context, container string, argv []string, out ExecIO) (int, error) {
-//	cmd := exec.Command("docker", append([]string{"exec", "-i", container}, argv...)...)
-//	cmd.Stdout = out.Stdout
-//	cmd.Stderr = out.Stderr
-//
-//	if err := cmd.Start(); err != nil {
-//		return -1, fmt.Errorf("%w: docker exec: %w", ErrExec, err)
-//	}
-//
-//	done := make(chan error, 1)
-//	go func() { done <- cmd.Wait() }()
-//
-//	select {
-//	case err := <-done:
-//		var ee *exec.ExitError
-//		if errors.As(err, &ee) {
-//			return ee.ExitCode(), nil // command failed; not a nestor failure
-//		}
-//		return 0, err
-//
-//	case <-ctx.Done():
-//		// killing the client leaves the inner process alive
-//		d.stop(context.WithoutCancel(ctx), container)
-//		<-done
-//		return -1, ctx.Err()
-//	}
-//}
+type ExecOption struct {
+	WorkDir string
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
+func Exec(ctx context.Context, container string, commands []string, opts ExecOption, logger *slog.Logger) (int, error) {
+	args := []string{
+		"exec",
+	}
+	if opts.WorkDir != "" {
+		args = append(args, "--workdir", opts.WorkDir)
+	}
+	args = append(args, container)
+	args = append(args, commands...)
+
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = opts.Stdout
+	cmd.Stderr = opts.Stderr
+
+	fmt.Println(cmd.String())
+
+	if err := cmd.Start(); err != nil {
+		return -1, fmt.Errorf("%w: docker exec: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case err := <-done:
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+			return ee.ExitCode(), nil // command failed; not a nestor failure
+		}
+		return 0, err
+
+	case <-ctx.Done():
+		<-done
+		return -1, ctx.Err()
+	}
+}

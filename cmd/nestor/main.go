@@ -121,8 +121,7 @@ func build(api nestor.API, args ...string) error {
 }
 
 func prompt(api nestor.API, args ...string) error {
-	fmt.Println("prompt is not implemented yet", api.Runtime().Platform.NestorDir())
-	return nil
+	return cli.Prompt(api, args)
 }
 
 func down(api nestor.API, args ...string) error {

@@ -136,10 +136,6 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 		return nil, err
 	}
 
-	if err = sandbox.collectMounts(ctx); err != nil {
-		_ = sandbox.clear(ctx)
-		return nil, err
-	}
 	return sandbox, nil
 }
 
@@ -253,13 +249,17 @@ func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
 }
 
 func (s *sandboxImpl) Start(ctx context.Context) error {
+	if err := s.Sync(ctx); err != nil {
+		return err
+	}
+
 	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
 	options := DockerRunOption{}
 	for _, v := range s.Mounts() {
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
-			Target:   v.Host,
+			Target:   v.Target,
 			ReadOnly: v.ReadOnly,
 		})
 	}
@@ -278,6 +278,10 @@ func (s *sandboxImpl) Sync(ctx context.Context) error {
 		if err := v.Sync(ctx, s); err != nil {
 			return err
 		}
+	}
+
+	if err := s.collectMounts(ctx); err != nil {
+		return err
 	}
 	return nil
 }

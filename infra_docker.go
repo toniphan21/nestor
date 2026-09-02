@@ -2,6 +2,7 @@ package nestor
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"time"
 
@@ -24,6 +25,12 @@ type DockerRunOption struct {
 	Mounts []DockerMount
 }
 
+type DockerExecOption struct {
+	WorkDir string
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
 type NewDockerFunc func(*slog.Logger) Docker
 
 type Docker interface {
@@ -38,6 +45,8 @@ type Docker interface {
 	Stop(ctx context.Context, container string, timeout time.Duration) error
 
 	Run(ctx context.Context, image, name string, opt DockerRunOption) (string, error)
+
+	Exec(ctx context.Context, container string, commands []string, opt DockerExecOption) (int, error)
 }
 
 func newDockerCLI(logger *slog.Logger) Docker {
@@ -51,7 +60,7 @@ type dockerCLI struct {
 }
 
 func (d *dockerCLI) Build(ctx context.Context, path string, opt DockerBuildOption) (string, error) {
-	o := docker.BuildOptions{
+	o := docker.BuildOption{
 		Target:     opt.Target,
 		Tag:        opt.Tag,
 		Dockerfile: opt.Dockerfile,
@@ -80,10 +89,19 @@ func (d *dockerCLI) Run(ctx context.Context, image, name string, opt DockerRunOp
 	for _, v := range opt.Mounts {
 		mounts = append(mounts, docker.Mount{Source: v.Source, Target: v.Target, ReadOnly: v.ReadOnly})
 	}
-	o := docker.RunOptions{
+	o := docker.RunOption{
 		Mounts: mounts,
 	}
 	return docker.Run(ctx, image, name, o, d.log)
+}
+
+func (d *dockerCLI) Exec(ctx context.Context, container string, commands []string, opt DockerExecOption) (int, error) {
+	options := docker.ExecOption{
+		WorkDir: opt.WorkDir,
+		Stdout:  opt.Stdout,
+		Stderr:  opt.Stderr,
+	}
+	return docker.Exec(ctx, container, commands, options, d.log)
 }
 
 var _ Docker = (*dockerCLI)(nil)

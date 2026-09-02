@@ -21,13 +21,13 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-type BuildOptions struct {
+type BuildOption struct {
 	Target     string
 	Tag        string
 	Dockerfile string
 }
 
-func Build(ctx context.Context, path string, options BuildOptions, logger *slog.Logger) (string, error) {
+func Build(ctx context.Context, path string, options BuildOption, logger *slog.Logger) (string, error) {
 	iidPath := filepath.Join(path, ".iid")
 
 	args := []string{"build", "--progress=plain", "--iidfile", iidPath}

@@ -78,4 +78,9 @@ func (n *noopDocker) Run(ctx context.Context, image, name string, opt DockerRunO
 	return "", nil
 }
 
+func (n *noopDocker) Exec(ctx context.Context, container string, commands []string, opt DockerExecOption) (int, error) {
+	n.log.Debug("Exec", slog.String("container", container), slog.Any("commands", commands), slog.Any("opt", opt))
+	return 0, nil
+}
+
 var _ Docker = (*noopDocker)(nil)
