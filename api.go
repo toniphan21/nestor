@@ -7,26 +7,28 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"nhatp.com/go/nestor/infra/fs"
 )
 
 type API interface {
-	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
+	Runtime() Runtime
 
 	Build(ctx context.Context, specs ...string) error
 
 	ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, error)
 
 	CreateSandbox(ctx context.Context, spec string) (Sandbox, error)
+
+	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
 }
 
 const DefaultLogFile = "nestor.log"
 
 func New(options ...Option) (API, error) {
 	o := &opts{
-		logger:   slog.New(slog.DiscardHandler),
 		registry: newRegistry(),
 		template: DefaultTemplate(),
 	}
@@ -34,6 +36,10 @@ func New(options ...Option) (API, error) {
 	// apply options
 	for _, v := range options {
 		v.apply(o)
+	}
+
+	if o.logger == nil {
+		o.logger = slog.New(slog.DiscardHandler)
 	}
 
 	if o.platform == nil {
@@ -52,7 +58,7 @@ func New(options ...Option) (API, error) {
 		o.newDockerFunc = newDockerCLI
 	}
 
-	if o.dir == "" {
+	if strings.TrimSpace(o.dir) == "" {
 		o.dir = o.platform.NestorDir()
 	}
 
@@ -96,17 +102,6 @@ type api struct {
 	docker        Docker
 	logger        *slog.Logger
 	log           *slog.Logger
-}
-
-func (a *api) makeRuntime() Runtime {
-	return Runtime{
-		Registry:      a.registry,
-		Platform:      a.platform,
-		Template:      a.template,
-		Logger:        a.logger,
-		newGitFunc:    a.newGitFunc,
-		newDockerFunc: a.newDockerFunc,
-	}
 }
 
 func (a *api) init() error {
@@ -181,7 +176,7 @@ func (a *api) init() error {
 	}
 
 	// initialize builtin harnesses
-	runtime := a.makeRuntime()
+	runtime := a.Runtime()
 	for _, v := range a.registry.Harnesses() {
 		if err := v.Init(runtime); err != nil {
 			return err
@@ -193,9 +188,20 @@ func (a *api) init() error {
 	return nil
 }
 
+func (a *api) Runtime() Runtime {
+	return Runtime{
+		Registry:      a.registry,
+		Platform:      a.platform,
+		Template:      a.template,
+		Logger:        a.logger,
+		newGitFunc:    a.newGitFunc,
+		newDockerFunc: a.newDockerFunc,
+	}
+}
+
 func (a *api) Build(ctx context.Context, specs ...string) error {
 	a.log.Debug("Build start", slog.String("dir", a.dir))
-	runtime := a.makeRuntime()
+	runtime := a.Runtime()
 
 	var selected = make(map[string]bool)
 	if len(specs) == 0 {
@@ -213,7 +219,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 			continue
 		}
 
-		_, profile, err := spec.resolveHarness(runtime)
+		_, profile, err := spec.findHarnessAndProfile(runtime)
 		if err != nil {
 			return err
 		}
@@ -222,7 +228,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		options := DockerBuildOption{
 			Dockerfile: profile.Dockerfile,
 			Target:     spec.Target,
-			Tag:        a.template.makeSandboxTag(spec.Name),
+			Tag:        a.template.MakeSandboxTag(spec.Name),
 		}
 
 		if _, err = a.docker.Build(ctx, buildPath, options); err != nil {
@@ -268,7 +274,7 @@ func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandb
 		return nil, err
 	}
 
-	runtime := a.makeRuntime()
+	runtime := a.Runtime()
 	for _, v := range dirs {
 		dir := a.platform.SandboxDir(v)
 		sb, err := parseSandbox(runtime, dir)
@@ -310,7 +316,7 @@ func (a *api) createSandboxLocked(ctx context.Context, spec string) (Sandbox, er
 		return nil, fmt.Errorf("%w: exceed maximum instances", ErrNotAllowed)
 	}
 
-	sandbox, err := newSandbox(ctx, a.makeRuntime(), ss)
+	sandbox, err := newSandbox(ctx, a.Runtime(), ss)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +333,7 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, spec)
 	}
 
-	if !a.docker.HasImage(ctx, a.template.makeSandboxTag(ss.Name)) {
+	if !a.docker.HasImage(ctx, a.template.MakeSandboxTag(ss.Name)) {
 		a.log.Debug("no image, build fresh one", slog.String("dir", a.dir))
 		if err := a.Build(ctx, spec); err != nil {
 			return nil, err

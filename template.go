@@ -58,7 +58,7 @@ type Template struct {
 	picker           *agentAliasPicker
 }
 
-func (t *Template) makeSandboxID(exists []string) (string, error) {
+func (t *Template) MakeSandboxID(exists []string) (string, error) {
 	taken := make(map[string]struct{}, len(exists))
 	for _, e := range exists {
 		taken[e] = struct{}{}
@@ -70,7 +70,7 @@ func (t *Template) makeSandboxID(exists []string) (string, error) {
 			return id, nil
 		}
 	}
-	return "", fmt.Errorf("nestor: Template.makeSandboxID no free id after 100 attempts")
+	return "", fmt.Errorf("nestor: Template.MakeSandboxID no free id after 100 attempts")
 }
 
 func (t *Template) genSandboxID() string {
@@ -94,7 +94,7 @@ func (t *Template) genRand(template string, defaultLen int) string {
 	return t.rand(length, parts[1])
 }
 
-func (t *Template) makeSandboxTag(specName string) string {
+func (t *Template) MakeSandboxTag(specName string) string {
 	return t.fillTemplate(t.SandboxTag, map[string]string{
 		"[sandbox-name]": specName,
 		"[sandboxName]":  specName,
@@ -104,7 +104,7 @@ func (t *Template) makeSandboxTag(specName string) string {
 	})
 }
 
-func (t *Template) makeWorktreeID(repository string) string {
+func (t *Template) MakeWorktreeID(repository string) string {
 	abs, err := filepath.Abs(repository)
 	if err != nil {
 		abs = filepath.Clean(repository)
@@ -125,7 +125,7 @@ func (t *Template) makeWorktreeID(repository string) string {
 	})
 }
 
-func (t *Template) makeInitialBranch(sandboxID string, dir string) string {
+func (t *Template) MakeInitialBranch(sandboxID string, dir string) string {
 	hash := t.hashPath(dir)
 	return t.fillTemplate(t.InitialBranch, map[string]string{
 		"[sandbox]": sandboxID,
@@ -137,14 +137,14 @@ func (t *Template) makeInitialBranch(sandboxID string, dir string) string {
 	})
 }
 
-func (t *Template) makeSandboxContainer(sandboxID string) string {
+func (t *Template) MakeSandboxContainer(sandboxID string) string {
 	return t.fillTemplate(t.SandboxContainer, map[string]string{
 		"[id]": sandboxID,
 		"$id":  sandboxID,
 	})
 }
 
-func (t *Template) makeAgentID() string {
+func (t *Template) MakeAgentID() string {
 	id := t.genRand(t.AgentSuffix, DefaultSandboxIDLength)
 	alias := t.picker.pick()
 	return t.fillTemplate(t.AgentID, map[string]string{

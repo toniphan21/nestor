@@ -6,14 +6,14 @@ import (
 	"strings"
 )
 
-type SandboxMount struct {
+type SandboxSpecMount struct {
 	Type     mountType `yaml:"type"`
 	Path     string    `yaml:"path"`
 	At       string    `yaml:"at,omitempty"`
 	ReadOnly bool      `yaml:"read_only"`
 }
 
-func (m *SandboxMount) Target() (string, error) {
+func (m *SandboxSpecMount) Target() (string, error) {
 	switch m.Type {
 	case MountTypeDirect:
 		at := m.At
@@ -46,12 +46,12 @@ const MountTypeDirect = mountType("direct")
 const MountTypeGitWorktree = mountType("git_worktree")
 
 type SandboxSpec struct {
-	Name         string         `yaml:"-"`
-	Harness      harness        `yaml:"harness"`
-	Profile      string         `yaml:"profile,omitempty"`
-	Target       string         `yaml:"target"`
-	MaxInstances int            `yaml:"max_instances"`
-	Mounts       []SandboxMount `yaml:"mounts"`
+	Name         string             `yaml:"-"`
+	Harness      harness            `yaml:"harness"`
+	Profile      string             `yaml:"profile,omitempty"`
+	Target       string             `yaml:"target"`
+	MaxInstances int                `yaml:"max_instances"`
+	Mounts       []SandboxSpecMount `yaml:"mounts"`
 }
 
 func (s *SandboxSpec) Validate() error {
@@ -69,7 +69,7 @@ func (s *SandboxSpec) Resolve(workDir string) (string, bool) {
 	return "", false
 }
 
-func (s *SandboxSpec) resolveHarness(runtime Runtime) (Harness, Profile, error) {
+func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {
 	h, have := runtime.Registry.Harness(string(s.Harness))
 	if !have {
 		return nil, Profile{}, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)

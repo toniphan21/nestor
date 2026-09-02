@@ -8,48 +8,48 @@ import (
 func TestSandboxMountTarget(t *testing.T) {
 	tests := []struct {
 		name  string
-		mount SandboxMount
+		mount SandboxSpecMount
 		want  string
 		err   error
 	}{
 		{
 			name:  "direct rw",
-			mount: SandboxMount{Type: MountTypeDirect, Path: "/src"},
+			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src"},
 			want:  "/src:rw",
 		},
 		{
 			name:  "direct ro",
-			mount: SandboxMount{Type: MountTypeDirect, Path: "/src", ReadOnly: true},
+			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src", ReadOnly: true},
 			want:  "/src:ro",
 		},
 		{
 			name:  "direct with at",
-			mount: SandboxMount{Type: MountTypeDirect, Path: "/src", At: "/work"},
+			mount: SandboxSpecMount{Type: MountTypeDirect, Path: "/src", At: "/work"},
 			want:  "/work:rw",
 		},
 		{
 			name:  "worktree",
-			mount: SandboxMount{Type: MountTypeGitWorktree, Path: "/src"},
+			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src"},
 			want:  "/src:rw",
 		},
 		{
 			name:  "worktree with same at",
-			mount: SandboxMount{Type: MountTypeGitWorktree, Path: "/src", At: "/src"},
+			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src", At: "/src"},
 			want:  "/src:rw",
 		},
 		{
 			name:  "worktree read-only",
-			mount: SandboxMount{Type: MountTypeGitWorktree, Path: "/src", ReadOnly: true},
+			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src", ReadOnly: true},
 			err:   ErrNotAllowed,
 		},
 		{
 			name:  "worktree with different at",
-			mount: SandboxMount{Type: MountTypeGitWorktree, Path: "/src", At: "/work"},
+			mount: SandboxSpecMount{Type: MountTypeGitWorktree, Path: "/src", At: "/work"},
 			err:   ErrNotAllowed,
 		},
 		{
 			name:  "unknown type",
-			mount: SandboxMount{Type: mountType("bogus"), Path: "/src"},
+			mount: SandboxSpecMount{Type: mountType("bogus"), Path: "/src"},
 			err:   ErrNotSupported,
 		},
 	}

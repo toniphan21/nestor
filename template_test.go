@@ -12,14 +12,14 @@ func TestTemplate_makeAgentName_stressTest(t *testing.T) {
 	template := DefaultTemplate()
 	n := 10_000_000
 	for i := 0; i < n; i++ {
-		name := template.makeAgentID()
+		name := template.MakeAgentID()
 		_, have := taken[name]
 		if have {
 			t.Fatalf("agent name collision at %d when doing n=%d", i, n)
 		}
 		taken[name] = struct{}{}
 	}
-	fmt.Println(template.makeAgentID())
+	fmt.Println(template.MakeAgentID())
 }
 
 func TestTemplate_sanitize(t *testing.T) {

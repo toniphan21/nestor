@@ -8,7 +8,8 @@ const AuthAPIKey = auth("api_key")
 type Profile struct {
 	Name          string              `yaml:"-"`
 	Auth          auth                `yaml:"auth"`
-	Env           map[string]string   `yaml:"env,omitempty"`
+	Proxy         bool                `yaml:"proxy"`
+	Settings      map[string]string   `yaml:"settings,omitempty"`
 	Dockerfile    string              `yaml:"dockerfile,omitempty"`
 	Targets       []string            `yaml:"targets"`
 	Models        map[string][]string `yaml:"models"` // name -> aliases

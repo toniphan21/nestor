@@ -47,7 +47,7 @@ type SandboxWorktree struct {
 }
 
 func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*sandboxImpl, error) {
-	h, p, err := spec.resolveHarness(runtime)
+	h, p, err := spec.findHarnessAndProfile(runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 		return nil, err
 	}
 
-	id, err := runtime.Template.makeSandboxID(taken)
+	id, err := runtime.Template.MakeSandboxID(taken)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (s *sandboxImpl) Dir(elem ...string) string {
 }
 
 func (s *sandboxImpl) Tag() string {
-	return s.runtime.Template.makeSandboxTag(s.spec.Name)
+	return s.runtime.Template.MakeSandboxTag(s.spec.Name)
 }
 
 func (s *sandboxImpl) Spec() SandboxSpec {
@@ -170,7 +170,7 @@ func (s *sandboxImpl) Spec() SandboxSpec {
 }
 
 func (s *sandboxImpl) Container() string {
-	return s.runtime.Template.makeSandboxContainer(s.ID())
+	return s.runtime.Template.MakeSandboxContainer(s.ID())
 }
 
 func (s *sandboxImpl) Harness() Harness {
@@ -215,8 +215,8 @@ func (s *sandboxImpl) IsRunning(ctx context.Context) bool {
 }
 
 func (s *sandboxImpl) Start(ctx context.Context) error {
-	image := s.runtime.Template.makeSandboxTag(s.spec.Name)
-	container := s.runtime.Template.makeSandboxContainer(s.ID())
+	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
+	container := s.runtime.Template.MakeSandboxContainer(s.ID())
 	_, err := s.docker.Run(ctx, image, container, DockerRunOption{
 		Mounts: s.Mounts(),
 	})
@@ -288,14 +288,14 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 
 	for _, m := range s.spec.Mounts {
 		if m.Type == MountTypeGitWorktree {
-			id := s.runtime.Template.makeWorktreeID(m.Path)
+			id := s.runtime.Template.MakeWorktreeID(m.Path)
 			wtDir := filepath.Join(s.Dir(), id)
 
 			wt := SandboxWorktree{
 				ID:            id,
 				Dir:           wtDir,
 				Repository:    m.Path,
-				InitialBranch: s.runtime.Template.makeInitialBranch(s.ID(), wtDir),
+				InitialBranch: s.runtime.Template.MakeInitialBranch(s.ID(), wtDir),
 			}
 
 			err := s.git.AddWorktree(ctx, wt.Repository, wt.Dir, wt.InitialBranch)
