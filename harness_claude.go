@@ -100,6 +100,24 @@ func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox
 	return mounts, nil
 }
 
+func (h *harnessClaude) ExecCommand(ctx context.Context, promptPath string, profile Profile, model string) []string {
+	cmd := []string{
+		"claude",
+		"--dangerously-skip-permissions",
+		"--output-format stream-json",
+		"--verbose",
+	}
+
+	model = profile.Model(model)
+	if model != "" {
+		cmd = append(cmd, "--model", model)
+	}
+
+	cmd = append(cmd, "--print")
+	cmd = append(cmd, "<", promptPath)
+	return cmd
+}
+
 var _ Harness = (*harnessClaude)(nil)
 
 type harnessClaudeSyncer struct {

@@ -15,6 +15,7 @@ import (
 const DefaultStopContainerTimeout = 2 * time.Second
 const DefaultLeaseInitDuration = time.Minute
 const DefaultLeaseExtendDuration = 15 * time.Minute
+const SandboxRunsTargetPath = "/sandbox/runs"
 
 type Sandbox interface {
 	ID() string
@@ -69,14 +70,15 @@ func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*san
 	rt.Logger = log
 
 	sb := &sandboxImpl{
-		data:    data,
-		runtime: rt,
-		spec:    spec,
-		harness: h,
-		profile: p,
-		git:     rt.newGitFunc(log),
-		docker:  rt.newDockerFunc(log),
-		log:     log,
+		data:     data,
+		runtime:  rt,
+		spec:     spec,
+		harness:  h,
+		profile:  p,
+		git:      rt.newGitFunc(log),
+		docker:   rt.newDockerFunc(log),
+		log:      log,
+		leaseLog: runtime.Logger.With("layer", "lease"),
 	}
 	return sb, nil
 }
@@ -140,14 +142,15 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 }
 
 type sandboxImpl struct {
-	data    *sandboxData
-	runtime Runtime
-	spec    SandboxSpec
-	harness Harness
-	profile Profile
-	git     Git
-	docker  Docker
-	log     *slog.Logger
+	data     *sandboxData
+	runtime  Runtime
+	spec     SandboxSpec
+	harness  Harness
+	profile  Profile
+	git      Git
+	docker   Docker
+	log      *slog.Logger
+	leaseLog *slog.Logger
 }
 
 func (s *sandboxImpl) ID() string {
@@ -227,7 +230,7 @@ func (s *sandboxImpl) Leases() []*Lease {
 			continue
 		}
 
-		out = append(out, s.makeLease(ld))
+		out = append(out, &Lease{data: ld, sandbox: s, log: s.leaseLog})
 	}
 
 	if save {
@@ -256,6 +259,8 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
 	options := DockerRunOption{}
+
+	// mounts from spec
 	for _, v := range s.data.Mounts {
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
@@ -263,6 +268,8 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 			ReadOnly: v.ReadOnly,
 		})
 	}
+
+	// mounts from harness
 	for _, v := range s.data.HarnessMounts {
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
@@ -270,6 +277,18 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 			ReadOnly: v.ReadOnly,
 		})
 	}
+
+	// mounts for the sandbox
+	runsPath := s.Dir("runs")
+	if err := fs.MkdirAll(runsPath); err != nil {
+		return fmt.Errorf("nestor: cannot make sandbox/runs dir: %w", err)
+	}
+
+	options.Mounts = append(options.Mounts, DockerMount{
+		Source: runsPath,
+		Target: SandboxRunsTargetPath,
+	})
+
 	_, err := s.docker.Run(ctx, image, container, options)
 
 	return err
@@ -429,8 +448,8 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 		ID:        xid.New().String(),
 		Path:      path,
 		WorkDir:   workDir,
-		Status:    leaseStatusInit,
 		ExpiresAt: time.Now().Add(DefaultLeaseInitDuration),
+		CreatedAt: time.Now(),
 	}
 
 	if s.data.Leases == nil {
@@ -441,7 +460,7 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 	if err := s.save(ctx); err != nil {
 		return nil, err
 	}
-	return s.makeLease(ld), nil
+	return &Lease{data: ld, sandbox: s, log: s.leaseLog}, nil
 }
 
 func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
@@ -453,14 +472,4 @@ func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
 		return filepath.Join(m.Target, rel), true
 	}
 	return "", false
-}
-
-func (s *sandboxImpl) makeLease(ld leaseData) *Lease {
-	return &Lease{
-		id:        ld.ID,
-		hostPath:  ld.Path,
-		workDir:   ld.WorkDir,
-		expiresAt: ld.ExpiresAt,
-		sandbox:   s,
-	}
 }

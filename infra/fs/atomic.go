@@ -2,6 +2,7 @@ package fs
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -21,6 +22,10 @@ func AtomicWriteFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func CreateFile(path string) (io.WriteCloser, error) {
+	return os.Create(path)
 }
 
 func WriteFile(path string, data []byte) error {

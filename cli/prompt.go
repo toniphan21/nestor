@@ -93,7 +93,7 @@ func DoPrompt(api nestor.API, spec, path, prompt string) error {
 		return fmt.Errorf("extend lease: %w", err)
 	}
 
-	_, err = lease.Run(ctx, prompt, nestor.ExecIO{
+	_, err = lease.Run(ctx, prompt, nestor.RunOption{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	})

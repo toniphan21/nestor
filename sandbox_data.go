@@ -26,15 +26,12 @@ type leaseData struct {
 	ID        string    `yaml:"id"`
 	Path      string    `yaml:"path"`
 	WorkDir   string    `yaml:"work_dir"`
-	Status    string    `yaml:"status"`
 	ExpiresAt time.Time `yaml:"expires_at"`
+	CreatedAt time.Time `yaml:"created_at"`
 }
 
 const sandboxType = "sandbox"
 const sandboxDataFileName = "data.yml"
-
-const leaseStatusInit = "init"
-const leaseStatusRunning = "running"
 
 func (s *sandboxData) save(ctx context.Context, dir string) error {
 	s.UpdatedAt = time.Now()

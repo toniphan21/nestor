@@ -1,15 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
-	"nhatp.com/go/nestor/cli"
 )
 
 func main() {
@@ -34,11 +35,51 @@ func main() {
 		log.Fatal(err)
 	}
 
+	ctx := context.Background()
 	spec := "claude-go"
 	path := "/Users/nhatp/github/toniphan21/nestor/work/chats"
-	prompt := "test"
-	err = cli.DoPrompt(api, spec, path, prompt)
+	prompt := "what is golang?"
+
+	lease, err := api.Acquire(ctx, spec, path)
+	if err != nil {
+		log.Fatal(fmt.Errorf("acquire lease: %w", err))
+	}
+	if err = lease.Extend(ctx); err != nil {
+		log.Fatal(fmt.Errorf("extend lease: %w", err))
+	}
+
+	// read the output via Stdout
+	reader := exec.Command("claude-chat-reader")
+	w, err := reader.StdinPipe()
+
 	if err != nil {
 		log.Fatal(err)
 	}
+	reader.Stdout = os.Stdout
+	reader.Stderr = os.Stderr
+
+	if err := reader.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	_, runErr := lease.Run(ctx, prompt, nestor.RunOption{
+		Model:  "haiku",
+		Stdout: w,
+		Stderr: os.Stderr,
+	})
+
+	w.Close()
+	readerErr := reader.Wait()
+
+	err = lease.Release(ctx)
+	if err != nil {
+		log.Fatal(fmt.Errorf("release lease: %w", err))
+	}
+	if runErr != nil {
+		log.Fatal(fmt.Errorf("run lease: %w", err))
+	}
+	if readerErr != nil {
+		log.Fatal(fmt.Errorf("reader error: %w", readerErr))
+	}
+	fmt.Println("done")
 }

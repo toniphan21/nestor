@@ -1,5 +1,9 @@
 package nestor
 
+import (
+	"context"
+)
+
 type harness string
 
 const HarnessClaudeCode = harness("claude")
@@ -17,4 +21,6 @@ type Harness interface {
 	Init(runtime Runtime) error
 
 	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error)
+
+	ExecCommand(ctx context.Context, promptPath string, profile Profile, model string) []string
 }
