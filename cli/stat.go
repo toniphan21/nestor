@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -11,6 +16,7 @@ import (
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/sensors"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type Stat struct {
@@ -26,11 +32,13 @@ type Stat struct {
 	MemUsed    uint64
 	MemPercent float64
 
-	DiskTotal   uint64
-	DiskUsed    uint64
-	DiskPercent float64
+	DiskTotal             uint64
+	DiskUsed              uint64
+	DiskPercent           float64
+	DiskTotalBytesWritten *uint64
 
 	TempC *float64 // nil when unavailable (e.g. macOS)
+	Power *float64 // nil when unavailable
 }
 
 // Load1PerCore returns the 1-minute load average normalized by core count,
@@ -93,10 +101,12 @@ func CollectStat(ctx context.Context, path string, interval time.Duration) (*Sta
 	s.DiskTotal, s.DiskUsed, s.DiskPercent = du.Total, du.Used, du.UsedPercent
 
 	s.TempC = collectTemperature(ctx)
+	s.Power = collectPower(ctx)
+	s.DiskTotalBytesWritten = collectTotalByteWritten(ctx)
 	return s, nil
 }
 
-// temperature returns the CPU temperature, or nil if the platform
+// collectTemperature returns the CPU temperature, or nil if the platform
 // does not expose one.
 func collectTemperature(ctx context.Context) *float64 {
 	if runtime.GOOS != "linux" {
@@ -112,4 +122,64 @@ func collectTemperature(ctx context.Context) *float64 {
 		}
 	}
 	return new(temps[0].Temperature)
+}
+
+// collectPower returns board power in watts, or nil if unavailable.
+func collectPower(ctx context.Context) *float64 {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+
+	out, err := exec.CommandContext(ctx, "vcgencmd", "pmic_read_adc").Output()
+	if err != nil {
+		return nil
+	}
+
+	amps, volts := map[string]float64{}, map[string]float64{}
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		// e.g. "VDD_CORE_A current(7)=1.04481000A"
+		f := strings.Fields(sc.Text())
+		if len(f) != 2 {
+			continue
+		}
+		name := f[0]
+		_, val, ok := strings.Cut(f[1], "=")
+		if !ok {
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.TrimRight(val, "AV"), 64)
+		if err != nil {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(name, "_A"):
+			amps[strings.TrimSuffix(name, "_A")] = v
+		case strings.HasSuffix(name, "_V"):
+			volts[strings.TrimSuffix(name, "_V")] = v
+		}
+	}
+
+	var w float64
+	for rail, a := range amps {
+		w += a * volts[rail] // rails without a voltage contribute 0
+	}
+	return &w
+}
+
+// collectTotalByteWritten returns the total byte written, or nil if the platform
+// does not expose one.
+func collectTotalByteWritten(ctx context.Context) *uint64 {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	ts, err := fs.AtomicReadFile("/var/lib/mmc-writes/total")
+	if err != nil {
+		return nil
+	}
+	total, err := strconv.Atoi(strings.TrimSpace(string(ts)))
+	if err != nil {
+		return nil
+	}
+	return new(uint64(total))
 }

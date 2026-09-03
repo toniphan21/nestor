@@ -1,0 +1,12 @@
+dir: ./work/.nestor
+power_overhead: 1.2
+sector_size: 512
+total_bytes_written_overhead: 50 # 50GB
+total_bytes_written_format: "TBW=%.3f"
+total_bytes_written_thresholds:
+  1000:  gray    # 0-1000 GB      - for 32G: ~1.5% wear - normal
+  5000:  none    # 1000-5000 GB   - for 32G: ~8%–15% wear - normal
+  10000: yellow  # 5000-10000 GB  - for 32G: ~15%–30% wear - normal | 16GB: a bit worn
+  15000: red     # 10000-15000 GB - for 32G: ~30% wear - normal     | 16G: think about replacement
+paths:
+  /Users/nhatp/github/toniphan21/nestor/work/.nestor: "$workDir"

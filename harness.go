@@ -8,6 +8,8 @@ const HarnessOpenCode = harness("opencode")
 type Harness interface {
 	Name() string
 
+	DisplayName() string
+
 	FillProfileDefaultValues(runtime Runtime, profile *Profile)
 
 	Syncers(runtime Runtime, profile Profile) []Syncer

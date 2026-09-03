@@ -9,8 +9,10 @@ import (
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 var shortDesc = map[string]string{
@@ -53,12 +55,23 @@ func withDirFlag(cmd *cobra.Command) *cobra.Command {
 	return cmd
 }
 
-func runWithAPI(fn func(nestor.API, ...string) error) func(cmd *cobra.Command, args []string) error {
+func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		var config *cli.Config
+		if wd, err := os.Getwd(); err == nil {
+			if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
+				_ = yaml.Unmarshal(c, &config)
+			}
+		}
+
 		dir, err := cmd.Flags().GetString("dir")
 		if err != nil {
 			fmt.Println(pterm.Red("cannot read the --dir flag ", err.Error()))
 			return nil
+		}
+
+		if config != nil && strings.TrimSpace(config.Dir) != "" {
+			dir = config.Dir
 		}
 
 		if strings.TrimSpace(dir) != "" {
@@ -84,7 +97,7 @@ func runWithAPI(fn func(nestor.API, ...string) error) func(cmd *cobra.Command, a
 			return nil
 		}
 
-		err = fn(api, args...)
+		err = fn(api, config, args...)
 		if err != nil {
 			fmt.Println(pterm.Red("Error: ", err.Error()))
 		}
@@ -92,7 +105,7 @@ func runWithAPI(fn func(nestor.API, ...string) error) func(cmd *cobra.Command, a
 	}
 }
 
-func command(name string, fn func(nestor.API, ...string) error) *cobra.Command {
+func command(name string, fn func(nestor.API, *cli.Config, ...string) error) *cobra.Command {
 	return withDirFlag(&cobra.Command{
 		Use: name, Short: shortDesc[name],
 		RunE: runWithAPI(fn),
@@ -103,38 +116,38 @@ func printVersion(cmd *cobra.Command, args []string) {
 	fmt.Println(nestor.Version)
 }
 
-func setup(api nestor.API, args ...string) error {
-	result, err := cli.View(api)
+func setup(api nestor.API, cf *cli.Config, args ...string) error {
+	result, err := cli.View(api, cf)
 	if err == nil {
 		result.PrintWithSetupMessage()
 	}
 	return err
 }
 
-func destroy(api nestor.API, args ...string) error {
+func destroy(api nestor.API, cf *cli.Config, args ...string) error {
 	fmt.Println("destroy is not implemented yet", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
-func build(api nestor.API, args ...string) error {
+func build(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Build(api, args)
 }
 
-func prompt(api nestor.API, args ...string) error {
+func prompt(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Prompt(api, args)
 }
 
-func down(api nestor.API, args ...string) error {
+func down(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Down(api)
 }
 
-func proxy(api nestor.API, args ...string) error {
+func proxy(api nestor.API, cf *cli.Config, args ...string) error {
 	fmt.Println("proxy is not implemented yet", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
-func view(api nestor.API, args ...string) error {
-	result, err := cli.View(api)
+func view(api nestor.API, cf *cli.Config, args ...string) error {
+	result, err := cli.View(api, cf)
 	if err == nil {
 		result.Print()
 	}

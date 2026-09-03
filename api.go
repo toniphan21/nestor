@@ -36,6 +36,14 @@ func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer
 		v.apply(o)
 	}
 
+	if o.platform == nil {
+		defaultPlatform, err := DefaultPlatform()
+		if err != nil {
+			return nil, nil, err
+		}
+		o.platform = defaultPlatform
+	}
+
 	if strings.TrimSpace(o.dir) == "" {
 		o.dir = o.platform.NestorDir()
 	}
@@ -55,20 +63,20 @@ func New(options ...Option) (API, error) {
 		v.apply(o)
 	}
 
-	if strings.TrimSpace(o.dir) == "" {
-		o.dir = o.platform.NestorDir()
-	}
-
-	if o.logger == nil {
-		o.logger = slog.New(slog.DiscardHandler)
-	}
-
 	if o.platform == nil {
 		defaultPlatform, err := DefaultPlatform()
 		if err != nil {
 			return nil, err
 		}
 		o.platform = defaultPlatform
+	}
+
+	if strings.TrimSpace(o.dir) == "" {
+		o.dir = o.platform.NestorDir()
+	}
+
+	if o.logger == nil {
+		o.logger = slog.New(slog.DiscardHandler)
 	}
 
 	if o.newGitFunc == nil {

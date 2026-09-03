@@ -30,6 +30,10 @@ func (h *harnessClaude) Name() string {
 	return string(HarnessClaudeCode)
 }
 
+func (h *harnessClaude) DisplayName() string {
+	return "Claude Code"
+}
+
 func (h *harnessClaude) FillProfileDefaultValues(runtime Runtime, profile *Profile) {
 	if profile.Dockerfile == "" {
 		profile.Dockerfile = runtime.Platform.NestorDir("claude", "Dockerfile")
