@@ -256,7 +256,14 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
 	options := DockerRunOption{}
-	for _, v := range s.Mounts() {
+	for _, v := range s.data.Mounts {
+		options.Mounts = append(options.Mounts, DockerMount{
+			Source:   v.Host,
+			Target:   v.Target,
+			ReadOnly: v.ReadOnly,
+		})
+	}
+	for _, v := range s.data.HarnessMounts {
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
 			Target:   v.Target,

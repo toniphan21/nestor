@@ -90,8 +90,8 @@ func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox
 	cd := sandbox.Dir(".claude")
 	cj := sandbox.Dir(".claude.json")
 	mounts := map[string]SandboxMount{
-		cd: {Host: cd, Target: filepath.Join(ch, ".claude:rw")},
-		cj: {Host: cj, Target: filepath.Join(ch, ".claude.json:rw")},
+		cd: {Host: cd, Target: filepath.Join(ch, ".claude")},
+		cj: {Host: cj, Target: filepath.Join(ch, ".claude.json")},
 	}
 	return mounts, nil
 }

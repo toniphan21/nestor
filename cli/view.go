@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -31,10 +32,16 @@ func View(api nestor.API) (ViewData, error) {
 	}
 	result.Sandboxes = sbs
 
+	stat, err := CollectStat(ctx, "/", time.Second)
+	if err != nil {
+		return result, err
+	}
+	result.Stat = stat
+
 	return result, nil
 }
 
-const leftSize = 26
+const leftSize = 32
 
 type ViewData struct {
 	NestorDir       string
@@ -46,6 +53,7 @@ type ViewData struct {
 	Profiles        []nestor.Profile
 	Sandboxes       []nestor.Sandbox
 	Harnesses       []nestor.Harness
+	Stat            *Stat
 }
 
 func (d *ViewData) PrintWithSetupMessage() {
@@ -58,10 +66,19 @@ func (d *ViewData) Print() {
 	nd := d.NestorDir + "/"
 	fmt.Println()
 
+	if d.Stat != nil {
+		fmt.Printf("%*s: %s\n", w, pterm.Blue("system"), d.statLine())
+	}
 	fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.NestorDir)
 	fmt.Printf("%*s: %s%s\n", w, pterm.Blue("spec file"), pterm.Gray(nd), strings.TrimPrefix(d.SpecFilePath, nd))
 	fmt.Printf("%*s: %s%s\n", w, pterm.Blue("profile file"), pterm.Gray(nd), strings.TrimPrefix(d.ProfileFilePath, nd))
 	fmt.Printf("%*s: %s\n", w, pterm.Blue("platform os"), d.Platform.OS())
+
+	var harnesses []string
+	for _, v := range d.Harnesses {
+		harnesses = append(harnesses, pterm.Magenta(v.Name()))
+	}
+	fmt.Printf("%*s: %s\n", w, pterm.Blue("supported harnesses"), strings.Join(harnesses, pterm.Gray(" · ")))
 
 	fmt.Printf("%*s: %s = %q\n", w, pterm.Blue("templates"), "SandboxID       ", d.Template.SandboxID)
 	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxTag      ", d.Template.SandboxTag)
@@ -70,11 +87,6 @@ func (d *ViewData) Print() {
 	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "InitialBranch   ", d.Template.InitialBranch)
 
 	fmt.Println()
-
-	for _, harness := range d.Harnesses {
-		fmt.Printf("%*s: %s\n", w, pterm.Magenta("harness"), harness.Name())
-		fmt.Println()
-	}
 
 	for _, profile := range d.Profiles {
 		fmt.Printf("%*s: %s\n", w, pterm.Red("profile"), profile.Name)
@@ -87,7 +99,7 @@ func (d *ViewData) Print() {
 				continue
 			}
 		}
-		fmt.Printf("%*s: %s\n", w, pterm.Red("models"), strings.Join(models, ", "))
+		fmt.Printf("%*s: %s\n", w, pterm.Red("models"), strings.Join(models, pterm.Gray(" · ")))
 
 		var targets []string
 		for _, v := range profile.Targets {
@@ -98,9 +110,54 @@ func (d *ViewData) Print() {
 			targets = append(targets, v)
 		}
 
-		fmt.Printf("%*s: %s\n", w, pterm.Red("targets"), strings.Join(targets, ", "))
+		fmt.Printf("%*s: %s\n", w, pterm.Red("targets"), strings.Join(targets, pterm.Gray(" · ")))
 		fmt.Println()
 	}
 
 	fmt.Println()
+}
+
+func (d *ViewData) statLine() string {
+	if d.Stat == nil {
+		return ""
+	}
+
+	cpu := fmt.Sprintf("cpu: %s", pterm.Cyan(fmt.Sprintf("%.2f%%", d.Stat.CPUPercent)))
+	mem := fmt.Sprintf(
+		"mem: %s - %s/%s",
+		pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.MemPercent)),
+		d.humanBytes(d.Stat.MemUsed, false),
+		d.humanBytes(d.Stat.MemTotal, true),
+	)
+	disk := fmt.Sprintf(
+		"disk : %s - %s/%s",
+		pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.DiskPercent)),
+		d.humanBytes(d.Stat.DiskUsed, false),
+		d.humanBytes(d.Stat.DiskTotal, true),
+	)
+
+	var values = []string{cpu, mem, disk}
+
+	if d.Stat.TempC != nil {
+		temp := fmt.Sprintf("temp: %s", pterm.Cyan(fmt.Sprintf("%.1f°C", *d.Stat.TempC)))
+		values = append(values, temp)
+	}
+
+	return strings.Join(values, pterm.Gray(" · "))
+}
+
+func (d *ViewData) humanBytes(b uint64, showUnit bool) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	if showUnit {
+		return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	}
+	return fmt.Sprintf("%.1f", float64(b)/float64(div))
 }
