@@ -22,6 +22,7 @@ type DockerMount struct {
 }
 
 type DockerRunOption struct {
+	Env    map[string]string
 	Mounts []DockerMount
 }
 
@@ -91,6 +92,7 @@ func (d *dockerCLI) Run(ctx context.Context, image, name string, opt DockerRunOp
 	}
 	o := docker.RunOption{
 		Mounts: mounts,
+		Env:    opt.Env,
 	}
 	return docker.Run(ctx, image, name, o, d.log)
 }

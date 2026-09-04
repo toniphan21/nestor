@@ -1,13 +1,14 @@
 package nestor
 
-import (
-	"context"
-)
-
 type harness string
 
 const HarnessClaudeCode = harness("claude")
 const HarnessOpenCode = harness("opencode")
+
+type ExecRequest struct {
+	PromptFilePath string
+	Model          string
+}
 
 type Harness interface {
 	Name() string
@@ -22,5 +23,7 @@ type Harness interface {
 
 	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error)
 
-	ExecCommand(ctx context.Context, promptPath string, profile Profile, model string) []string
+	Env(runtime Runtime, profile Profile) map[string]string
+
+	ExecCommand(runtime Runtime, profile Profile, req ExecRequest) []string
 }

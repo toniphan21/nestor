@@ -47,6 +47,7 @@ type SandboxSpec struct {
 	Target       string             `yaml:"target"`
 	MaxInstances int                `yaml:"max_instances"`
 	Mounts       []SandboxSpecMount `yaml:"mounts"`
+	Env          map[string]string  `yaml:"env,omitempty"`
 }
 
 func (s *SandboxSpec) Validate(runtime Runtime) error {

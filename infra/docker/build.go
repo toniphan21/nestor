@@ -73,8 +73,7 @@ func HasImage(ctx context.Context, ref string, logger *slog.Logger) bool {
 	cmd := exec.CommandContext(ctx, "docker", args...)
 
 	log := logger.WithGroup("docker").With(slog.Any("args", args))
-	w := &logWriter{log, slog.LevelDebug}
-	cmd.Stdout = w
-	cmd.Stderr = w
+	// do not log stdout/stderr of docker inspect
+	log.Info("check if image exists via docker inspect")
 	return cmd.Run() == nil
 }

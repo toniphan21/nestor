@@ -289,6 +289,17 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		Target: SandboxRunsTargetPath,
 	})
 
+	var env = make(map[string]string)
+	for k, v := range s.spec.Env {
+		env[k] = v
+	}
+	for k, v := range s.harness.Env(s.runtime, s.profile) {
+		env[k] = v
+	}
+	if len(env) > 0 {
+		options.Env = env
+	}
+
 	_, err := s.docker.Run(ctx, image, container, options)
 
 	return err

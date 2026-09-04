@@ -95,12 +95,19 @@ func (m Mount) arg() string {
 }
 
 type RunOption struct {
+	Env    map[string]string
 	Mounts []Mount
 }
 
-func Run(ctx context.Context, image, name string, options RunOption, logger *slog.Logger) (string, error) {
+func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Logger) (string, error) {
 	args := []string{"run", "--rm", "-d", "--name", name}
-	for _, m := range options.Mounts {
+	for k, v := range opt.Env {
+		if k != "" {
+			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	for _, m := range opt.Mounts {
 		args = append(args, "-v", m.arg())
 	}
 	args = append(args, image)
@@ -113,7 +120,7 @@ func Run(ctx context.Context, image, name string, options RunOption, logger *slo
 	cmd.Stdout = io.MultiWriter(w, &stdout)
 	cmd.Stderr = io.MultiWriter(w, &stderr)
 
-	log.Info("docker run", slog.String("image", image), slog.String("name", name), slog.Any("options", options))
+	log.Info("docker run", slog.String("image", image), slog.String("name", name), slog.Any("opt", opt))
 	if err := cmd.Run(); err != nil {
 		log.Error("docker run", slog.Any("error", err))
 

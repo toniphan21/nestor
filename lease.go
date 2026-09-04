@@ -116,11 +116,14 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
-	containerPromptPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
-	fmt.Println(containerPromptPath)
+	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
+	fmt.Println(promptTargetPath)
 
 	// collect harness cmd
-	harnessCmd := sandbox.Harness().ExecCommand(ctx, containerPromptPath, sandbox.profile, run.Model)
+	harnessCmd := sandbox.harness.ExecCommand(sandbox.runtime, sandbox.profile, ExecRequest{
+		PromptFilePath: promptTargetPath,
+		Model:          run.Model,
+	})
 	cmd := []string{
 		"sh", "-c",
 		strings.Join(harnessCmd, " "),

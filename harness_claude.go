@@ -100,7 +100,20 @@ func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox
 	return mounts, nil
 }
 
-func (h *harnessClaude) ExecCommand(ctx context.Context, promptPath string, profile Profile, model string) []string {
+const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
+
+func (h *harnessClaude) Env(runtime Runtime, profile Profile) map[string]string {
+	var env = make(map[string]string)
+	switch profile.Auth {
+	case AuthCredentials:
+		if tok, ok := profile.Settings[ClaudeCodeOAuthTokenName]; ok {
+			env[ClaudeCodeOAuthTokenName] = tok
+		}
+	}
+	return env
+}
+
+func (h *harnessClaude) ExecCommand(runtime Runtime, profile Profile, req ExecRequest) []string {
 	cmd := []string{
 		"claude",
 		"--dangerously-skip-permissions",
@@ -108,13 +121,13 @@ func (h *harnessClaude) ExecCommand(ctx context.Context, promptPath string, prof
 		"--verbose",
 	}
 
-	model = profile.Model(model)
+	model := profile.Model(req.Model)
 	if model != "" {
 		cmd = append(cmd, "--model", model)
 	}
 
 	cmd = append(cmd, "--print")
-	cmd = append(cmd, "<", promptPath)
+	cmd = append(cmd, "<", req.PromptFilePath)
 	return cmd
 }
 
@@ -140,19 +153,27 @@ func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 		return err
 	}
 
-	if h.auth == AuthCredentials && h.os == OSMacOS {
-		cc, err := loadClaudeCredentials(ctx)
-		if err != nil {
-			return err
+	switch h.auth {
+	case AuthCredentials:
+		_, have := sandbox.Profile().Settings[ClaudeCodeOAuthTokenName]
+		if !have && h.os == OSMacOS {
+			return h.saveCredentialsFromSecurity(ctx, targetDir)
 		}
-		if cc.OAuth.RefreshTokenExpired(1 * time.Hour) {
-			return errors.New("refresh token expired")
-		}
-
-		dst := filepath.Join(targetDir, ".claude", ".credentials.json")
-		return cc.Save(dst)
 	}
 	return nil
+}
+
+func (h *harnessClaudeSyncer) saveCredentialsFromSecurity(ctx context.Context, targetDir string) error {
+	cc, err := loadClaudeCredentials(ctx)
+	if err != nil {
+		return err
+	}
+	if cc.OAuth.RefreshTokenExpired(1 * time.Hour) {
+		return errors.New("refresh token expired")
+	}
+
+	dst := filepath.Join(targetDir, ".claude", ".credentials.json")
+	return cc.Save(dst)
 }
 
 var _ Syncer = (*harnessClaudeSyncer)(nil)
