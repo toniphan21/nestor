@@ -2,6 +2,7 @@ package nestor
 
 import (
 	"bytes"
+	"io"
 	"sync"
 
 	"nhatp.com/go/nestor/infra/fs"
@@ -35,4 +36,14 @@ func (b *bufferedFile) Save(path string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func multiWriter(w ...io.Writer) io.Writer {
+	var args []io.Writer
+	for _, v := range w {
+		if v != nil {
+			args = append(args, v)
+		}
+	}
+	return io.MultiWriter(args...)
 }

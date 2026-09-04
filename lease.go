@@ -117,8 +117,6 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
-	fmt.Println(promptTargetPath)
-
 	// collect harness cmd
 	harnessCmd := sandbox.harness.ExecCommand(sandbox, ExecRequest{
 		PromptFilePath: promptTargetPath,
@@ -140,8 +138,8 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	)
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
 		WorkDir: l.data.WorkDir,
-		Stdout:  io.MultiWriter(opt.Stdout, &stdout),
-		Stderr:  io.MultiWriter(opt.Stderr, &stderr),
+		Stdout:  multiWriter(opt.Stdout, &stdout),
+		Stderr:  multiWriter(opt.Stderr, &stderr),
 	})
 
 	if _, err = stdout.Save(filepath.Join(runDir, "stdout")); err != nil {

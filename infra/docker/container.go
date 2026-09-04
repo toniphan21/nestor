@@ -149,8 +149,6 @@ func Exec(ctx context.Context, container string, commands []string, opts ExecOpt
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
 
-	fmt.Println(cmd.String())
-
 	if err := cmd.Start(); err != nil {
 		return -1, fmt.Errorf("%w: docker exec: %w", err)
 	}

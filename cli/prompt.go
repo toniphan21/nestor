@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli/claude"
 )
 
 type promptInfo struct {
@@ -21,7 +23,6 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 	allSpecs := api.Runtime().Registry.SandboxSpecs()
 	if len(allSpecs) == 0 {
 		fmt.Println(pterm.Yellow("no sandbox specs to prompt"))
-		fmt.Println(pterm.Green("done"))
 		return &promptInfo{run: false}, nil
 	}
 
@@ -44,7 +45,6 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 
 	if len(paths) == 0 {
 		fmt.Println(pterm.Red("no sandbox mounts found"))
-		fmt.Println(pterm.Green("done"))
 		return &promptInfo{run: false}, nil
 	}
 
@@ -76,6 +76,7 @@ func Prompt(api nestor.API, args []string) error {
 		return err
 	}
 	if !info.run {
+		fmt.Println(pterm.Green("done"))
 		return nil
 	}
 
@@ -93,14 +94,20 @@ func DoPrompt(api nestor.API, spec, path, prompt string) error {
 		return fmt.Errorf("extend lease: %w", err)
 	}
 
-	_, err = lease.Run(ctx, prompt, nestor.RunOption{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	})
+	var stdout io.Writer
+	switch lease.Sandbox().Harness().Name() {
+	case string(nestor.HarnessClaudeCode):
+		stdout = claude.NewWriter()
+	default:
+		stdout = os.Stdout
+	}
+
+	_, err = lease.Run(ctx, prompt, nestor.RunOption{Stdout: stdout})
 
 	_ = lease.Release(ctx)
 	if err != nil {
 		return fmt.Errorf("run lease: %w", err)
 	}
+	fmt.Println(pterm.Green("done"))
 	return nil
 }

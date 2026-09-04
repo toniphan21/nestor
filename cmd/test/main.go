@@ -30,6 +30,15 @@ func main() {
 		dir = config.Dir
 	}
 
+	if strings.TrimSpace(dir) != "" {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot resolve absolute path %q", err.Error(), dir)))
+			os.Exit(1)
+		}
+		dir = abs
+	}
+
 	options := []nestor.Option{nestor.WithDir(dir)}
 	logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)
 	if err != nil {
