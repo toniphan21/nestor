@@ -8,18 +8,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/pterm/pterm"
+	"gopkg.in/yaml.v3"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 func main() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
+	var config *cli.Config
+	if wd, err := os.Getwd(); err == nil {
+		if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
+			_ = yaml.Unmarshal(c, &config)
+		}
 	}
 
-	dir := filepath.Join(home, "github", "toniphan21", "nestor", "work", ".nestor")
+	var dir string
+	if config != nil && strings.TrimSpace(config.Dir) != "" {
+		dir = config.Dir
+	}
 
 	options := []nestor.Option{nestor.WithDir(dir)}
 	logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)

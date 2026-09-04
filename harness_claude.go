@@ -22,6 +22,11 @@ func newHarnessClaude() Harness {
 	}
 }
 
+const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
+const ClaudeDir = ".claude"
+const ClaudeConfigFile = ".claude.json"
+const ClaudeCredentialsFile = ".credentials.json"
+
 type harnessClaude struct {
 	assets embedAssets
 }
@@ -45,9 +50,9 @@ func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
 func (h *harnessClaude) DefaultOptions(runtime Runtime) map[string]string {
 	options := make(map[string]string)
 	options[ProfileOptionDockerfile] = h.DefaultDockerfile(runtime)
-	options[".claude"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude")
-	options[".claude.json"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude.json")
-	options["container-home-dir"] = h.defaultContainerHomeDir()
+	options[ClaudeDir] = runtime.Platform.HarnessDefaultOption(h.Name(), ClaudeDir)
+	options[ClaudeConfigFile] = runtime.Platform.HarnessDefaultOption(h.Name(), ClaudeConfigFile)
+	options[ProfileOptionContainerHomeDir] = h.defaultContainerHomeDir()
 	return options
 }
 
@@ -71,8 +76,8 @@ func (h *harnessClaude) Syncers(sandbox Sandbox) []Syncer {
 	runtime, profile := sandbox.Runtime(), sandbox.Profile()
 	s := &harnessClaudeSyncer{
 		auth:       profile.Auth,
-		claudeDir:  profile.Options[".claude"],
-		claudeJson: profile.Options[".claude.json"],
+		claudeDir:  profile.Options[ClaudeDir],
+		claudeJson: profile.Options[ClaudeConfigFile],
 		os:         runtime.Platform.OS(),
 	}
 	return []Syncer{s}
@@ -81,21 +86,19 @@ func (h *harnessClaude) Syncers(sandbox Sandbox) []Syncer {
 func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error) {
 	// .claude and .claude.json is copied from profile options to the sandbox.Dir() in Syncer
 	profile := sandbox.Profile()
-	ch := profile.Options["container-home-dir"]
+	ch := profile.Options[ProfileOptionContainerHomeDir]
 	if ch == "" {
 		ch = h.defaultContainerHomeDir()
 	}
 
-	cd := sandbox.Dir(".claude")
-	cj := sandbox.Dir(".claude.json")
+	cd := sandbox.Dir(ClaudeDir)
+	cj := sandbox.Dir(ClaudeConfigFile)
 	mounts := map[string]SandboxMount{
-		cd: {Host: cd, Target: filepath.Join(ch, ".claude")},
-		cj: {Host: cj, Target: filepath.Join(ch, ".claude.json")},
+		cd: {Host: cd, Target: filepath.Join(ch, ClaudeDir)},
+		cj: {Host: cj, Target: filepath.Join(ch, ClaudeConfigFile)},
 	}
 	return mounts, nil
 }
-
-const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
 
 func (h *harnessClaude) Env(sandbox Sandbox) map[string]string {
 	var env = make(map[string]string)
@@ -139,12 +142,12 @@ type harnessClaudeSyncer struct {
 func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 	targetDir := sandbox.Dir()
 	var err error
-	err = fs.MergeDir(h.claudeDir, filepath.Join(targetDir, ".claude"))
+	err = fs.MergeDir(h.claudeDir, filepath.Join(targetDir, ClaudeDir))
 	if err != nil {
 		return err
 	}
 
-	err = fs.CopyFile(h.claudeJson, filepath.Join(targetDir, ".claude.json"))
+	err = fs.CopyFile(h.claudeJson, filepath.Join(targetDir, ClaudeConfigFile))
 	if err != nil {
 		return err
 	}
@@ -168,7 +171,7 @@ func (h *harnessClaudeSyncer) saveCredentialsFromSecurity(ctx context.Context, t
 		return errors.New("refresh token expired")
 	}
 
-	dst := filepath.Join(targetDir, ".claude", ".credentials.json")
+	dst := filepath.Join(targetDir, ClaudeDir, ClaudeCredentialsFile)
 	return cc.Save(dst)
 }
 

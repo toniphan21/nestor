@@ -70,7 +70,11 @@ func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, 
 		return nil, Profile{}, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
 	}
 
-	p, have := runtime.Registry.Profile(h.Name())
+	pn := s.Profile
+	if pn == "" {
+		pn = string(s.Harness)
+	}
+	p, have := runtime.Registry.Profile(pn)
 	if !have {
 		return nil, Profile{}, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
 	}

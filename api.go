@@ -136,7 +136,7 @@ func (a *api) init() error {
 	// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
 	pf := a.platform.ProfileYmlFile()
 	if !fs.HasFile(pf) {
-		if err := fs.CopyFileFS(builtin, "assets/profile.yml", pf); err != nil {
+		if err := fs.CopyFileFS(Embed, "assets/profile.yml", pf); err != nil {
 			a.log.Error(err.Error(), slog.Any("error", err))
 			return err
 		}
@@ -178,7 +178,7 @@ func (a *api) init() error {
 	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
 	sf := a.platform.SandboxYmlFile()
 	if !fs.HasFile(sf) {
-		if err := fs.CopyFileFS(builtin, "assets/sandbox.yml", sf); err != nil {
+		if err := fs.CopyFileFS(Embed, "assets/sandbox.yml", sf); err != nil {
 			a.log.Error(err.Error(), slog.Any("error", err))
 			return err
 		}

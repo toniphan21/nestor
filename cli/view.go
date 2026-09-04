@@ -21,6 +21,13 @@ type Config struct {
 	TotalBytesWrittenFormat     string            `yaml:"total_bytes_written_format"`
 	TotalBytesWrittenThresholds map[uint64]string `yaml:"total_bytes_written_thresholds"`
 	PathReplacements            map[string]string `yaml:"paths,omitempty"`
+	Redacted                    redacted          `yaml:"redacted,omitempty"`
+}
+
+type redacted struct {
+	Options  []string `yaml:"options"`
+	Settings []string `yaml:"settings"`
+	Envs     []string `yaml:"envs"`
 }
 
 const defaultTotalBytesWrittenFormat = "TBW=%.3f"
@@ -42,6 +49,7 @@ func View(api nestor.API, config *Config) (ViewData, error) {
 	result.NestorDir = runtime.Platform.NestorDir()
 	result.SpecFilePath = runtime.Platform.SandboxYmlFile()
 	result.ProfileFilePath = runtime.Platform.ProfileYmlFile()
+	result.Runtime = runtime
 	result.Template = runtime.Template
 	result.Platform = runtime.Platform
 	result.Specs = runtime.Registry.SandboxSpecs()
@@ -69,6 +77,7 @@ type ViewData struct {
 	NestorDir       string
 	SpecFilePath    string
 	ProfileFilePath string
+	Runtime         nestor.Runtime
 	Template        nestor.Template
 	Platform        nestor.Platform
 	Specs           []nestor.SandboxSpec
@@ -84,7 +93,42 @@ func (d *ViewData) PrintWithSetupMessage() {
 	d.Print()
 }
 
+func (d *ViewData) PrintArch() {
+	f, err := nestor.Embed.ReadFile("assets/arch")
+	if err != nil {
+		return
+	}
+
+	coloring := map[string]func(a ...any) string{
+		"Harness":                          pterm.Magenta,
+		"Profile":                          pterm.Red,
+		"SandboxSpec ":                     pterm.Cyan,
+		"Sandbox ":                         pterm.Green,
+		"Lease":                            pterm.Blue,
+		"API.Acquire()":                    pterm.Yellow,
+		"(auto) docker build · docker run": pterm.Gray,
+		"instantiate":                      pterm.Gray,
+		"binds 1 harness + 1 profile":      pterm.Gray,
+		"1                 1":              pterm.Gray,
+		"sleep infinity":                   pterm.Gray,
+		"docker exec":                      pterm.Gray,
+	}
+
+	var out []string
+	lines := strings.Split(string(f), "\n")
+	for _, line := range lines {
+		for t, fn := range coloring {
+			line = strings.ReplaceAll(line, t, fn(t))
+		}
+
+		out = append(out, strings.Repeat(" ", 20)+line)
+	}
+
+	fmt.Println(strings.Join(out, "\n"))
+}
+
 func (d *ViewData) Print() {
+
 	w := leftSize
 	nd := d.ReplacePath(d.NestorDir) + "/"
 	fmt.Println()
@@ -98,12 +142,6 @@ func (d *ViewData) Print() {
 	fmt.Printf("%*s: %s%s\n", w, pterm.Blue("profile file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.ProfileFilePath), nd))
 	fmt.Printf("%*s: %s\n", w, pterm.Blue("platform os"), d.Platform.OS())
 
-	var harnesses []string
-	for _, v := range d.Harnesses {
-		harnesses = append(harnesses, pterm.Magenta(v.DisplayName()))
-	}
-	fmt.Printf("%*s: %s\n", w, pterm.Blue("supported harnesses"), strings.Join(harnesses, pterm.Gray(" · ")))
-
 	fmt.Printf("%*s: %s = %q\n", w, pterm.Blue("templates"), "SandboxID       ", d.Template.SandboxID)
 	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxTag      ", d.Template.SandboxTag)
 	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxContainer", d.Template.SandboxContainer)
@@ -111,6 +149,12 @@ func (d *ViewData) Print() {
 	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "InitialBranch   ", d.Template.InitialBranch)
 
 	fmt.Println()
+
+	for _, harness := range d.Harnesses {
+		fmt.Printf("%*s: %s · %s \n", w, pterm.Magenta("harness"), harness.DisplayName(), harness.Name())
+		d.printKeyValues(w, harness.DefaultOptions(d.Runtime), "option", pterm.Magenta("options"), pterm.Magenta(""))
+		fmt.Println()
+	}
 
 	for _, profile := range d.Profiles {
 		fmt.Printf("%*s: %s\n", w, pterm.Red("profile"), profile.Name)
@@ -135,10 +179,41 @@ func (d *ViewData) Print() {
 		}
 
 		fmt.Printf("%*s: %s\n", w, pterm.Red("targets"), strings.Join(targets, pterm.Gray(" · ")))
+
+		d.printKeyValues(w, profile.Settings, "setting", pterm.Red("settings"), pterm.Red(""))
+		d.printKeyValues(w, profile.Options, "option", pterm.Red("options"), pterm.Red(""))
 		fmt.Println()
 	}
 
-	fmt.Println()
+	d.PrintArch()
+}
+
+func (d *ViewData) printKeyValues(w int, kv map[string]string, typ string, firstLineLabel, label string) {
+	if kv == nil {
+		return
+	}
+
+	keys := slices.Collect(maps.Keys(kv))
+	sort.Strings(keys)
+	ml := 0
+	for _, key := range keys {
+		if len(key) > ml {
+			ml = len(key)
+		}
+	}
+
+	for i, key := range keys {
+		v, ok := d.Redact(typ, key, d.ReplacePath(kv[key]))
+		if ok {
+			v = pterm.Gray(v)
+		}
+
+		if i == 0 {
+			fmt.Printf("%*s: %*s = %s\n", w, firstLineLabel, 0-ml, key, v)
+			continue
+		}
+		fmt.Printf("%*s  %*s = %s\n", w, label, 0-ml, key, v)
+	}
 }
 
 func (d *ViewData) ReplacePath(path string) string {
@@ -151,6 +226,30 @@ func (d *ViewData) ReplacePath(path string) string {
 		}
 	}
 	return path
+}
+
+func (d *ViewData) Redact(typ, key, value string) (string, bool) {
+	list := make(map[string]bool)
+	switch typ {
+	case "option":
+		for _, v := range d.Config.Redacted.Options {
+			list[v] = true
+		}
+	case "setting":
+		for _, v := range d.Config.Redacted.Settings {
+			list[v] = true
+		}
+	case "env":
+		for _, v := range d.Config.Redacted.Envs {
+			list[v] = true
+		}
+	}
+
+	_, have := list[key]
+	if !have {
+		return value, false
+	}
+	return "----- redacted -----", true
 }
 
 func (d *ViewData) statLine() string {

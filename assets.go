@@ -11,7 +11,8 @@ import (
 //go:embed assets/profile.yml
 //go:embed assets/sandbox.yml
 //go:embed assets/agent-names.txt
-var builtin embed.FS
+//go:embed assets/arch
+var Embed embed.FS
 
 type embedAsset struct {
 	dst  string
@@ -27,13 +28,13 @@ func (e embedAssets) save(target string) (bool, error) {
 
 	for name, v := range e {
 		if v.file {
-			if err := fs.CopyFileFS(builtin, name, filepath.Join(target, v.dst)); err != nil {
+			if err := fs.CopyFileFS(Embed, name, filepath.Join(target, v.dst)); err != nil {
 				return false, err
 			}
 			continue
 		}
 
-		if err := fs.CopyDirFS(builtin, name, filepath.Join(target, v.dst)); err != nil {
+		if err := fs.CopyDirFS(Embed, name, filepath.Join(target, v.dst)); err != nil {
 			return false, err
 		}
 	}

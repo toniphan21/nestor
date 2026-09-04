@@ -38,7 +38,7 @@ func DefaultTemplate() Template {
 }
 
 func LoadBuiltinAgentAliases(template *Template) error {
-	f, err := builtin.Open("assets/agent-names.txt")
+	f, err := Embed.Open("assets/agent-names.txt")
 	if err != nil {
 		return err
 	}

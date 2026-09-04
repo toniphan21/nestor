@@ -10,3 +10,7 @@ total_bytes_written_thresholds:
   15000: red     # 10000-15000 GB - for 32G: ~30% wear - normal     | 16G: think about replacement
 paths:
   /Users/nhatp/github/toniphan21/nestor/work/.nestor: "$workDir"
+redacted:
+  options: []
+  envs: []
+  settings: [CLAUDE_CODE_OAUTH_TOKEN]

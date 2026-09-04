@@ -6,6 +6,7 @@ const AuthCredentials = auth("credentials")
 const AuthAPIKey = auth("api_key")
 
 const ProfileOptionDockerfile = "dockerfile"
+const ProfileOptionContainerHomeDir = "container-home-dir"
 
 type Profile struct {
 	Name          string              `yaml:"-"`
