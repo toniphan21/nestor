@@ -88,11 +88,6 @@ type ViewData struct {
 	Config          Config
 }
 
-func (d *ViewData) PrintWithSetupMessage() {
-	fmt.Printf("%*s: %s\n", leftSize, pterm.Green("setup"), pterm.Green("done"))
-	d.Print()
-}
-
 func (d *ViewData) PrintArch() {
 	f, err := nestor.Embed.ReadFile("assets/arch")
 	if err != nil {
@@ -105,13 +100,18 @@ func (d *ViewData) PrintArch() {
 		"SandboxSpec ":                     pterm.Cyan,
 		"Sandbox ":                         pterm.Green,
 		"Lease":                            pterm.Blue,
-		"API.Acquire()":                    pterm.Yellow,
+		"RunResult":                        pterm.Blue,
+		"Acquire()":                        pterm.Yellow,
+		"API.":                             pterm.Gray,
 		"(auto) docker build · docker run": pterm.Gray,
 		"instantiate":                      pterm.Gray,
 		"binds 1 harness + 1 profile":      pterm.Gray,
 		"1                 1":              pterm.Gray,
 		"sleep infinity":                   pterm.Gray,
 		"docker exec":                      pterm.Gray,
+		"parse":                            pterm.Gray,
+		"profile.yml":                      pterm.Yellow,
+		"sandbox.yml":                      pterm.Yellow,
 	}
 
 	var out []string
@@ -121,7 +121,7 @@ func (d *ViewData) PrintArch() {
 			line = strings.ReplaceAll(line, t, fn(t))
 		}
 
-		out = append(out, strings.Repeat(" ", 20)+line)
+		out = append(out, strings.Repeat(" ", 23)+line)
 	}
 
 	fmt.Println(strings.Join(out, "\n"))

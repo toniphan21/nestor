@@ -19,11 +19,12 @@ var shortDesc = map[string]string{
 	"root":    "Inspect and manage the nestor directory",
 	"setup":   "Initialize the nestor directory",
 	"destroy": "Remove all sandboxes, images, and the nestor directory",
-	"build":   "Build image from a spec",
-	"prompt":  "Run a prompt in the sandbox",
-	"down":    "Stop all sandboxes so the next run picks up config changes",
-	"proxy":   "Run built-in reverse proxy for host",
-	"view":    "Show all nestor state",
+	"build":   "Build a sandbox image from a spec",
+	"prompt":  "Run a prompt in a sandbox",
+	"down":    "Stop all running sandboxes so the next run picks up config changes",
+	"release": "Release the lease held on a sandbox",
+	"proxy":   "Run the built-in reverse proxy on the host",
+	"view":    "Show the current nestor state",
 	"version": "Print the nestor version",
 }
 
@@ -41,6 +42,7 @@ func main() {
 		command("build", build),
 		command("prompt", prompt),
 		command("down", down),
+		command("release", release),
 		command("proxy", proxy),
 		command("view", view),
 	)
@@ -117,15 +119,12 @@ func printVersion(cmd *cobra.Command, args []string) {
 }
 
 func setup(api nestor.API, cf *cli.Config, args ...string) error {
-	result, err := cli.View(api, cf)
-	if err == nil {
-		result.PrintWithSetupMessage()
-	}
-	return err
+	fmt.Println("setup is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
+	return nil
 }
 
 func destroy(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("destroy is not implemented yet", api.Runtime().Platform.NestorDir())
+	fmt.Println("destroy is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
@@ -141,8 +140,13 @@ func down(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Down(api)
 }
 
+func release(api nestor.API, cf *cli.Config, args ...string) error {
+	fmt.Println("release is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
+	return nil
+}
+
 func proxy(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("proxy is not implemented yet", api.Runtime().Platform.NestorDir())
+	fmt.Println("proxy is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
 	return nil
 }
 
