@@ -5,12 +5,13 @@ type auth string
 const AuthCredentials = auth("credentials")
 const AuthAPIKey = auth("api_key")
 
+const ProfileOptionDockerfile = "dockerfile"
+
 type Profile struct {
 	Name          string              `yaml:"-"`
 	Auth          auth                `yaml:"auth"`
 	Proxy         bool                `yaml:"proxy"`
 	Settings      map[string]string   `yaml:"settings,omitempty"`
-	Dockerfile    string              `yaml:"dockerfile,omitempty"`
 	Targets       []string            `yaml:"targets"`
 	Models        map[string][]string `yaml:"models"` // name -> aliases
 	DefaultTarget string              `yaml:"default_target"`
@@ -33,6 +34,14 @@ func (s *Profile) Model(alias string) string {
 	v, ok := s.modelAliases[alias]
 	if !ok {
 		return s.DefaultModel
+	}
+	return v
+}
+
+func (s *Profile) dockerfile(h Harness, r Runtime) string {
+	v, ok := s.Options[ProfileOptionDockerfile]
+	if !ok {
+		return h.DefaultDockerfile(r)
 	}
 	return v
 }

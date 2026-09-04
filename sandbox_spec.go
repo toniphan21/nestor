@@ -75,6 +75,15 @@ func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, 
 		return nil, Profile{}, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
 	}
 
-	h.FillProfileDefaultValues(runtime, &p)
+	if p.Options == nil {
+		p.Options = make(map[string]string)
+	}
+
+	defaultOptions := h.DefaultOptions(runtime)
+	for k, v := range defaultOptions {
+		if _, have = p.Options[k]; !have {
+			p.Options[k] = v
+		}
+	}
 	return h, p, nil
 }

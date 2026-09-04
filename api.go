@@ -244,14 +244,15 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 			continue
 		}
 
-		_, profile, err := spec.findHarnessAndProfile(runtime)
+		h, p, err := spec.findHarnessAndProfile(runtime)
 		if err != nil {
 			return err
 		}
 
-		buildPath := filepath.Dir(profile.Dockerfile)
+		dockerfile := p.dockerfile(h, runtime)
+		buildPath := filepath.Dir(dockerfile)
 		options := DockerBuildOption{
-			Dockerfile: profile.Dockerfile,
+			Dockerfile: dockerfile,
 			Target:     spec.Target,
 			Tag:        a.template.MakeSandboxTag(spec.Name),
 		}

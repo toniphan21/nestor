@@ -293,7 +293,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 	for k, v := range s.spec.Env {
 		env[k] = v
 	}
-	for k, v := range s.harness.Env(s.runtime, s.profile) {
+	for k, v := range s.harness.Env(s) {
 		env[k] = v
 	}
 	if len(env) > 0 {
@@ -310,8 +310,7 @@ func (s *sandboxImpl) Stop(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Sync(ctx context.Context) error {
-	syncers := s.harness.Syncers(s.runtime, s.profile)
-	for _, v := range syncers {
+	for _, v := range s.harness.Syncers(s) {
 		if err := v.Sync(ctx, s); err != nil {
 			return err
 		}
@@ -426,7 +425,7 @@ func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) collectMounts(ctx context.Context) error {
-	hm, err := s.harness.Mounts(s.runtime, s.profile, s)
+	hm, err := s.harness.Mounts(s)
 	if err != nil {
 		return err
 	}

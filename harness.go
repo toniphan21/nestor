@@ -15,15 +15,17 @@ type Harness interface {
 
 	DisplayName() string
 
-	FillProfileDefaultValues(runtime Runtime, profile *Profile)
+	DefaultOptions(runtime Runtime) map[string]string
 
-	Syncers(runtime Runtime, profile Profile) []Syncer
+	DefaultDockerfile(runtime Runtime) string
 
 	Init(runtime Runtime) error
 
-	Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error)
+	Syncers(sandbox Sandbox) []Syncer
 
-	Env(runtime Runtime, profile Profile) map[string]string
+	Mounts(sandbox Sandbox) (map[string]SandboxMount, error)
 
-	ExecCommand(runtime Runtime, profile Profile, req ExecRequest) []string
+	Env(sandbox Sandbox) map[string]string
+
+	ExecCommand(sandbox Sandbox, req ExecRequest) []string
 }

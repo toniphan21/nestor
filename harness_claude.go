@@ -34,28 +34,21 @@ func (h *harnessClaude) DisplayName() string {
 	return "Claude Code"
 }
 
-func (h *harnessClaude) FillProfileDefaultValues(runtime Runtime, profile *Profile) {
-	if profile.Dockerfile == "" {
-		profile.Dockerfile = runtime.Platform.NestorDir("claude", "Dockerfile")
-	}
-	if profile.Options == nil {
-		profile.Options = make(map[string]string)
-	}
+func (h *harnessClaude) defaultContainerHomeDir() string {
+	return "/home/agent"
+}
 
-	cf, have := profile.Options[".claude"]
-	if !have || cf == "" {
-		profile.Options[".claude"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude")
-	}
+func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
+	return runtime.Platform.NestorDir("claude", "Dockerfile")
+}
 
-	cfj, have := profile.Options[".claude.json"]
-	if !have || cfj == "" {
-		profile.Options[".claude.json"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude.json")
-	}
-
-	ch, have := profile.Options["container-home-dir"]
-	if !have || ch == "" {
-		profile.Options["container-home-dir"] = "/home/agent"
-	}
+func (h *harnessClaude) DefaultOptions(runtime Runtime) map[string]string {
+	options := make(map[string]string)
+	options[ProfileOptionDockerfile] = h.DefaultDockerfile(runtime)
+	options[".claude"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude")
+	options[".claude.json"] = runtime.Platform.HarnessDefaultOption(h.Name(), ".claude.json")
+	options["container-home-dir"] = h.defaultContainerHomeDir()
+	return options
 }
 
 func (h *harnessClaude) Init(runtime Runtime) error {
@@ -74,7 +67,8 @@ func (h *harnessClaude) Init(runtime Runtime) error {
 	return nil
 }
 
-func (h *harnessClaude) Syncers(runtime Runtime, profile Profile) []Syncer {
+func (h *harnessClaude) Syncers(sandbox Sandbox) []Syncer {
+	runtime, profile := sandbox.Runtime(), sandbox.Profile()
 	s := &harnessClaudeSyncer{
 		auth:       profile.Auth,
 		claudeDir:  profile.Options[".claude"],
@@ -84,11 +78,12 @@ func (h *harnessClaude) Syncers(runtime Runtime, profile Profile) []Syncer {
 	return []Syncer{s}
 }
 
-func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox) (map[string]SandboxMount, error) {
+func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error) {
 	// .claude and .claude.json is copied from profile options to the sandbox.Dir() in Syncer
+	profile := sandbox.Profile()
 	ch := profile.Options["container-home-dir"]
 	if ch == "" {
-		ch = "/"
+		ch = h.defaultContainerHomeDir()
 	}
 
 	cd := sandbox.Dir(".claude")
@@ -102,8 +97,9 @@ func (h *harnessClaude) Mounts(runtime Runtime, profile Profile, sandbox Sandbox
 
 const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
 
-func (h *harnessClaude) Env(runtime Runtime, profile Profile) map[string]string {
+func (h *harnessClaude) Env(sandbox Sandbox) map[string]string {
 	var env = make(map[string]string)
+	profile := sandbox.Profile()
 	switch profile.Auth {
 	case AuthCredentials:
 		if tok, ok := profile.Settings[ClaudeCodeOAuthTokenName]; ok {
@@ -113,7 +109,7 @@ func (h *harnessClaude) Env(runtime Runtime, profile Profile) map[string]string 
 	return env
 }
 
-func (h *harnessClaude) ExecCommand(runtime Runtime, profile Profile, req ExecRequest) []string {
+func (h *harnessClaude) ExecCommand(sandbox Sandbox, req ExecRequest) []string {
 	cmd := []string{
 		"claude",
 		"--dangerously-skip-permissions",
@@ -121,8 +117,8 @@ func (h *harnessClaude) ExecCommand(runtime Runtime, profile Profile, req ExecRe
 		"--verbose",
 	}
 
-	model := profile.Model(req.Model)
-	if model != "" {
+	profile := sandbox.Profile()
+	if model := profile.Model(req.Model); model != "" {
 		cmd = append(cmd, "--model", model)
 	}
 

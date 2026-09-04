@@ -120,7 +120,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	fmt.Println(promptTargetPath)
 
 	// collect harness cmd
-	harnessCmd := sandbox.harness.ExecCommand(sandbox.runtime, sandbox.profile, ExecRequest{
+	harnessCmd := sandbox.harness.ExecCommand(sandbox, ExecRequest{
 		PromptFilePath: promptTargetPath,
 		Model:          run.Model,
 	})
