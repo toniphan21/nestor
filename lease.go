@@ -49,7 +49,7 @@ func (l *Lease) Extend(ctx context.Context) error {
 		return err
 	}
 
-	ld.ExpiresAt = time.Now().Add(DefaultLeaseExtendDuration)
+	ld.ExpiresAt = time.Now().Add(sandbox.spec.LeaseExtendDuration())
 	sandbox.data.Leases[ld.Path] = *ld
 	l.log.Info("extend lease",
 		slog.String("sandbox", sandbox.ID()),

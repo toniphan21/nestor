@@ -13,8 +13,6 @@ import (
 )
 
 const DefaultStopContainerTimeout = 2 * time.Second
-const DefaultLeaseInitDuration = time.Minute
-const DefaultLeaseExtendDuration = 15 * time.Minute
 const SandboxRunsTargetPath = "/sandbox/runs"
 
 type Sandbox interface {
@@ -458,7 +456,7 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 		ID:        xid.New().String(),
 		Path:      path,
 		WorkDir:   workDir,
-		ExpiresAt: time.Now().Add(DefaultLeaseInitDuration),
+		ExpiresAt: time.Now().Add(s.spec.LeaseInitDuration()),
 		CreatedAt: time.Now(),
 	}
 

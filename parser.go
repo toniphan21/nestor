@@ -81,11 +81,18 @@ func ParseSandboxSpecs(runtime Runtime, yml io.Reader) ([]SandboxSpec, error) {
 		result := make([]SandboxSpec, 0, len(file.Data))
 		for k, v := range file.Data {
 			v.Name = k
-			if err := v.Validate(runtime); err != nil {
-				return nil, fmt.Errorf("%w: sandbox %q", err, k)
-			}
+
+			p := v.Profile
+			v.profileInYaml = new(p)
 			if v.Profile == "" {
 				v.Profile = string(v.Harness)
+			}
+
+			t := v.Target
+			v.targetInYaml = new(t)
+
+			if err := v.Validate(runtime); err != nil {
+				return nil, fmt.Errorf("%w: sandbox %q", err, k)
 			}
 			result = append(result, v)
 		}

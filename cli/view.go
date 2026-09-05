@@ -100,7 +100,7 @@ func (d *ViewData) PrintArch() {
 		"SandboxSpec ":                     pterm.Cyan,
 		"Sandbox ":                         pterm.Green,
 		"Lease":                            pterm.Blue,
-		"RunResult":                        pterm.Blue,
+		"RunResult":                        pterm.Green,
 		"Acquire()":                        pterm.Yellow,
 		"API.":                             pterm.Gray,
 		"(auto) docker build · docker run": pterm.Gray,
@@ -110,8 +110,8 @@ func (d *ViewData) PrintArch() {
 		"sleep infinity":                   pterm.Gray,
 		"docker exec":                      pterm.Gray,
 		"parse":                            pterm.Gray,
-		"profile.yml":                      pterm.Yellow,
-		"sandbox.yml":                      pterm.Yellow,
+		"profile.yml":                      pterm.LightRed,
+		"sandbox.yml":                      pterm.LightCyan,
 	}
 
 	var out []string
@@ -128,7 +128,6 @@ func (d *ViewData) PrintArch() {
 }
 
 func (d *ViewData) Print() {
-
 	w := leftSize
 	nd := d.ReplacePath(d.NestorDir) + "/"
 	fmt.Println()
@@ -151,13 +150,22 @@ func (d *ViewData) Print() {
 	fmt.Println()
 
 	for _, harness := range d.Harnesses {
-		fmt.Printf("%*s: %s · %s \n", w, pterm.Magenta("harness"), harness.DisplayName(), harness.Name())
+		fmt.Printf("%*s: %s · %s \n", w, pterm.Magenta("harness"), harness.Name(), harness.DisplayName())
 		d.printKeyValues(w, harness.DefaultOptions(d.Runtime), "option", pterm.Magenta("options"), pterm.Magenta(""))
 		fmt.Println()
 	}
 
 	for _, profile := range d.Profiles {
 		fmt.Printf("%*s: %s\n", w, pterm.Red("profile"), profile.Name)
+		fmt.Printf("%*s: %s\n", w, pterm.Red("auth"), profile.Auth)
+		proxy := "off" + pterm.Yellow(" (the API token is mounted into the container)")
+		if profile.Proxy {
+			proxy = "on" + pterm.Green(" (the container never sees an API token)")
+		}
+		fmt.Printf("%*s: %s\n", w, pterm.Red("proxy"), proxy)
+
+		d.printKeyValues(w, profile.Settings, "setting", pterm.Red("settings"), pterm.Red(""))
+		d.printKeyValues(w, profile.Options, "option", pterm.Red("options"), pterm.Red(""))
 
 		var models = slices.Collect(maps.Keys(profile.Models))
 		sort.Strings(models)
@@ -180,21 +188,84 @@ func (d *ViewData) Print() {
 
 		fmt.Printf("%*s: %s\n", w, pterm.Red("targets"), strings.Join(targets, pterm.Gray(" · ")))
 
-		d.printKeyValues(w, profile.Settings, "setting", pterm.Red("settings"), pterm.Red(""))
-		d.printKeyValues(w, profile.Options, "option", pterm.Red("options"), pterm.Red(""))
 		fmt.Println()
 	}
 
-	d.PrintArch()
+	for _, spec := range d.Specs {
+		fmt.Printf("%*s: %s\n", w, pterm.Cyan("sandbox spec"), spec.Name)
+		fmt.Printf("%*s: %d\n", w, pterm.Cyan("max instances"), spec.MaxInstances)
+
+		fmt.Printf("%*s: %s\n", w, pterm.Cyan("harness"), spec.Harness)
+
+		var profile = ""
+		piy := spec.ProfileInYaml()
+		if piy != nil && *piy != spec.Profile {
+			profile = "<not-set> " + pterm.Yellow("(defaults to harness name: "+spec.Profile+")")
+		} else {
+			profile = spec.Profile
+		}
+		fmt.Printf("%*s: %s\n", w, pterm.Cyan("profile"), profile)
+
+		var target = ""
+		tiy := spec.TargetInYaml()
+		if tiy != nil && *tiy != spec.Target {
+			target = "<not-set> " + pterm.Yellow("(defaults to harness default target: "+spec.Target+")")
+		} else {
+			target = spec.Target
+		}
+		fmt.Printf("%*s: %s\n", w, pterm.Cyan("target"), target)
+
+		// lease duration
+		lease := ""
+		if spec.Lease == nil {
+			lease = "<not-set> " + pterm.Yellow("(defaults to init 1m, extend 15m)")
+		} else {
+			lease = fmt.Sprintf("init %s, extend %s", spec.LeaseInitDuration(), spec.LeaseExtendDuration())
+		}
+		fmt.Printf("%*s: %s\n", w, pterm.Cyan("lease config"), lease)
+
+		d.printKeyValues(w, spec.Env, "env", pterm.Cyan("env"), pterm.Cyan(""))
+
+		if len(spec.Mounts) == 0 {
+			fmt.Printf("%*s: %s\n", w, pterm.Cyan("mounts"), pterm.Red("<not-set> (required — no lease can be acquired until you set this)"))
+		} else {
+			for i, v := range spec.Mounts {
+				var keys = []string{"type", "path"}
+
+				mounts := make(map[string]string)
+				mounts["type"] = string(v.Type)
+				mounts["path"] = v.Path
+				if v.At != "" {
+					mounts["at"] = v.At
+					keys = append(keys, "at")
+				}
+				if v.ReadOnly {
+					mounts["readonly"] = "true"
+					keys = append(keys, "readonly")
+				}
+
+				mt := fmt.Sprintf("mounts[%d]", i+1)
+				d.printKeyValuesWithKeysOrder(w, mounts, "-", pterm.Cyan(mt), pterm.Magenta(""), keys)
+			}
+			//fmt.Printf("%*s: %s\n", w, pterm.Cyan("mounts"), "print mounts")
+		}
+		fmt.Println()
+	}
+
+	// d.PrintArch()
 }
 
 func (d *ViewData) printKeyValues(w int, kv map[string]string, typ string, firstLineLabel, label string) {
+	keys := slices.Collect(maps.Keys(kv))
+	sort.Strings(keys)
+	d.printKeyValuesWithKeysOrder(w, kv, typ, firstLineLabel, label, keys)
+}
+
+func (d *ViewData) printKeyValuesWithKeysOrder(w int, kv map[string]string, typ string, firstLineLabel, label string, keys []string) {
 	if kv == nil {
 		return
 	}
 
-	keys := slices.Collect(maps.Keys(kv))
-	sort.Strings(keys)
 	ml := 0
 	for _, key := range keys {
 		if len(key) > ml {
@@ -220,9 +291,13 @@ func (d *ViewData) ReplacePath(path string) string {
 	if d.Config.PathReplacements == nil {
 		return path
 	}
-	for k, r := range d.Config.PathReplacements {
+	keys := slices.Collect(maps.Keys(d.Config.PathReplacements))
+	slices.SortFunc(keys, func(a, b string) int {
+		return strings.Compare(b, a)
+	})
+	for _, k := range keys {
 		if strings.HasPrefix(path, k) {
-			return r + strings.TrimPrefix(path, k)
+			return d.Config.PathReplacements[k] + strings.TrimPrefix(path, k)
 		}
 	}
 	return path
