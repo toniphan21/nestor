@@ -22,11 +22,13 @@ type DockerMount struct {
 }
 
 type DockerRunOption struct {
-	Env    map[string]string
-	Mounts []DockerMount
+	HostAlias string
+	Env       map[string]string
+	Mounts    []DockerMount
 }
 
 type DockerExecOption struct {
+	Env     map[string]string
 	WorkDir string
 	Stdout  io.Writer
 	Stderr  io.Writer
@@ -91,14 +93,16 @@ func (d *dockerCLI) Run(ctx context.Context, image, name string, opt DockerRunOp
 		mounts = append(mounts, docker.Mount{Source: v.Source, Target: v.Target, ReadOnly: v.ReadOnly})
 	}
 	o := docker.RunOption{
-		Mounts: mounts,
-		Env:    opt.Env,
+		HostAlias: opt.HostAlias,
+		Mounts:    mounts,
+		Env:       opt.Env,
 	}
 	return docker.Run(ctx, image, name, o, d.log)
 }
 
 func (d *dockerCLI) Exec(ctx context.Context, container string, commands []string, opt DockerExecOption) (int, error) {
 	options := docker.ExecOption{
+		Env:     opt.Env,
 		WorkDir: opt.WorkDir,
 		Stdout:  opt.Stdout,
 		Stderr:  opt.Stderr,

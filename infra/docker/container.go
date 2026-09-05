@@ -33,7 +33,9 @@ func IsRunning(ctx context.Context, container string, logger *slog.Logger) bool 
 	}
 
 	out := buf.String()
-	return len(strings.TrimSpace(out)) > 0
+	result := len(strings.TrimSpace(out)) > 0
+	log.Debug("docker ps return", slog.Bool("result", result), slog.String("container", container))
+	return result
 }
 
 func Kill(ctx context.Context, container string, logger *slog.Logger) error {
@@ -95,32 +97,52 @@ func (m Mount) arg() string {
 }
 
 type RunOption struct {
-	Env    map[string]string
-	Mounts []Mount
+	HostAlias string
+	Env       map[string]string
+	Mounts    []Mount
 }
 
 func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Logger) (string, error) {
+	loggedArgs := []string{"run", "--rm", "-d", "--name", name}
 	args := []string{"run", "--rm", "-d", "--name", name}
 	for k, v := range opt.Env {
 		if k != "" {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
 		}
 	}
 
 	for _, m := range opt.Mounts {
 		args = append(args, "-v", m.arg())
+		loggedArgs = append(args, "-v", m.arg())
+	}
+
+	if opt.HostAlias != "" {
+		args = append(args, "--add-host", fmt.Sprintf("%s:host-gateway", opt.HostAlias))
+		loggedArgs = append(args, "--add-host", fmt.Sprintf("%s:host-gateway", opt.HostAlias))
 	}
 	args = append(args, image)
 
 	var stdout, stderr bytes.Buffer
-	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
 	w := &logWriter{log, slog.LevelDebug}
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdout = io.MultiWriter(w, &stdout)
 	cmd.Stderr = io.MultiWriter(w, &stderr)
 
-	log.Info("docker run", slog.String("image", image), slog.String("name", name), slog.Any("opt", opt))
+	loggedOpt := RunOption{
+		HostAlias: opt.HostAlias,
+		Mounts:    opt.Mounts,
+	}
+	if opt.Env != nil {
+		loggedOpt.Env = make(map[string]string)
+		for k, _ := range opt.Env {
+			loggedOpt.Env[k] = "redacted"
+		}
+	}
+
+	log.Info("docker run", slog.String("image", image), slog.String("name", name), slog.Any("opt", loggedOpt))
 	if err := cmd.Run(); err != nil {
 		log.Error("docker run", slog.Any("error", err))
 
@@ -130,24 +152,31 @@ func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Lo
 }
 
 type ExecOption struct {
+	Env     map[string]string
 	WorkDir string
 	Stdout  io.Writer
 	Stderr  io.Writer
 }
 
-func Exec(ctx context.Context, container string, commands []string, opts ExecOption, logger *slog.Logger) (int, error) {
+func Exec(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
+	// log it
 	args := []string{
 		"exec",
 	}
-	if opts.WorkDir != "" {
-		args = append(args, "--workdir", opts.WorkDir)
+	if opt.WorkDir != "" {
+		args = append(args, "--workdir", opt.WorkDir)
+	}
+	for k, v := range opt.Env {
+		if k != "" {
+			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 	args = append(args, container)
 	args = append(args, commands...)
 
 	cmd := exec.Command("docker", args...)
-	cmd.Stdout = opts.Stdout
-	cmd.Stderr = opts.Stderr
+	cmd.Stdout = opt.Stdout
+	cmd.Stderr = opt.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return -1, fmt.Errorf("%w: docker exec: %w", err)

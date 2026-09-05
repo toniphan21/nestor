@@ -18,12 +18,11 @@ import (
 var shortDesc = map[string]string{
 	"root":    "Inspect and manage the nestor directory",
 	"setup":   "Initialize the nestor directory",
-	"destroy": "Remove all sandboxes, images, and the nestor directory",
+	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
 	"prompt":  "Run a prompt in a sandbox",
 	"down":    "Stop all running sandboxes so the next run picks up config changes",
 	"release": "Release the lease held on a sandbox",
-	"proxy":   "Run the built-in reverse proxy on the host",
 	"view":    "Show the current nestor state",
 	"version": "Print the nestor version",
 }
@@ -43,7 +42,6 @@ func main() {
 		command("prompt", prompt),
 		command("down", down),
 		command("release", release),
-		command("proxy", proxy),
 		command("view", view),
 	)
 
@@ -142,11 +140,6 @@ func down(api nestor.API, cf *cli.Config, args ...string) error {
 
 func release(api nestor.API, cf *cli.Config, args ...string) error {
 	fmt.Println("release is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
-	return nil
-}
-
-func proxy(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("proxy is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
 	return nil
 }
 

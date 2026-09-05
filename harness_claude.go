@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -23,6 +24,9 @@ func newHarnessClaude() Harness {
 }
 
 const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
+const AnthropicAPIKeyName = "ANTHROPIC_API_KEY"
+const AnthropicAuthTokenName = "ANTHROPIC_AUTH_TOKEN"
+const AnthropicBaseURLName = "ANTHROPIC_BASE_URL"
 const ClaudeDir = ".claude"
 const ClaudeConfigFile = ".claude.json"
 const ClaudeCredentialsFile = ".credentials.json"
@@ -100,7 +104,7 @@ func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error)
 	return mounts, nil
 }
 
-func (h *harnessClaude) Env(sandbox Sandbox) map[string]string {
+func (h *harnessClaude) StartEnv(sandbox Sandbox) map[string]string {
 	var env = make(map[string]string)
 	profile := sandbox.Profile()
 	switch profile.Auth {
@@ -108,11 +112,31 @@ func (h *harnessClaude) Env(sandbox Sandbox) map[string]string {
 		if tok, ok := profile.Settings[ClaudeCodeOAuthTokenName]; ok {
 			env[ClaudeCodeOAuthTokenName] = tok
 		}
+	case AuthAPIKey:
+		if !profile.Proxy {
+			if apiKey, ok := profile.Settings[AnthropicAPIKeyName]; ok {
+				env[AnthropicAPIKeyName] = apiKey
+			}
+		}
 	}
 	return env
 }
 
-func (h *harnessClaude) ExecCommand(sandbox Sandbox, req ExecRequest) []string {
+func (h *harnessClaude) ExecEnv(lease *Lease) map[string]string {
+	var env = make(map[string]string)
+
+	profile := lease.Sandbox().Profile()
+	switch profile.Auth {
+	case AuthAPIKey:
+		if profile.Proxy {
+			env[AnthropicBaseURLName] = lease.ProxyAddr()
+			env[AnthropicAuthTokenName] = "dummy"
+		}
+	}
+	return env
+}
+
+func (h *harnessClaude) ExecCommand(lease *Lease, req ExecRequest) []string {
 	cmd := []string{
 		"claude",
 		"--dangerously-skip-permissions",
@@ -120,7 +144,7 @@ func (h *harnessClaude) ExecCommand(sandbox Sandbox, req ExecRequest) []string {
 		"--verbose",
 	}
 
-	profile := sandbox.Profile()
+	profile := lease.Sandbox().Profile()
 	if model := profile.Model(req.Model); model != "" {
 		cmd = append(cmd, "--model", model)
 	}
@@ -128,6 +152,26 @@ func (h *harnessClaude) ExecCommand(sandbox Sandbox, req ExecRequest) []string {
 	cmd = append(cmd, "--print")
 	cmd = append(cmd, "<", req.PromptFilePath)
 	return cmd
+}
+
+func (h *harnessClaude) ProxyRoute(lease *Lease) *ProxyRoute {
+	profile := lease.Sandbox().Profile()
+	if !profile.Proxy || profile.Auth == AuthCredentials {
+		return nil
+	}
+
+	apiKey, have := profile.Settings[AnthropicAPIKeyName]
+	if !have {
+		return nil
+	}
+
+	return &ProxyRoute{
+		Target: "https://api.anthropic.com",
+		Apply: func(h http.Header) {
+			h.Set("x-api-key", apiKey)
+			h.Del("Authorization")
+		},
+	}
 }
 
 var _ Harness = (*harnessClaude)(nil)

@@ -11,6 +11,6 @@ total_bytes_written_thresholds:
 paths:
   /Users/nhatp/github/toniphan21/nestor/work/.nestor: "$workDir"
 redacted:
-  options: []
-  envs: []
-  settings: [CLAUDE_CODE_OAUTH_TOKEN]
+  options: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY]
+  envs: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY]
+  settings: [CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY]

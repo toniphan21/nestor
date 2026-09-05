@@ -27,6 +27,7 @@ type API interface {
 }
 
 const DefaultLogFile = "nestor.log"
+const DefaultHostAlias = "nestor-proxy.internal"
 
 func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer, error) {
 	o := &opts{

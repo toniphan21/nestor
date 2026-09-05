@@ -256,7 +256,9 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 
 	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
-	options := DockerRunOption{}
+	options := DockerRunOption{
+		HostAlias: DefaultHostAlias,
+	}
 
 	// mounts from spec
 	for _, v := range s.data.Mounts {
@@ -291,7 +293,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 	for k, v := range s.spec.Env {
 		env[k] = v
 	}
-	for k, v := range s.harness.Env(s) {
+	for k, v := range s.harness.StartEnv(s) {
 		env[k] = v
 	}
 	if len(env) > 0 {

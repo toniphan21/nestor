@@ -24,11 +24,11 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func DefaultTemplate() Template {
 	template := Template{
-		SandboxTag:       "nestor-[name]",
+		SandboxTag:       "nestor-[sandbox-spec-name]",
 		SandboxID:        fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
-		InitialBranch:    "nestor/initial-branch-[sandbox]-[hash]",
-		SandboxContainer: "nestor-sandbox-[id]",
+		InitialBranch:    "nestor/initial-branch-[sandbox-id]-[hash]",
+		SandboxContainer: "nestor-sandbox-[sandbox-id]",
 		AgentSuffix:      fmt.Sprintf("%d:%s", DefaultAgentIDLength, DefaultIDLetters),
 		AgentID:          "[alias]-[id]",
 	}
@@ -96,11 +96,11 @@ func (t *Template) genRand(template string, defaultLen int) string {
 
 func (t *Template) MakeSandboxTag(specName string) string {
 	return t.fillTemplate(t.SandboxTag, map[string]string{
-		"[sandbox-name]": specName,
-		"[sandboxName]":  specName,
-		"$sandboxName":   specName,
-		"[name]":         specName,
-		"$name":          specName,
+		"[sandbox-spec-name]": specName,
+		"[sandboxSpecName]":   specName,
+		"$sandboxSpecName":    specName,
+		"[name]":              specName,
+		"$name":               specName,
 	})
 }
 
@@ -128,19 +128,23 @@ func (t *Template) MakeWorktreeID(repository string) string {
 func (t *Template) MakeInitialBranch(sandboxID string, dir string) string {
 	hash := t.hashPath(dir)
 	return t.fillTemplate(t.InitialBranch, map[string]string{
-		"[sandbox]": sandboxID,
-		"$sandbox":  sandboxID,
-		"[id]":      sandboxID,
-		"$id":       sandboxID,
-		"[hash]":    hash,
-		"$hash":     hash,
+		"[sandbox-id]": sandboxID,
+		"$sandboxId":   sandboxID,
+		"[sandbox]":    sandboxID,
+		"$sandbox":     sandboxID,
+		"[id]":         sandboxID,
+		"$id":          sandboxID,
+		"[hash]":       hash,
+		"$hash":        hash,
 	})
 }
 
 func (t *Template) MakeSandboxContainer(sandboxID string) string {
 	return t.fillTemplate(t.SandboxContainer, map[string]string{
-		"[id]": sandboxID,
-		"$id":  sandboxID,
+		"[sandbox-id]": sandboxID,
+		"$sandboxId":   sandboxID,
+		"[id]":         sandboxID,
+		"$id":          sandboxID,
 	})
 }
 

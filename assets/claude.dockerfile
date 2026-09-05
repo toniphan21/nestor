@@ -16,6 +16,9 @@ USER agent
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 ENV PATH="/home/agent/.local/bin:${PATH}"
 
+USER agent
+ENTRYPOINT ["sleep", "infinity"]
+
 #--- claude: go
 
 FROM base AS go
@@ -38,5 +41,4 @@ RUN set -eux; \
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 USER agent
-
 ENTRYPOINT ["sleep", "infinity"]

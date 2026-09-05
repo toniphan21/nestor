@@ -6,7 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,9 +23,11 @@ import (
 var errUnknownSandbox = errors.New("unknown sandbox implementation, use default one, don't implement Sandbox")
 
 type Lease struct {
-	data    leaseData
-	sandbox Sandbox
-	log     *slog.Logger
+	data      leaseData
+	sandbox   Sandbox
+	log       *slog.Logger
+	proxyAddr string
+	proxySrv  *http.Server
 }
 
 func (l *Lease) ID() string {
@@ -37,6 +44,10 @@ func (l *Lease) HostPath() string {
 
 func (l *Lease) WorkDir() string {
 	return l.data.WorkDir
+}
+
+func (l *Lease) ProxyAddr() string {
+	return l.proxyAddr
 }
 
 func (l *Lease) ExpiresAt() time.Time {
@@ -70,6 +81,11 @@ func (l *Lease) Release(ctx context.Context) error {
 		slog.String("sandbox", sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 	)
+
+	err = l.stopProxy()
+	if err != nil {
+		l.log.Warn("failed to stop proxy", "err", err)
+	}
 	return sandbox.save(ctx)
 }
 
@@ -117,8 +133,16 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
+
+	proxyRoute := sandbox.harness.ProxyRoute(l)
+	if proxyRoute != nil {
+		if err = l.runProxy(proxyRoute); err != nil {
+			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
+		}
+	}
+
 	// collect harness cmd
-	harnessCmd := sandbox.harness.ExecCommand(sandbox, ExecRequest{
+	harnessCmd := sandbox.harness.ExecCommand(l, ExecRequest{
 		PromptFilePath: promptTargetPath,
 		Model:          run.Model,
 	})
@@ -137,6 +161,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		slog.String("runId", run.ID),
 	)
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
+		Env:     sandbox.harness.ExecEnv(l),
 		WorkDir: l.data.WorkDir,
 		Stdout:  multiWriter(opt.Stdout, &stdout),
 		Stderr:  multiWriter(opt.Stderr, &stderr),
@@ -207,6 +232,64 @@ func (l *Lease) save(fp string, meta *leaseMeta) error {
 		return err
 	}
 	return fs.AtomicWriteFile(fp, b)
+}
+
+func (l *Lease) runProxy(route *ProxyRoute) error {
+	target, err := url.Parse(route.Target)
+	if err != nil {
+		return fmt.Errorf("parse proxy target %q: %w", route.Target, err)
+	}
+	if target.Scheme == "" || target.Host == "" {
+		return fmt.Errorf("%w: proxy target %q is not absolute", ErrInvalid, route.Target)
+	}
+
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return fmt.Errorf("listen for proxy: %w", err)
+	}
+
+	log := l.log.With("component", "proxy")
+
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.Host = target.Host
+			route.Apply(r.Out.Header)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Error("upstream failed", "path", r.URL.Path, "err", err)
+			w.WriteHeader(http.StatusBadGateway)
+		},
+	}
+
+	srv := &http.Server{
+		Handler:           proxy,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	l.proxySrv = srv
+
+	go func() {
+		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			log.Error("proxy stopped", "err", err)
+		}
+	}()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	l.proxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
+	log.Info("proxy started", "addr", l.proxyAddr, "target", target.Host)
+
+	return nil
+}
+
+func (l *Lease) stopProxy() error {
+	if l.proxySrv == nil {
+		return nil
+	}
+
+	l.log.Info("proxy stop", "addr", l.proxyAddr)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return l.proxySrv.Shutdown(ctx)
 }
 
 type RunOption struct {

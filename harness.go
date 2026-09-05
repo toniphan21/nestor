@@ -1,5 +1,7 @@
 package nestor
 
+import "net/http"
+
 type harness string
 
 const HarnessClaudeCode = harness("claude")
@@ -25,7 +27,16 @@ type Harness interface {
 
 	Mounts(sandbox Sandbox) (map[string]SandboxMount, error)
 
-	Env(sandbox Sandbox) map[string]string
+	StartEnv(sandbox Sandbox) map[string]string
 
-	ExecCommand(sandbox Sandbox, req ExecRequest) []string
+	ExecEnv(lease *Lease) map[string]string
+
+	ExecCommand(lease *Lease, req ExecRequest) []string
+
+	ProxyRoute(lease *Lease) *ProxyRoute
+}
+
+type ProxyRoute struct {
+	Target string
+	Apply  func(h http.Header)
 }
