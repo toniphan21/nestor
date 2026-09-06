@@ -287,9 +287,11 @@ func (l *Lease) stopProxy() error {
 	}
 
 	l.log.Info("proxy stop", "addr", l.proxyAddr)
+	srv := l.proxySrv
+	l.proxySrv = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return l.proxySrv.Shutdown(ctx)
+	return srv.Shutdown(ctx)
 }
 
 type RunOption struct {

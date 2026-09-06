@@ -15,6 +15,7 @@ import (
 
 type Config struct {
 	Dir                         string            `yaml:"dir"`
+	Root                        string            `yaml:"root"`
 	PowerOverhead               float64           `yaml:"power_overhead"`
 	SectorSize                  uint64            `yaml:"sector_size"`
 	TotalBytesWrittenOverhead   uint64            `yaml:"total_bytes_written_overhead"`
@@ -32,7 +33,23 @@ type redacted struct {
 
 const defaultTotalBytesWrittenFormat = "TBW=%.3f"
 
-func View(api nestor.API, config *Config) (ViewData, error) {
+func View(api nestor.API, cf *Config) error {
+	result, err := collectViewData(api, cf)
+	if err == nil {
+		result.Print()
+	}
+	return err
+}
+
+func Explain(api nestor.API, cf *Config) error {
+	result, err := collectViewData(api, cf)
+	if err == nil {
+		result.PrintArch(10, 2)
+	}
+	return err
+}
+
+func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	if config == nil {
 		config = &Config{
 			PowerOverhead:             1.2,
@@ -42,7 +59,7 @@ func View(api nestor.API, config *Config) (ViewData, error) {
 		}
 	}
 
-	var result ViewData
+	var result viewData
 	ctx := context.Background()
 	runtime := api.Runtime()
 
@@ -73,7 +90,7 @@ func View(api nestor.API, config *Config) (ViewData, error) {
 
 const leftSize = 32
 
-type ViewData struct {
+type viewData struct {
 	NestorDir       string
 	SpecFilePath    string
 	ProfileFilePath string
@@ -88,7 +105,7 @@ type ViewData struct {
 	Config          Config
 }
 
-func (d *ViewData) PrintArch() {
+func (d *viewData) PrintArch(drawPadding int, textPadding int) {
 	f, err := nestor.Embed.ReadFile("assets/arch")
 	if err != nil {
 		return
@@ -114,6 +131,7 @@ func (d *ViewData) PrintArch() {
 		"sandbox.yml":                      pterm.LightCyan,
 	}
 
+	var pad = strings.Repeat(" ", drawPadding)
 	var out []string
 	lines := strings.Split(string(f), "\n")
 	for _, line := range lines {
@@ -121,13 +139,49 @@ func (d *ViewData) PrintArch() {
 			line = strings.ReplaceAll(line, t, fn(t))
 		}
 
-		out = append(out, strings.Repeat(" ", 23)+line)
+		out = append(out, pad+line)
 	}
 
 	fmt.Println(strings.Join(out, "\n"))
+
+	pad = strings.Repeat(" ", textPadding)
+	text := `
+<pad><profile.yml> stores the auth method, token, and dockerfile path, plus profile metadata: models/aliases, targets, and the default model and target.
+<pad><sandbox.yml> stores the <SandboxSpec> configuration, which binds a <Harness> (an interface; built-ins provided, extendable) and a <Profile>. SandboxSpec also holds the mounts/work path configuration. 
+<pad>Specs need not come from disk; pass them directly with <WithSandboxSpecs()>, and profiles with <WithProfiles()>.
+
+<pad>From a <SandboxSpec> creates one or more Sandboxes, up to its max_instance limit. Each <Sandbox> is a container running 'sleep infinity'.
+
+<pad>Use <API>.<Acquire(ctx, spec, path)> to get a <Lease>. Nestor picks an available sandbox based on path, creating a new one if needed (Acquire automatically builds the docker image and starts the sandbox).
+
+<pad>A <Lease> expires shortly after it is acquired. Use <Extend()> to extend it, <Run()> to execute a prompt, and <Release()> to release it; this is where you put your logic (each run triggers a docker exec on the running Sandbox container).
+`
+	replaces := map[string]string{
+		"<pad>":                      pad,
+		"<profile.yml>":              pterm.Red(d.ReplacePath(d.ProfileFilePath)),
+		"<sandbox.yml>":              pterm.Cyan(d.ReplacePath(d.SpecFilePath)),
+		"<Harness>":                  pterm.Magenta("Harness"),
+		"<Profile>":                  pterm.Red("Profile"),
+		"<Sandbox>":                  pterm.Green("Sandbox"),
+		"<SandboxSpec>":              pterm.Cyan("SandboxSpec"),
+		"<Lease>":                    pterm.Blue("Lease"),
+		"<API>":                      pterm.Gray("API"),
+		"<Acquire(ctx, spec, path)>": pterm.Yellow("Acquire(ctx, spec, path)"),
+		"<Extend()>":                 pterm.Yellow("Extend()"),
+		"<Run()>":                    pterm.Yellow("Run()"),
+		"<Release()>":                pterm.Yellow("Release()"),
+		"<WithSandboxSpecs()>":       pterm.Yellow("WithSandboxSpecs()"),
+		"<WithProfiles()>":           pterm.Yellow("WithProfiles()"),
+	}
+	for k, v := range replaces {
+		text = strings.ReplaceAll(text, k, v)
+	}
+	fmt.Println(text)
 }
 
-func (d *ViewData) Print() {
+func (d *viewData) Print() {
+	ctx := context.Background()
+
 	w := leftSize
 	nd := d.ReplacePath(d.NestorDir) + "/"
 	fmt.Println()
@@ -192,7 +246,7 @@ func (d *ViewData) Print() {
 	}
 
 	for _, spec := range d.Specs {
-		fmt.Printf("%*s: %s\n", w, pterm.Cyan("sandbox spec"), spec.Name)
+		fmt.Printf("%*s: %s %s %s \n", w, pterm.Cyan("sandbox spec"), spec.Name, pterm.Gray("· docker image ="), pterm.Green(d.Template.MakeSandboxTag(spec.Name)))
 		fmt.Printf("%*s: %d\n", w, pterm.Cyan("max instances"), spec.MaxInstances)
 
 		fmt.Printf("%*s: %s\n", w, pterm.Cyan("harness"), spec.Harness)
@@ -200,7 +254,7 @@ func (d *ViewData) Print() {
 		var profile = ""
 		piy := spec.ProfileInYaml()
 		if piy != nil && *piy != spec.Profile {
-			profile = "<not-set> " + pterm.Yellow("(defaults to harness name: "+spec.Profile+")")
+			profile = "<not-set> " + pterm.Gray("(defaults to harness name: "+spec.Profile+")")
 		} else {
 			profile = spec.Profile
 		}
@@ -209,7 +263,7 @@ func (d *ViewData) Print() {
 		var target = ""
 		tiy := spec.TargetInYaml()
 		if tiy != nil && *tiy != spec.Target {
-			target = "<not-set> " + pterm.Yellow("(defaults to harness default target: "+spec.Target+")")
+			target = "<not-set> " + pterm.Gray("(defaults to harness default target: "+spec.Target+")")
 		} else {
 			target = spec.Target
 		}
@@ -218,7 +272,7 @@ func (d *ViewData) Print() {
 		// lease duration
 		lease := ""
 		if spec.Lease == nil {
-			lease = "<not-set> " + pterm.Yellow("(defaults to init 1m, extend 15m)")
+			lease = "<not-set> " + pterm.Gray("(defaults to init 1m, extend 15m)")
 		} else {
 			lease = fmt.Sprintf("init %s, extend %s", spec.LeaseInitDuration(), spec.LeaseExtendDuration())
 		}
@@ -247,21 +301,47 @@ func (d *ViewData) Print() {
 				mt := fmt.Sprintf("mounts[%d]", i+1)
 				d.printKeyValuesWithKeysOrder(w, mounts, "-", pterm.Cyan(mt), pterm.Magenta(""), keys)
 			}
-			//fmt.Printf("%*s: %s\n", w, pterm.Cyan("mounts"), "print mounts")
 		}
+
+		sandboxes := d.sandboxes(spec)
+		for i, v := range sandboxes {
+			sb := fmt.Sprintf("sandbox[%d]", i+1)
+			status := pterm.Gray("docker container = " + d.Template.MakeSandboxContainer(v.ID()) + " · stopped")
+			if v.IsRunning(ctx) {
+				status = pterm.Gray("docker container = ")
+				status += pterm.Green(d.Template.MakeSandboxContainer(v.ID()))
+				status += pterm.Gray(" · ")
+				status += pterm.Green("running")
+			}
+			fmt.Printf("%*s: id       = %s %s %s\n", w, pterm.Green(sb), v.ID(), pterm.Gray("·"), status)
+
+			leases := v.Leases()
+			if len(leases) == 0 {
+				fmt.Printf("%*s  %s\n", w, pterm.Green(""), pterm.Blue("<no-lease>"))
+			} else {
+				for j, l := range leases {
+					lt := pterm.Blue(fmt.Sprintf("lease[%d]", j+1))
+					fmt.Printf("%*s  %s = %s %s %s %s %s\n", w, pterm.Cyan(""),
+						lt,
+						l.ID(), pterm.Gray("·"),
+						pterm.Cyan(l.ExpiresAt().Format(time.RFC3339)), pterm.Gray("·"),
+						d.ReplacePath(l.HostPath()),
+					)
+				}
+			}
+		}
+
 		fmt.Println()
 	}
-
-	// d.PrintArch()
 }
 
-func (d *ViewData) printKeyValues(w int, kv map[string]string, typ string, firstLineLabel, label string) {
+func (d *viewData) printKeyValues(w int, kv map[string]string, typ string, firstLineLabel, label string) {
 	keys := slices.Collect(maps.Keys(kv))
 	sort.Strings(keys)
 	d.printKeyValuesWithKeysOrder(w, kv, typ, firstLineLabel, label, keys)
 }
 
-func (d *ViewData) printKeyValuesWithKeysOrder(w int, kv map[string]string, typ string, firstLineLabel, label string, keys []string) {
+func (d *viewData) printKeyValuesWithKeysOrder(w int, kv map[string]string, typ string, firstLineLabel, label string, keys []string) {
 	if kv == nil {
 		return
 	}
@@ -287,7 +367,7 @@ func (d *ViewData) printKeyValuesWithKeysOrder(w int, kv map[string]string, typ 
 	}
 }
 
-func (d *ViewData) ReplacePath(path string) string {
+func (d *viewData) ReplacePath(path string) string {
 	if d.Config.PathReplacements == nil {
 		return path
 	}
@@ -303,7 +383,7 @@ func (d *ViewData) ReplacePath(path string) string {
 	return path
 }
 
-func (d *ViewData) Redact(typ, key, value string) (string, bool) {
+func (d *viewData) Redact(typ, key, value string) (string, bool) {
 	list := make(map[string]bool)
 	switch typ {
 	case "option":
@@ -327,7 +407,7 @@ func (d *ViewData) Redact(typ, key, value string) (string, bool) {
 	return "----- redacted -----", true
 }
 
-func (d *ViewData) statLine() string {
+func (d *viewData) statLine() string {
 	if d.Stat == nil {
 		return ""
 	}
@@ -388,6 +468,17 @@ func (d *ViewData) statLine() string {
 	values = append(values, cpu, mem, disk)
 
 	return strings.Join(values, pterm.Gray(" · "))
+}
+
+func (d *viewData) sandboxes(spec nestor.SandboxSpec) []nestor.Sandbox {
+	var out []nestor.Sandbox
+	for _, v := range d.Sandboxes {
+		if v.Spec().Name != spec.Name {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 type byteUnit struct {

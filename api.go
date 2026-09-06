@@ -104,11 +104,15 @@ func New(options ...Option) (API, error) {
 	}
 	a.docker = a.newDockerFunc(a.log)
 
-	// register sandboxSpecs and profiles passed via options
-	if len(o.profiles) > 0 {
-		for _, v := range o.profiles {
-			a.registry.RegisterProfile(v)
-		}
+	// register profiles, sandboxSpecs and harnesses passed via options
+	for _, v := range o.profiles {
+		a.registry.RegisterProfile(v)
+	}
+	for _, v := range o.sandboxSpecs {
+		a.registry.RegisterSandboxSpec(v)
+	}
+	for _, v := range o.harnesses {
+		a.registry.RegisterHarness(v)
 	}
 
 	if err := a.init(); err != nil {
@@ -306,6 +310,11 @@ func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandb
 		dir := a.platform.SandboxDir(v)
 		sb, err := parseSandbox(runtime, dir)
 		if err != nil {
+			// when sandbox spec not found, it maybe deleted - nothing to warn
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+
 			a.log.Warn("cannot read sandbox", slog.String("dir", dir))
 			continue
 		}
@@ -387,6 +396,9 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 	// create new one
 	sandbox, err := a.createSandboxLocked(ctx, spec)
 	if err != nil {
+		if errors.Is(err, ErrNotAllowed) {
+			return nil, fmt.Errorf("%w: %w", ErrNotAvailable, err)
+		}
 		return nil, err
 	}
 	lease, err := sandbox.Acquire(ctx, path)

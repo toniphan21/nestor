@@ -24,13 +24,26 @@ var shortDesc = map[string]string{
 	"down":    "Stop all running sandboxes so the next run picks up config changes",
 	"release": "Release the lease held on a sandbox",
 	"view":    "Show the current nestor state",
+	"explain": "Show the nestor architecture and how it works",
 	"version": "Print the nestor version",
 }
 
 func main() {
 	root := &cobra.Command{
 		Use: "nestor", Short: shortDesc["root"],
-		RunE: runWithAPI(view),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			config := readConfig()
+			switch config.Root {
+			case "view":
+				fn := runWithAPI(view)
+				return fn(cmd, args)
+			case "explain":
+				fn := runWithAPI(explain)
+				return fn(cmd, args)
+			default:
+				return cmd.Usage()
+			}
+		},
 	}
 
 	root.AddCommand(
@@ -43,6 +56,7 @@ func main() {
 		command("down", down),
 		command("release", release),
 		command("view", view),
+		command("explain", explain),
 	)
 
 	if err := withDirFlag(root).Execute(); err != nil {
@@ -55,14 +69,19 @@ func withDirFlag(cmd *cobra.Command) *cobra.Command {
 	return cmd
 }
 
+func readConfig() *cli.Config {
+	var config *cli.Config
+	if wd, err := os.Getwd(); err == nil {
+		if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
+			_ = yaml.Unmarshal(c, &config)
+		}
+	}
+	return config
+}
+
 func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		var config *cli.Config
-		if wd, err := os.Getwd(); err == nil {
-			if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
-				_ = yaml.Unmarshal(c, &config)
-			}
-		}
+		config := readConfig()
 
 		dir, err := cmd.Flags().GetString("dir")
 		if err != nil {
@@ -122,8 +141,7 @@ func setup(api nestor.API, cf *cli.Config, args ...string) error {
 }
 
 func destroy(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("destroy is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
-	return nil
+	return cli.Destroy(api)
 }
 
 func build(api nestor.API, cf *cli.Config, args ...string) error {
@@ -139,14 +157,13 @@ func down(api nestor.API, cf *cli.Config, args ...string) error {
 }
 
 func release(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("release is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
-	return nil
+	return cli.Release(api, args)
 }
 
 func view(api nestor.API, cf *cli.Config, args ...string) error {
-	result, err := cli.View(api, cf)
-	if err == nil {
-		result.Print()
-	}
-	return err
+	return cli.View(api, cf)
+}
+
+func explain(api nestor.API, cf *cli.Config, args ...string) error {
+	return cli.Explain(api, cf)
 }

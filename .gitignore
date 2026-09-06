@@ -37,3 +37,4 @@ go.work.sum
 # nestor util files
 /.nestor.yml
 /.nestor.png
+/cmd/test

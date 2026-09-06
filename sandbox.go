@@ -89,7 +89,7 @@ func parseSandbox(runtime Runtime, dir string) (Sandbox, error) {
 
 	spec, have := runtime.Registry.SandboxSpec(data.Spec)
 	if !have {
-		return nil, fmt.Errorf("%w: sandbox %q", ErrNotFound, data.Spec)
+		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, data.Spec)
 	}
 
 	// TODO: validate, the file can be modified manually so we need to validate again

@@ -20,6 +20,7 @@ type opts struct {
 	template      Template
 	sandboxSpecs  []SandboxSpec
 	profiles      []Profile
+	harnesses     []Harness
 	newGitFunc    NewGitFunc
 	newDockerFunc NewDockerFunc
 }
@@ -29,41 +30,33 @@ func WithDir(dir string) Option {
 }
 
 func WithLogger(logger *slog.Logger) Option {
-	return optionFunc(func(opts *opts) { opts.logger = logger })
+	return optionFunc(func(o *opts) { o.logger = logger })
 }
 
 func WithPlatform(platform Platform) Option {
-	return optionFunc(func(opts *opts) {
-		opts.platform = platform
-	})
+	return optionFunc(func(o *opts) { o.platform = platform })
 }
 
 func WithSandboxSpecs(specs []SandboxSpec) Option {
-	return optionFunc(func(opts *opts) {
-		opts.sandboxSpecs = specs
-	})
+	return optionFunc(func(o *opts) { o.sandboxSpecs = specs })
 }
 
 func WithProfiles(specs []Profile) Option {
-	return optionFunc(func(opts *opts) {
-		opts.profiles = specs
-	})
+	return optionFunc(func(o *opts) { o.profiles = specs })
+}
+
+func WithHarnesses(harnesses Harness) Option {
+	return optionFunc(func(o *opts) { o.harnesses = o.harnesses })
 }
 
 func WithTemplate(template Template) Option {
-	return optionFunc(func(opts *opts) {
-		opts.template = template
-	})
+	return optionFunc(func(opts *opts) { opts.template = template })
 }
 
 func WithGit(fn NewGitFunc) Option {
-	return optionFunc(func(opts *opts) {
-		opts.newGitFunc = fn
-	})
+	return optionFunc(func(opts *opts) { opts.newGitFunc = fn })
 }
 
 func WithDocker(fn NewDockerFunc) Option {
-	return optionFunc(func(opts *opts) {
-		opts.newDockerFunc = fn
-	})
+	return optionFunc(func(opts *opts) { opts.newDockerFunc = fn })
 }

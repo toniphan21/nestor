@@ -1,4 +1,5 @@
 dir: ./work/.nestor
+root: view
 power_overhead: 1.2
 sector_size: 512
 total_bytes_written_overhead: 50 # 50GB

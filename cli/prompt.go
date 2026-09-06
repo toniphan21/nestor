@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"slices"
+	"strings"
+	"syscall"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -19,12 +23,14 @@ type promptInfo struct {
 }
 
 func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
-	// TODO: handle args
 	allSpecs := api.Runtime().Registry.SandboxSpecs()
 	if len(allSpecs) == 0 {
 		fmt.Println(pterm.Yellow("no sandbox specs to prompt"))
 		return &promptInfo{run: false}, nil
 	}
+	slices.SortFunc(allSpecs, func(a nestor.SandboxSpec, b nestor.SandboxSpec) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	var err error
 	var spec nestor.SandboxSpec
@@ -71,6 +77,9 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 }
 
 func Prompt(api nestor.API, args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	info, err := collectPromptInfo(api, args)
 	if err != nil {
 		return err
@@ -80,12 +89,10 @@ func Prompt(api nestor.API, args []string) error {
 		return nil
 	}
 
-	return DoPrompt(api, info.spec, info.path, info.prompt)
+	return DoPrompt(ctx, api, info.spec, info.path, info.prompt)
 }
 
-func DoPrompt(api nestor.API, spec, path, prompt string) error {
-	ctx := context.Background()
-
+func DoPrompt(ctx context.Context, api nestor.API, spec, path, prompt string) error {
 	lease, err := api.Acquire(ctx, spec, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
