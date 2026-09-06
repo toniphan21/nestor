@@ -20,7 +20,21 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
+type leaseAPI interface {
+	ID() string
+	Sandbox() Sandbox
+	HostPath() string
+	WorkDir() string
+	ProxyAddr() string
+	ExpiresAt() time.Time
+	Extend(ctx context.Context) error
+	Release(ctx context.Context) error
+	Run(ctx context.Context, prompt string, opt RunOption) (RunResult, error)
+}
+
 var errUnknownSandbox = errors.New("unknown sandbox implementation, use default one, don't implement Sandbox")
+
+var _ leaseAPI = (*Lease)(nil)
 
 type Lease struct {
 	data      leaseData

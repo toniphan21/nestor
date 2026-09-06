@@ -6,7 +6,6 @@ import (
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
-	"nhatp.com/go/nestor/infra/fs"
 )
 
 func Destroy(api nestor.API) error {
@@ -50,7 +49,7 @@ func DoDestroy(ctx context.Context, api nestor.API) error {
 			fmt.Printf(", stopped\n")
 		}
 
-		if err := fs.RemoveDir(sandbox.Dir()); err != nil {
+		if err := sandbox.Delete(ctx); err != nil {
 			return err
 		}
 		fmt.Printf("deleted sandbox %s\n", pterm.Blue(sandbox.ID()))

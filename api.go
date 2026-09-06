@@ -167,9 +167,9 @@ func (a *api) init() error {
 		for _, v := range hss {
 			a.registry.RegisterProfile(v)
 		}
-		a.log.Info("loaded harness specs", slog.String("path", pf))
+		a.log.Info("loaded profile from profile.yml", slog.String("path", pf))
 	} else {
-		a.log.Info("use harness specs from WithProfiles")
+		a.log.Info("use profile from WithProfiles")
 	}
 
 	// initialize builtin harnesses
@@ -209,7 +209,7 @@ func (a *api) init() error {
 		for _, v := range sbs {
 			a.registry.RegisterSandboxSpec(v)
 		}
-		a.log.Info("loaded sandbox specs", slog.String("path", sf))
+		a.log.Info("loaded sandbox specs from sandbox.yml", slog.String("path", sf))
 	} else {
 		a.log.Info("use sandbox specs from WithSandboxSpecs")
 	}
