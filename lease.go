@@ -177,7 +177,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	)
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
 		Env:     sandbox.harness.ExecEnv(l, req),
-		WorkDir: l.data.WorkDir,
+		WorkDir: l.data.WorkDir, // TODO: resolve workDir if it is git worktree
 		Stdout:  multiWriter(opt.Stdout, &stdout),
 		Stderr:  multiWriter(opt.Stderr, &stderr),
 	})

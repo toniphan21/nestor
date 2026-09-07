@@ -30,8 +30,8 @@ data:
         - haiku:4.5
 
   opencode:
-    auth: "api_key"
-    proxy: true
+    auth: "api_key" # opencode only accept auth = api_key
+    proxy: true     # opencode only accept proxy = true
     default_target: base
     default_model: kimi-k2.7-code
     settings:

@@ -13,6 +13,7 @@ import (
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli/claude"
+	"nhatp.com/go/nestor/cli/opencode"
 )
 
 type promptInfo struct {
@@ -105,6 +106,8 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, prompt string) er
 	switch lease.Sandbox().Harness().Name() {
 	case string(nestor.HarnessClaudeCode):
 		stdout = claude.NewWriter()
+	case string(nestor.HarnessOpenCode):
+		stdout = opencode.NewWriter()
 	default:
 		stdout = os.Stdout
 	}

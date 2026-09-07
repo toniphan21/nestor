@@ -20,6 +20,9 @@ func NewWriter() io.Writer {
 type jsonlWriter struct {
 	buf bytes.Buffer
 	max int // guard against a runaway line
+
+	lastAssistantTextMessage string
+	lastModel                string
 }
 
 func (w *jsonlWriter) Write(p []byte) (int, error) {
@@ -50,12 +53,9 @@ func (w *jsonlWriter) emit(line []byte) {
 	}
 
 	if h, ok := handlers[ev.Type]; ok {
-		h(ev, line)
+		h(w, ev, line)
 	}
 }
-
-var lastAssistantTextMessage string
-var lastModel string
 
 // event captures the fields we care about across stream-json event types.
 type event struct {
@@ -77,8 +77,7 @@ type contentBlock struct {
 	Input map[string]any `json:"input"`
 }
 
-// handler renders one event. Register new ones in handlers.
-type handler func(e event, line []byte)
+type handler func(w *jsonlWriter, e event, line []byte)
 
 var handlers = map[string]handler{
 	"assistant": handleAssistant,
@@ -87,23 +86,23 @@ var handlers = map[string]handler{
 	// add more types here later, e.g. "user": handleUser
 }
 
-func handleAssistant(e event, line []byte) {
+func handleAssistant(w *jsonlWriter, e event, line []byte) {
 	for _, c := range e.Message.Content {
 		switch c.Type {
 		case "text":
-			if lastModel != e.Message.Model {
-				lastModel = e.Message.Model
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", lastModel)))
+			if w.lastModel != e.Message.Model {
+				w.lastModel = e.Message.Model
+				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
 			}
-			lastAssistantTextMessage = c.Text
+			w.lastAssistantTextMessage = c.Text
 			fmt.Fprintln(os.Stderr, "")
 			fmt.Println(c.Text)
 			fmt.Fprintln(os.Stderr, "")
 
 		case "tool_use":
-			if e.Message.Model != "" && lastModel != e.Message.Model {
-				lastModel = e.Message.Model
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", lastModel)))
+			if e.Message.Model != "" && w.lastModel != e.Message.Model {
+				w.lastModel = e.Message.Model
+				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
 			}
 
 			switch c.Name {
@@ -146,7 +145,7 @@ func handleAssistant(e event, line []byte) {
 	}
 }
 
-func handleSystem(e event, line []byte) {
+func handleSystem(w *jsonlWriter, e event, line []byte) {
 	switch e.Subtype {
 	case "thinking_tokens":
 		fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("system: thinking - estimated tokens %d\n", e.EstimatedToken)))
@@ -155,8 +154,8 @@ func handleSystem(e event, line []byte) {
 	}
 }
 
-func handleResult(e event, line []byte) {
-	if e.Result != lastAssistantTextMessage {
+func handleResult(w *jsonlWriter, e event, line []byte) {
+	if e.Result != w.lastAssistantTextMessage {
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Println(e.Result)
 		fmt.Fprintln(os.Stderr, "")

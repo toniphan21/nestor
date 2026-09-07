@@ -2,7 +2,10 @@ package nestor
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -104,11 +107,36 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 }
 
 func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
-	return nil
+	profile := sandbox.Profile()
+	provider := profile.Settings[OpenCodeSettingProvider]
+
+	config := map[string]any{
+		"provider": map[string]any{
+			provider: map[string]map[string]string{
+				"options": {
+					"baseURL": "{env:NESTOR_EXEC_PROXY_ADDR}",
+					"apiKey":  "dummy",
+				},
+			},
+		},
+	}
+
+	b, err := json.Marshal(config)
+	if err != nil {
+		return nil
+	}
+
+	return map[string]string{
+		"OPENCODE_CONFIG_CONTENT": string(b),
+	}
 }
 
 func (h *harnessOpenCode) ExecEnv(lease *Lease, req ExecRequest) map[string]string {
-	return nil
+	proxyAddr := lease.ProxyAddr()
+
+	return map[string]string{
+		"NESTOR_EXEC_PROXY_ADDR": proxyAddr,
+	}
 }
 
 func (h *harnessOpenCode) ExecCommand(lease *Lease, req ExecRequest) []string {
@@ -119,19 +147,54 @@ func (h *harnessOpenCode) ExecCommand(lease *Lease, req ExecRequest) []string {
 		"--format", "json",
 	}
 
-	//profile := lease.Sandbox().Profile()
-	//if model := profile.Model(req.Model); model != "" {
-	//	provider := profile.Options[OpenCodeSettingProvider]
-	//	name := fmt.Sprintf("%s/%s", provider, model)
-	//	cmd = append(cmd, "--model", name)
-	//}
+	profile := lease.Sandbox().Profile()
+	if model := profile.Model(req.Model); model != "" {
+		provider := profile.Settings[OpenCodeSettingProvider]
+		if provider != "" {
+			name := fmt.Sprintf("%s/%s", provider, model)
+			cmd = append(cmd, "--model", name)
+		}
+	}
 
 	cmd = append(cmd, "<", req.PromptFilePath)
 	return cmd
 }
 
 func (h *harnessOpenCode) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
-	return nil
+	profile := lease.Sandbox().Profile()
+	if !profile.Proxy || profile.Auth == AuthCredentials {
+		return nil
+	}
+
+	upstream, have := profile.Settings[OpenCodeSettingUpstream]
+	if !have {
+		return nil
+	}
+
+	ab, haveAB := profile.Settings[OpenCodeSettingProxyAuthorizationBearer]
+	ak, haveAK := profile.Settings[OpenCodeSettingProxyXAPIKey]
+	gk, haveGK := profile.Settings[OpenCodeSettingProxyXGoogAPIKey]
+	if !haveAB && !haveAK && !haveGK {
+		return nil
+	}
+
+	return &ProxyRoute{
+		Target: upstream,
+		Apply: func(h http.Header) {
+			if haveAK {
+				h.Set("x-api-key", ak)
+			}
+
+			if haveGK {
+				h.Set("x-goog-api-key", gk)
+			}
+
+			if haveAB {
+				h.Del("Authorization")
+				h.Set("Authorization", "Bearer "+ab)
+			}
+		},
+	}
 }
 
 var _ Harness = (*harnessOpenCode)(nil)
