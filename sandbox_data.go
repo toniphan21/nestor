@@ -50,7 +50,7 @@ func (s *sandboxData) save(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	return fs.AtomicWriteFile(filepath.Join(dir, sandboxDataFileName), b)
+	return fs.AtomicWriteFile(filepath.Join(dir, sandboxDataFileName), b, 0644)
 }
 
 func readSandboxData(dir string) (*sandboxData, error) {

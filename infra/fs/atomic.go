@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 func AtomicReadFile(path string) ([]byte, error) {
@@ -14,11 +15,33 @@ func AtomicReadFile(path string) ([]byte, error) {
 	return b, nil
 }
 
-func AtomicWriteFile(path string, data []byte) error {
+func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	// WriteFile is not atomic but Rename is, so write to a tmp file then rename.
 	// This ensures ReadFile/WriteFile work together across different programs.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	dir := filepath.Dir(path)
+
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			f.Close()
+			os.Remove(tmp)
+		}
+	}()
+
+	if _, err = f.Write(data); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Chmod(tmp, perm); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

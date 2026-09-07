@@ -288,9 +288,9 @@ func (d *viewData) Print() {
 
 				mounts := make(map[string]string)
 				mounts["type"] = string(v.Type)
-				mounts["path"] = v.Path
+				mounts["path"] = d.ReplacePath(v.Path)
 				if v.At != "" {
-					mounts["at"] = v.At
+					mounts["at"] = d.ReplacePath(v.At)
 					keys = append(keys, "at")
 				}
 				if v.ReadOnly {

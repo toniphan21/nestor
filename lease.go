@@ -142,7 +142,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot read lease meta file: %w", err)
 	}
 
-	if err = fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(prompt)); err != nil {
+	if err = fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(prompt), 0644); err != nil {
 		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
@@ -245,7 +245,7 @@ func (l *Lease) save(fp string, meta *leaseMeta) error {
 	if err != nil {
 		return err
 	}
-	return fs.AtomicWriteFile(fp, b)
+	return fs.AtomicWriteFile(fp, b, 0644)
 }
 
 func (l *Lease) runProxy(route *ProxyRoute) error {
