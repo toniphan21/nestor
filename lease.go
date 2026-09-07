@@ -147,8 +147,12 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
+	req := ExecRequest{
+		PromptFilePath: promptTargetPath,
+		Model:          run.Model,
+	}
 
-	proxyRoute := sandbox.harness.ProxyRoute(l)
+	proxyRoute := sandbox.harness.ProxyRoute(l, req)
 	if proxyRoute != nil {
 		if err = l.runProxy(proxyRoute); err != nil {
 			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
@@ -156,10 +160,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	// collect harness cmd
-	harnessCmd := sandbox.harness.ExecCommand(l, ExecRequest{
-		PromptFilePath: promptTargetPath,
-		Model:          run.Model,
-	})
+	harnessCmd := sandbox.harness.ExecCommand(l, req)
 	cmd := []string{
 		"sh", "-c",
 		strings.Join(harnessCmd, " "),
@@ -175,7 +176,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		slog.String("runId", run.ID),
 	)
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
-		Env:     sandbox.harness.ExecEnv(l),
+		Env:     sandbox.harness.ExecEnv(l, req),
 		WorkDir: l.data.WorkDir,
 		Stdout:  multiWriter(opt.Stdout, &stdout),
 		Stderr:  multiWriter(opt.Stderr, &stderr),

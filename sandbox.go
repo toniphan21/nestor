@@ -438,6 +438,7 @@ func (s *sandboxImpl) collectMounts(ctx context.Context) error {
 		}
 		mounts[m.Path] = SandboxMount{Host: m.Path, Target: target, ReadOnly: m.ReadOnly}
 
+		// worktree only works if the repository mounted
 		if m.Type == MountTypeGitWorktree {
 			for _, wt := range s.data.Worktree {
 				if wt.Repository != m.Path {

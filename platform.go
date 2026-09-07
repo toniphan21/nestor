@@ -106,15 +106,24 @@ func (p *platform) HarnessDefaultOption(harness string, name string) string {
 	}
 
 	switch harness {
-	case "claude":
+	case string(HarnessClaudeCode):
 		switch name {
-		case ".claude":
+		case ClaudeDir:
 			return path.Join(p.UserHomeDir(), ".claude")
-		case ".claude.json":
+		case ClaudeConfigFile:
 			return path.Join(p.UserHomeDir(), ".claude.json")
 		default:
 			return ""
 		}
+
+	case string(HarnessOpenCode):
+		switch name {
+		case OpenCodeConfigDir:
+			return path.Join(p.UserHomeDir(), ".config", "opencode")
+		default:
+			return ""
+		}
+
 	default:
 		return ""
 	}

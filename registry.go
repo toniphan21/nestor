@@ -6,6 +6,7 @@ func newRegistry() Registry {
 		profiles:     make(map[string]Profile),
 		harnesses: map[string]Harness{
 			string(HarnessClaudeCode): newHarnessClaude(),
+			string(HarnessOpenCode):   newHarnessOpenCode(),
 		},
 	}
 }

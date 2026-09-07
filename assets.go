@@ -7,11 +7,7 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
-//go:embed all:assets/claude.dockerfile
-//go:embed assets/profile.yml
-//go:embed assets/sandbox.yml
-//go:embed assets/agent-names.txt
-//go:embed assets/arch
+//go:embed all:assets
 var Embed embed.FS
 
 type embedAsset struct {

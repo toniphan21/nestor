@@ -29,11 +29,11 @@ type Harness interface {
 
 	StartEnv(sandbox Sandbox) map[string]string
 
-	ExecEnv(lease *Lease) map[string]string
+	ExecEnv(lease *Lease, req ExecRequest) map[string]string
 
 	ExecCommand(lease *Lease, req ExecRequest) []string
 
-	ProxyRoute(lease *Lease) *ProxyRoute
+	ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute
 }
 
 type ProxyRoute struct {

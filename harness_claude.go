@@ -122,7 +122,7 @@ func (h *harnessClaude) StartEnv(sandbox Sandbox) map[string]string {
 	return env
 }
 
-func (h *harnessClaude) ExecEnv(lease *Lease) map[string]string {
+func (h *harnessClaude) ExecEnv(lease *Lease, req ExecRequest) map[string]string {
 	var env = make(map[string]string)
 
 	profile := lease.Sandbox().Profile()
@@ -154,7 +154,7 @@ func (h *harnessClaude) ExecCommand(lease *Lease, req ExecRequest) []string {
 	return cmd
 }
 
-func (h *harnessClaude) ProxyRoute(lease *Lease) *ProxyRoute {
+func (h *harnessClaude) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
 	profile := lease.Sandbox().Profile()
 	if !profile.Proxy || profile.Auth == AuthCredentials {
 		return nil
