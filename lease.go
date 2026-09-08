@@ -119,11 +119,12 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	run := leaseRun{
-		ID:      xid.New().String(),
-		Model:   opt.Model,
-		Stdout:  opt.Stdout != nil,
-		Stderr:  opt.Stderr != nil,
-		StartAt: start,
+		ID:             xid.New().String(),
+		WorkDir:        l.data.WorkDir,
+		ModelRequested: opt.Model,
+		Stdout:         opt.Stdout != nil,
+		Stderr:         opt.Stderr != nil,
+		StartAt:        start,
 	}
 
 	// update lease metadata
@@ -152,7 +153,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
 	req := ExecRequest{
 		PromptFilePath: promptTargetPath,
-		Model:          run.Model,
+		Model:          run.ModelRequested,
 		SessionID:      meta.SessionID,
 	}
 
@@ -163,11 +164,11 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		}
 	}
 
-	// collect harness cmd
-	harnessCmd := sandbox.harness.ExecCommand(l, req)
+	// collect harness exec info
+	he := sandbox.harness.Exec(l, req)
 	cmd := []string{
 		"sh", "-c",
-		strings.Join(harnessCmd, " "),
+		strings.Join(he.Command, " "),
 	}
 
 	// execute the prompt
@@ -181,8 +182,8 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		slog.String("runId", run.ID),
 	)
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
-		Env:     sandbox.harness.ExecEnv(l, req),
-		WorkDir: l.data.WorkDir, // TODO: resolve workDir if it is git worktree
+		Env:     he.Env,
+		WorkDir: run.WorkDir,
 		Stdout:  multiWriter(opt.Stdout, &stdout, sessCapturer),
 		Stderr:  multiWriter(opt.Stderr, &stderr),
 	})
@@ -194,7 +195,10 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
 
-	run.Command = cmd
+	// update run and meta
+	run.SessionID = he.SessionID
+	run.Command = he.Command
+	run.ModelUsed = he.Model
 	run.EndAt = time.Now().UTC()
 
 	meta.SessionID = sessCapturer.SessionID()
@@ -339,13 +343,16 @@ type leaseMeta struct {
 }
 
 type leaseRun struct {
-	ID      string    `yaml:"id"`
-	Model   string    `yaml:"model"`
-	Command []string  `yaml:"command"`
-	Stdout  bool      `yaml:"stdout"`
-	Stderr  bool      `yaml:"stderr"`
-	Code    int       `yaml:"code"`
-	Error   *string   `yaml:"error,omitempty"`
-	StartAt time.Time `yaml:"start_at"`
-	EndAt   time.Time `yaml:"end_at"`
+	ID             string    `yaml:"id"`
+	WorkDir        string    `yaml:"work_dir"`
+	ModelRequested string    `yaml:"model_requested"`
+	ModelUsed      string    `yaml:"model_used"`
+	Command        []string  `yaml:"command"`
+	SessionID      string    `yaml:"session_id"`
+	Stdout         bool      `yaml:"stdout"`
+	Stderr         bool      `yaml:"stderr"`
+	Code           int       `yaml:"code"`
+	Error          *string   `yaml:"error,omitempty"`
+	StartAt        time.Time `yaml:"start_at"`
+	EndAt          time.Time `yaml:"end_at"`
 }

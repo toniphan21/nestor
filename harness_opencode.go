@@ -131,20 +131,18 @@ func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
 	}
 }
 
-func (h *harnessOpenCode) ExecEnv(lease *Lease, req ExecRequest) map[string]string {
+func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	proxyAddr := lease.ProxyAddr()
-
-	return map[string]string{
-		"NESTOR_EXEC_PROXY_ADDR": proxyAddr,
-	}
-}
-
-func (h *harnessOpenCode) ExecCommand(lease *Lease, req ExecRequest) []string {
-	cmd := []string{
-		"opencode",
-		"run",
-		"--dangerously-skip-permissions",
-		"--format", "json",
+	out := HarnessExec{
+		Env: map[string]string{
+			"NESTOR_EXEC_PROXY_ADDR": proxyAddr,
+		},
+		Command: []string{
+			"opencode",
+			"run",
+			"--dangerously-skip-permissions",
+			"--format", "json",
+		},
 	}
 
 	profile := lease.Sandbox().Profile()
@@ -152,16 +150,18 @@ func (h *harnessOpenCode) ExecCommand(lease *Lease, req ExecRequest) []string {
 		provider := profile.Settings[OpenCodeSettingProvider]
 		if provider != "" {
 			name := fmt.Sprintf("%s/%s", provider, model)
-			cmd = append(cmd, "--model", name)
+			out.Command = append(out.Command, "--model", name)
+			out.Model = name
 		}
 	}
 
 	if req.SessionID != "" {
-		cmd = append(cmd, "--session", req.SessionID)
+		out.Command = append(out.Command, "--session", req.SessionID)
+		out.SessionID = req.SessionID
 	}
 
-	cmd = append(cmd, "<", req.PromptFilePath)
-	return cmd
+	out.Command = append(out.Command, "<", req.PromptFilePath)
+	return out
 }
 
 func (h *harnessOpenCode) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {

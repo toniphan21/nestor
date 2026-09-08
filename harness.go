@@ -30,9 +30,7 @@ type Harness interface {
 
 	StartEnv(sandbox Sandbox) map[string]string
 
-	ExecEnv(lease *Lease, req ExecRequest) map[string]string
-
-	ExecCommand(lease *Lease, req ExecRequest) []string
+	Exec(lease *Lease, req ExecRequest) HarnessExec
 
 	CaptureSessionID(line []byte) (string, bool)
 
@@ -42,4 +40,11 @@ type Harness interface {
 type ProxyRoute struct {
 	Target string
 	Apply  func(h http.Header)
+}
+
+type HarnessExec struct {
+	Env       map[string]string
+	Command   []string
+	Model     string
+	SessionID string
 }

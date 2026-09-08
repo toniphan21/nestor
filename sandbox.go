@@ -475,6 +475,7 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 }
 
 func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
+	// TODO: resolve workDir if it is git worktree
 	for _, m := range s.Mounts() {
 		rel, err := filepath.Rel(m.Host, path)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {

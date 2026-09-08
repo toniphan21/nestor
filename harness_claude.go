@@ -122,40 +122,40 @@ func (h *harnessClaude) StartEnv(sandbox Sandbox) map[string]string {
 	return env
 }
 
-func (h *harnessClaude) ExecEnv(lease *Lease, req ExecRequest) map[string]string {
-	var env = make(map[string]string)
+func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
+	out := HarnessExec{
+		Env: make(map[string]string),
+		Command: []string{
+			"claude",
+			"--dangerously-skip-permissions",
+			"--output-format stream-json",
+			"--verbose",
+		},
+	}
 
 	profile := lease.Sandbox().Profile()
 	switch profile.Auth {
 	case AuthAPIKey:
 		if profile.Proxy {
-			env[AnthropicBaseURLName] = lease.ProxyAddr()
-			env[AnthropicAuthTokenName] = "dummy"
+			out.Env[AnthropicBaseURLName] = lease.ProxyAddr()
+			out.Env[AnthropicAuthTokenName] = "dummy"
 		}
 	}
-	return env
-}
 
-func (h *harnessClaude) ExecCommand(lease *Lease, req ExecRequest) []string {
-	cmd := []string{
-		"claude",
-		"--dangerously-skip-permissions",
-		"--output-format stream-json",
-		"--verbose",
-	}
-
-	profile := lease.Sandbox().Profile()
 	if model := profile.Model(req.Model); model != "" {
-		cmd = append(cmd, "--model", model)
+		out.Command = append(out.Command, "--model", model)
+		out.Model = model
 	}
 
 	if req.SessionID != "" {
-		cmd = append(cmd, "--resume", req.SessionID)
+		out.Command = append(out.Command, "--resume", req.SessionID)
+		out.SessionID = req.SessionID
 	}
 
-	cmd = append(cmd, "--print")
-	cmd = append(cmd, "<", req.PromptFilePath)
-	return cmd
+	out.Command = append(out.Command, "--print")
+	out.Command = append(out.Command, "<", req.PromptFilePath)
+
+	return out
 }
 
 func (h *harnessClaude) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
