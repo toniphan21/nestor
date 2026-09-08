@@ -10,6 +10,7 @@ const HarnessOpenCode = harness("opencode")
 type ExecRequest struct {
 	PromptFilePath string
 	Model          string
+	SessionID      string
 }
 
 type Harness interface {
@@ -32,6 +33,8 @@ type Harness interface {
 	ExecEnv(lease *Lease, req ExecRequest) map[string]string
 
 	ExecCommand(lease *Lease, req ExecRequest) []string
+
+	CaptureSessionID(line []byte) (string, bool)
 
 	ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute
 }

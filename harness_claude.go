@@ -149,6 +149,10 @@ func (h *harnessClaude) ExecCommand(lease *Lease, req ExecRequest) []string {
 		cmd = append(cmd, "--model", model)
 	}
 
+	if req.SessionID != "" {
+		cmd = append(cmd, "--resume", req.SessionID)
+	}
+
 	cmd = append(cmd, "--print")
 	cmd = append(cmd, "<", req.PromptFilePath)
 	return cmd
@@ -172,6 +176,18 @@ func (h *harnessClaude) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
 			h.Del("Authorization")
 		},
 	}
+}
+
+func (h *harnessClaude) CaptureSessionID(line []byte) (string, bool) {
+	var msg map[string]any
+	if err := json.Unmarshal(line, &msg); err != nil {
+		return "", false
+	}
+	id, ok := msg["session_id"].(string)
+	if !ok || id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 var _ Harness = (*harnessClaude)(nil)

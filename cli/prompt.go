@@ -17,10 +17,9 @@ import (
 )
 
 type promptInfo struct {
-	spec   string
-	path   string
-	prompt string
-	run    bool
+	spec string
+	path string
+	run  bool
 }
 
 func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
@@ -69,12 +68,7 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 		fmt.Printf("use path %s\n", pterm.Cyan(selectedPath))
 	}
 
-	p, err := Input("prompt", "")
-	if err != nil {
-		return nil, err
-	}
-
-	return &promptInfo{spec: spec.Name, path: selectedPath, prompt: p, run: true}, nil
+	return &promptInfo{spec: spec.Name, path: selectedPath, run: true}, nil
 }
 
 func Prompt(api nestor.API, args []string) error {
@@ -90,10 +84,10 @@ func Prompt(api nestor.API, args []string) error {
 		return nil
 	}
 
-	return DoPrompt(ctx, api, info.spec, info.path, info.prompt)
+	return DoPrompt(ctx, api, info.spec, info.path)
 }
 
-func DoPrompt(ctx context.Context, api nestor.API, spec, path, prompt string) error {
+func DoPrompt(ctx context.Context, api nestor.API, spec, path string) error {
 	lease, err := api.Acquire(ctx, spec, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
@@ -112,12 +106,25 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, prompt string) er
 		stdout = os.Stdout
 	}
 
-	_, err = lease.Run(ctx, prompt, nestor.RunOption{Stdout: stdout})
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println(pterm.Green("done"))
+			return nil
 
-	_ = lease.Release(ctx)
-	if err != nil {
-		return fmt.Errorf("run lease: %w", err)
+		default:
+			prompt, err := Input("Prompt", "")
+			if err != nil {
+				return err
+			}
+
+			_, err = lease.Run(ctx, prompt, nestor.RunOption{Stdout: stdout})
+
+			_ = lease.Release(ctx)
+			if err != nil {
+				return fmt.Errorf("run lease: %w", err)
+			}
+			fmt.Println("")
+		}
 	}
-	fmt.Println(pterm.Green("done"))
-	return nil
 }

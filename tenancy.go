@@ -80,6 +80,8 @@ func (t *failedTenancy) Run(ctx context.Context, prompt string, opt RunOption) (
 	return RunResult{ExitCode: -1}, t.err
 }
 
+func (t *failedTenancy) SessionID() string { return "" }
+
 func (t *failedTenancy) Err() error {
 	return t.err
 }
@@ -109,6 +111,8 @@ func (t *leaseTenancy) Release(ctx context.Context) error { return t.lease.Relea
 func (t *leaseTenancy) Run(ctx context.Context, prompt string, opt RunOption) (RunResult, error) {
 	return t.lease.Run(ctx, prompt, opt)
 }
+
+func (t *leaseTenancy) SessionID() string { return t.lease.SessionID() }
 
 func (t *leaseTenancy) Err() error {
 	return nil

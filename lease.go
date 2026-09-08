@@ -30,6 +30,7 @@ type leaseAPI interface {
 	Extend(ctx context.Context) error
 	Release(ctx context.Context) error
 	Run(ctx context.Context, prompt string, opt RunOption) (RunResult, error)
+	SessionID() string
 }
 
 var errUnknownSandbox = errors.New("unknown sandbox implementation, use default one, don't implement Sandbox")
@@ -40,6 +41,7 @@ type Lease struct {
 	data      leaseData
 	sandbox   Sandbox
 	log       *slog.Logger
+	sessionID string
 	proxyAddr string
 	proxySrv  *http.Server
 }
@@ -141,6 +143,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	if err != nil {
 		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot read lease meta file: %w", err)
 	}
+	l.sessionID = meta.SessionID
 
 	if err = fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(prompt), 0644); err != nil {
 		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
@@ -150,6 +153,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	req := ExecRequest{
 		PromptFilePath: promptTargetPath,
 		Model:          run.Model,
+		SessionID:      meta.SessionID,
 	}
 
 	proxyRoute := sandbox.harness.ProxyRoute(l, req)
@@ -167,6 +171,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	// execute the prompt
+	sessCapturer := newSessionIDCapture(sandbox.harness.CaptureSessionID)
 	stdout := bufferedFile{}
 	stderr := bufferedFile{}
 
@@ -178,7 +183,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
 		Env:     sandbox.harness.ExecEnv(l, req),
 		WorkDir: l.data.WorkDir, // TODO: resolve workDir if it is git worktree
-		Stdout:  multiWriter(opt.Stdout, &stdout),
+		Stdout:  multiWriter(opt.Stdout, &stdout, sessCapturer),
 		Stderr:  multiWriter(opt.Stderr, &stderr),
 	})
 
@@ -192,11 +197,17 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	run.Command = cmd
 	run.EndAt = time.Now().UTC()
 
+	meta.SessionID = sessCapturer.SessionID()
+	l.sessionID = meta.SessionID
 	meta.Run = append(meta.Run, run)
 	if err = l.save(metaFP, meta); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
 	return RunResult{ExitCode: code, Duration: time.Since(start)}, err
+}
+
+func (l *Lease) SessionID() string {
+	return l.sessionID
 }
 
 func (l *Lease) findLeaseData() (*sandboxImpl, *leaseData, error) {
@@ -322,8 +333,9 @@ type RunResult struct {
 }
 
 type leaseMeta struct {
-	Data leaseData `yaml:"data"`
-	Run  []leaseRun
+	Data      leaseData `yaml:"data"`
+	SessionID string    `yaml:"session_id"`
+	Run       []leaseRun
 }
 
 type leaseRun struct {

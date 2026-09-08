@@ -156,6 +156,10 @@ func (h *harnessOpenCode) ExecCommand(lease *Lease, req ExecRequest) []string {
 		}
 	}
 
+	if req.SessionID != "" {
+		cmd = append(cmd, "--session", req.SessionID)
+	}
+
 	cmd = append(cmd, "<", req.PromptFilePath)
 	return cmd
 }
@@ -195,6 +199,18 @@ func (h *harnessOpenCode) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute 
 			}
 		},
 	}
+}
+
+func (h *harnessOpenCode) CaptureSessionID(line []byte) (string, bool) {
+	var msg map[string]any
+	if err := json.Unmarshal(line, &msg); err != nil {
+		return "", false
+	}
+	id, ok := msg["sessionID"].(string)
+	if !ok || id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 var _ Harness = (*harnessOpenCode)(nil)
