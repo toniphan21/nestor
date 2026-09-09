@@ -137,13 +137,13 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		Env: map[string]string{
 			"NESTOR_EXEC_PROXY_ADDR": proxyAddr,
 		},
-		Command: []string{
-			"opencode",
-			"run",
-			"--dangerously-skip-permissions",
-			"--format", "json",
-		},
+		Command: []string{"opencode"},
 	}
+
+	if !req.Interactive {
+		out.Command = append(out.Command, "run", "--format", "json")
+	}
+	out.Command = append(out.Command, "--dangerously-skip-permissions")
 
 	profile := lease.Sandbox().Profile()
 	if model := profile.Model(req.Model); model != "" {
@@ -160,11 +160,13 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.SessionID = req.SessionID
 	}
 
-	out.Command = append(out.Command, "<", req.PromptFilePath)
+	if !req.Interactive && req.PromptFilePath != "" {
+		out.Command = append(out.Command, "<", req.PromptFilePath)
+	}
 	return out
 }
 
-func (h *harnessOpenCode) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
+func (h *harnessOpenCode) ProxyRoute(lease *Lease) *ProxyRoute {
 	profile := lease.Sandbox().Profile()
 	if !profile.Proxy || profile.Auth == AuthCredentials {
 		return nil

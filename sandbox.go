@@ -373,6 +373,35 @@ func (s *sandboxImpl) save(ctx context.Context) error {
 	return s.data.save(ctx, s.Dir())
 }
 
+func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) error {
+	if sessionId == "" {
+		return nil
+	}
+
+	if s.data.Sessions == nil {
+		s.data.Sessions = make(map[string][]string)
+	}
+
+	session, ok := s.data.Sessions[path]
+	if !ok {
+		s.data.Sessions[path] = []string{sessionId}
+		return s.save(ctx)
+	}
+	session = append(session, sessionId)
+
+	seen := make(map[string]bool)
+	var dedup []string
+	for _, v := range session {
+		if _, have := seen[v]; have {
+			continue
+		}
+		seen[v] = true
+		dedup = append(dedup, v)
+	}
+	s.data.Sessions[path] = dedup
+	return s.save(ctx)
+}
+
 func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 	worktrees := make(map[string]SandboxWorktree)
 	cleanUp := func() {

@@ -45,8 +45,9 @@ const DefaultLeaseInitDuration = time.Minute
 const DefaultLeaseExtendDuration = 15 * time.Minute
 
 type SandboxSpecLease struct {
-	InitDuration   *time.Duration `yaml:"init_duration"`
-	ExtendDuration *time.Duration `yaml:"extend_duration"`
+	InitDuration        *time.Duration `yaml:"init_duration,omitempty"`
+	InteractiveDuration *time.Duration `yaml:"interactive_duration,omitempty"`
+	ExtendDuration      *time.Duration `yaml:"extend_duration,omitempty"`
 }
 
 type SandboxSpec struct {

@@ -128,9 +128,12 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		Command: []string{
 			"claude",
 			"--dangerously-skip-permissions",
-			"--output-format stream-json",
-			"--verbose",
 		},
+	}
+
+	if !req.Interactive {
+		out.Command = append(out.Command, "--output-format", "stream-json")
+		out.Command = append(out.Command, "--verbose")
 	}
 
 	profile := lease.Sandbox().Profile()
@@ -152,13 +155,17 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.SessionID = req.SessionID
 	}
 
-	out.Command = append(out.Command, "--print")
-	out.Command = append(out.Command, "<", req.PromptFilePath)
+	if !req.Interactive {
+		out.Command = append(out.Command, "--print")
 
+		if req.PromptFilePath != "" {
+			out.Command = append(out.Command, "<", req.PromptFilePath)
+		}
+	}
 	return out
 }
 
-func (h *harnessClaude) ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute {
+func (h *harnessClaude) ProxyRoute(lease *Lease) *ProxyRoute {
 	profile := lease.Sandbox().Profile()
 	if !profile.Proxy || profile.Auth == AuthCredentials {
 		return nil

@@ -20,6 +20,32 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
+type RunParam interface {
+	validate() error
+}
+
+type Headless struct {
+	Prompt string
+	Model  string
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+func (h Headless) validate() error {
+	if h.Prompt == "" {
+		return fmt.Errorf("%w: prompt is missing", ErrInvalid)
+	}
+	return nil
+}
+
+type Interactive struct {
+	Model string
+}
+
+func (i Interactive) validate() error {
+	return nil
+}
+
 type leaseAPI interface {
 	ID() string
 	Sandbox() Sandbox
@@ -29,7 +55,7 @@ type leaseAPI interface {
 	ExpiresAt() time.Time
 	Extend(ctx context.Context) error
 	Release(ctx context.Context) error
-	Run(ctx context.Context, prompt string, opt RunOption) (RunResult, error)
+	Run(ctx context.Context, param RunParam) (RunResult, error)
 	SessionID() string
 }
 
@@ -107,7 +133,15 @@ func (l *Lease) Release(ctx context.Context) error {
 	return sandbox.save(ctx)
 }
 
-func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResult, error) {
+func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
+	if param == nil {
+		return RunResult{ExitCode: -1}, fmt.Errorf("%w: param is nil", ErrInvalid)
+	}
+
+	if err := param.validate(); err != nil {
+		return RunResult{ExitCode: -1}, err
+	}
+
 	start := time.Now()
 	sandbox, ok := l.sandbox.(*sandboxImpl)
 	if !ok {
@@ -121,12 +155,9 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 
 	run := leaseRun{
-		ID:             xid.New().String(),
-		WorkDir:        l.data.WorkDir,
-		ModelRequested: opt.Model,
-		Stdout:         opt.Stdout != nil,
-		Stderr:         opt.Stderr != nil,
-		StartAt:        start,
+		ID:      xid.New().String(),
+		WorkDir: l.data.WorkDir,
+		StartAt: start,
 	}
 
 	// update lease metadata
@@ -148,21 +179,70 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	}
 	l.sessionID = meta.SessionID
 
-	if err = fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(prompt), 0644); err != nil {
-		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
+	// create proxy
+	hasProxy := false
+	if proxyRoute := sandbox.harness.ProxyRoute(l); proxyRoute != nil {
+		if err = l.runProxy(proxyRoute); err != nil {
+			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
+		}
+		hasProxy = true
+	}
+
+	switch v := param.(type) {
+	case Headless:
+		l.save(metaFP, meta)
+		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run, runDir, date)
+		l.save(metaFP, meta)
+		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
+
+	case Interactive:
+		// run one predefine prompt to create a session (for now, TODO: remove when we have session management)
+		prompt := "Confirm your environment: are you inside a Docker container, and what is your working directory? Answer briefly, then wait."
+		if hasProxy {
+			prompt = fmt.Sprintf("Confirm your environment: are you inside a Docker container, what is your working directory, and can you reach %s? Answer briefly, then wait.", l.proxyAddr)
+		}
+		l.save(metaFP, meta)
+		hl := Headless{
+			Prompt: prompt,
+		}
+		_, _ = l.runHeadless(ctx, sandbox, &hl, meta, &run, runDir, date)
+		l.save(metaFP, meta)
+
+		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
+		return RunResult{ExitCode: code}, err
+
+	default:
+		return RunResult{ExitCode: -1}, fmt.Errorf("%w: unknown param type", ErrInvalid)
+	}
+}
+
+func (l *Lease) SessionID() string {
+	return l.sessionID
+}
+
+func (l *Lease) runHeadless(
+	ctx context.Context,
+	sandbox *sandboxImpl,
+	param *Headless,
+	meta *leaseMeta,
+	run *leaseRun,
+	runDir string,
+	date string,
+) (int, error) {
+	run.ModelRequested = param.Model
+	run.Stdout = param.Stdout != nil
+	run.Stderr = param.Stderr != nil
+
+	if err := fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(param.Prompt), 0644); err != nil {
+		return -1, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
 	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
 	req := ExecRequest{
+		Interactive:    false,
 		PromptFilePath: promptTargetPath,
 		Model:          run.ModelRequested,
 		SessionID:      meta.SessionID,
-	}
-
-	if proxyRoute := sandbox.harness.ProxyRoute(l, req); proxyRoute != nil {
-		if err = l.runProxy(proxyRoute); err != nil {
-			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
-		}
 	}
 
 	// collect harness exec info
@@ -177,22 +257,22 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 	stdout := bufferedFile{}
 	stderr := bufferedFile{}
 
-	l.log.Info("run lease",
+	l.log.Info("run lease headless",
 		slog.String("sandbox", sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 		slog.String("runId", run.ID),
 	)
-	code, err := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
+	code, runErr := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
 		Env:     he.Env,
 		WorkDir: run.WorkDir,
-		Stdout:  multiWriter(opt.Stdout, &stdout, sessCapturer),
-		Stderr:  multiWriter(opt.Stderr, &stderr),
+		Stdout:  multiWriter(param.Stdout, &stdout, sessCapturer),
+		Stderr:  multiWriter(param.Stderr, &stderr),
 	})
 
-	if _, err = stdout.Save(filepath.Join(runDir, "stdout")); err != nil {
+	if _, err := stdout.Save(filepath.Join(runDir, "stdout")); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
-	if _, err = stderr.Save(filepath.Join(runDir, "stderr")); err != nil {
+	if _, err := stderr.Save(filepath.Join(runDir, "stderr")); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
 
@@ -204,18 +284,63 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 
 	meta.SessionID = sessCapturer.SessionID()
 	l.sessionID = meta.SessionID
+	// save session to sandbox
+	if err := sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+		l.log.Warn("cannot add session", slog.Any("error", err))
+	}
 
 	meta.Run = append(meta.Run, run)
 	meta.Data.ExpiresAt = l.ExpiresAt()
-
-	if err = l.save(metaFP, meta); err != nil {
-		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
-	}
-	return RunResult{ExitCode: code, Duration: time.Since(start)}, err
+	return code, runErr
 }
 
-func (l *Lease) SessionID() string {
-	return l.sessionID
+func (l *Lease) runInteractive(
+	ctx context.Context,
+	sandbox *sandboxImpl,
+	param *Interactive,
+	meta *leaseMeta,
+	run *leaseRun,
+) (int, error) {
+	run.Interactive = true
+	run.ModelRequested = param.Model
+	run.Stdout = false
+	run.Stderr = false
+
+	req := ExecRequest{
+		Interactive: true,
+		Model:       run.ModelRequested,
+		SessionID:   meta.SessionID,
+	}
+
+	// collect harness exec info
+	he := sandbox.harness.Exec(l, req)
+
+	// execute the prompt
+	l.log.Info("run lease interactive",
+		slog.String("sandbox", sandbox.ID()),
+		slog.String("leaseId", l.ID()),
+		slog.String("runId", run.ID),
+	)
+	code, runErr := sandbox.docker.ExecInteractive(ctx, sandbox.Container(), he.Command, DockerExecInteractiveOption{
+		Env:     he.Env,
+		WorkDir: run.WorkDir,
+	})
+
+	// update run and meta
+	run.SessionID = he.SessionID
+	run.Command = he.Command
+	run.ModelUsed = he.Model
+	run.EndAt = time.Now().UTC()
+
+	meta.SessionID = l.sessionID
+	// save session to sandbox
+	if err := sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+		l.log.Warn("cannot add session", slog.Any("error", err))
+	}
+
+	meta.Run = append(meta.Run, run)
+	meta.Data.ExpiresAt = l.ExpiresAt()
+	return code, runErr
 }
 
 func (l *Lease) findLeaseData() (*sandboxImpl, *leaseData, error) {
@@ -260,12 +385,17 @@ func (l *Lease) load(fp string) (*leaseMeta, error) {
 	return meta, nil
 }
 
-func (l *Lease) save(fp string, meta *leaseMeta) error {
+func (l *Lease) save(fp string, meta *leaseMeta) {
 	b, err := yaml.Marshal(meta)
 	if err != nil {
-		return err
+		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
+		return
 	}
-	return fs.AtomicWriteFile(fp, b, 0644)
+
+	err = fs.AtomicWriteFile(fp, b, 0644)
+	if err != nil {
+		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
+	}
 }
 
 func (l *Lease) runProxy(route *ProxyRoute) error {
@@ -343,13 +473,14 @@ type RunResult struct {
 type leaseMeta struct {
 	Data      leaseData `yaml:"data"`
 	SessionID string    `yaml:"session_id"`
-	Run       []leaseRun
+	Run       []*leaseRun
 }
 
 type leaseRun struct {
 	ID             string    `yaml:"id"`
 	WorkDir        string    `yaml:"work_dir"`
 	ModelRequested string    `yaml:"model_requested"`
+	Interactive    bool      `yaml:"interactive"`
 	ModelUsed      string    `yaml:"model_used"`
 	Command        []string  `yaml:"command"`
 	SessionID      string    `yaml:"session_id"`

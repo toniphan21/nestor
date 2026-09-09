@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -159,7 +162,6 @@ type ExecOption struct {
 }
 
 func Exec(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
-	// log it
 	args := []string{
 		"exec",
 	}
@@ -174,12 +176,17 @@ func Exec(ctx context.Context, container string, commands []string, opt ExecOpti
 	args = append(args, container)
 	args = append(args, commands...)
 
+	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	w := &logWriter{log, slog.LevelDebug}
+
 	cmd := exec.Command("docker", args...)
-	cmd.Stdout = opt.Stdout
+	cmd.Stdout = io.MultiWriter(w, opt.Stdout)
 	cmd.Stderr = opt.Stderr
 
+	log.Info("docker exec", slog.Any("args", args))
 	if err := cmd.Start(); err != nil {
-		return -1, fmt.Errorf("%w: docker exec: %w", err)
+		log.Error("docker exec", slog.Any("error", err))
+		return -1, fmt.Errorf("docker exec: %w", err)
 	}
 
 	done := make(chan error, 1)
@@ -196,4 +203,61 @@ func Exec(ctx context.Context, container string, commands []string, opt ExecOpti
 		<-done
 		return -1, ctx.Err()
 	}
+}
+
+func ExecInteractive(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
+	args := []string{"exec", "-it"}
+	if opt.WorkDir != "" {
+		args = append(args, "--workdir", opt.WorkDir)
+	}
+	for k, v := range opt.Env {
+		if k != "" {
+			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+	args = append(args, container)
+	args = append(args, commands...)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	log.Info("docker exec -it", slog.Any("args", args))
+
+	// Ctrl-C goes to the whole foreground process group, so docker gets its
+	// own copy straight from the tty. Ignore ours so the harness handles it.
+	signal.Ignore(syscall.SIGINT, syscall.SIGQUIT)
+	defer signal.Reset(syscall.SIGINT, syscall.SIGQUIT)
+
+	// SIGTERM/SIGHUP are sent to us alone (kill, terminal closed).
+	// Forward so docker doesn't outlive us.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigs)
+
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-sigs:
+			cmd.Process.Signal(syscall.SIGTERM)
+		case <-done:
+		}
+	}()
+
+	err := cmd.Wait()
+	close(done)
+
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+		return ee.ExitCode(), nil // command failed; not a nestor failure
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil
 }

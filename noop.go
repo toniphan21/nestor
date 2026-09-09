@@ -83,4 +83,9 @@ func (n *noopDocker) Exec(ctx context.Context, container string, commands []stri
 	return 0, nil
 }
 
+func (n *noopDocker) ExecInteractive(ctx context.Context, container string, commands []string, opt DockerExecInteractiveOption) (int, error) {
+	n.log.Debug("ExecInteractive", slog.String("container", container), slog.Any("commands", commands), slog.Any("opt", opt))
+	return 0, nil
+}
+
 var _ Docker = (*noopDocker)(nil)

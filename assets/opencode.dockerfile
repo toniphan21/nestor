@@ -3,7 +3,7 @@
 FROM node:24-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates curl \
+      git ca-certificates curl less \
     && rm -rf /var/lib/apt/lists/*
 
 # install Claude Code

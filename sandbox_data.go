@@ -18,6 +18,7 @@ type sandboxData struct {
 	Mounts        map[string]SandboxMount    `yaml:"mounts,omitempty"`
 	HarnessMounts map[string]SandboxMount    `yaml:"harness_mounts,omitempty"`
 	Leases        map[string]leaseData       `yaml:"leases,omitempty"`
+	Sessions      map[string][]string        `yaml:"sessions,omitempty"`
 	CreatedAt     time.Time                  `yaml:"created_at"`
 	UpdatedAt     time.Time                  `yaml:"updated_at"`
 }

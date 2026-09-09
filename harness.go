@@ -8,6 +8,7 @@ const HarnessClaudeCode = harness("claude")
 const HarnessOpenCode = harness("opencode")
 
 type ExecRequest struct {
+	Interactive    bool
 	PromptFilePath string
 	Model          string
 	SessionID      string
@@ -34,7 +35,7 @@ type Harness interface {
 
 	CaptureSessionID(line []byte) (string, bool)
 
-	ProxyRoute(lease *Lease, req ExecRequest) *ProxyRoute
+	ProxyRoute(lease *Lease) *ProxyRoute
 }
 
 type ProxyRoute struct {

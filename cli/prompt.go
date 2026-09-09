@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"syscall"
 
 	"github.com/pterm/pterm"
@@ -25,49 +24,19 @@ type promptInfo struct {
 }
 
 func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
-	allSpecs := api.Runtime().Registry.SandboxSpecs()
-	if len(allSpecs) == 0 {
-		fmt.Println(pterm.Yellow("no sandbox specs to prompt"))
-		return &promptInfo{run: false}, nil
-	}
-	slices.SortFunc(allSpecs, func(a nestor.SandboxSpec, b nestor.SandboxSpec) int {
-		return strings.Compare(a.Name, b.Name)
-	})
-
 	var err error
 	var spec nestor.SandboxSpec
-	if len(allSpecs) > 1 {
-		spec, err = SelectSandboxSpec(allSpecs)
-		if err != nil {
-			return nil, err
-		}
+	if v, err := collectSpec(api); err != nil || v == nil {
+		return &promptInfo{run: false}, err
 	} else {
-		spec = allSpecs[0]
-		fmt.Printf("use sandbox spec %s - harness %s - profile %s\n", pterm.Green(spec.Name), pterm.Magenta(spec.Harness), pterm.Red(spec.Profile))
-	}
-
-	var paths []string
-	for _, v := range spec.Mounts {
-		paths = append(paths, v.Path)
-	}
-
-	if len(paths) == 0 {
-		fmt.Println(pterm.Red("no sandbox mounts found"))
-		return &promptInfo{run: false}, nil
+		spec = *v
 	}
 
 	var selectedPath string
-	if len(paths) > 1 {
-		r, err := Select(paths, "Select path", func(i int, s string) string {
-			return fmt.Sprintf("%d. %s", i+1, s)
-		})
-		if err != nil {
-			return nil, err
-		}
-		selectedPath = r.Value
+	if v, err := collectPath(spec); err != nil || v == nil {
+		return &promptInfo{run: false}, err
 	} else {
-		selectedPath = paths[0]
-		fmt.Printf("use path %s\n", pterm.Cyan(selectedPath))
+		selectedPath = *v
 	}
 
 	profile, have := api.Runtime().Registry.Profile(spec.Profile)
@@ -166,7 +135,7 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 				if err = lease.Extend(ctx); err != nil {
 					return fmt.Errorf("extend lease: %w", err)
 				}
-				_, err = lease.Run(ctx, prompt, nestor.RunOption{Stdout: stdout, Model: model})
+				_, err = lease.Run(ctx, nestor.Headless{Prompt: prompt, Stdout: stdout, Model: model})
 				fmt.Println("")
 			}
 		}

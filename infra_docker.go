@@ -34,6 +34,11 @@ type DockerExecOption struct {
 	Stderr  io.Writer
 }
 
+type DockerExecInteractiveOption struct {
+	Env     map[string]string
+	WorkDir string
+}
+
 type NewDockerFunc func(*slog.Logger) Docker
 
 type Docker interface {
@@ -50,6 +55,8 @@ type Docker interface {
 	Run(ctx context.Context, image, name string, opt DockerRunOption) (string, error)
 
 	Exec(ctx context.Context, container string, commands []string, opt DockerExecOption) (int, error)
+
+	ExecInteractive(ctx context.Context, container string, commands []string, opt DockerExecInteractiveOption) (int, error)
 }
 
 func newDockerCLI(logger *slog.Logger) Docker {
@@ -108,6 +115,14 @@ func (d *dockerCLI) Exec(ctx context.Context, container string, commands []strin
 		Stderr:  opt.Stderr,
 	}
 	return docker.Exec(ctx, container, commands, options, d.log)
+}
+
+func (d *dockerCLI) ExecInteractive(ctx context.Context, container string, commands []string, opt DockerExecInteractiveOption) (int, error) {
+	options := docker.ExecOption{
+		Env:     opt.Env,
+		WorkDir: opt.WorkDir,
+	}
+	return docker.ExecInteractive(ctx, container, commands, options, d.log)
 }
 
 var _ Docker = (*dockerCLI)(nil)
