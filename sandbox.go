@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/rs/xid"
@@ -285,8 +284,9 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 	}
 
 	options.Mounts = append(options.Mounts, DockerMount{
-		Source: runsPath,
-		Target: SandboxRunsTargetPath,
+		Source:   runsPath,
+		Target:   SandboxRunsTargetPath,
+		ReadOnly: true,
 	})
 
 	var env = make(map[string]string)
@@ -475,13 +475,23 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 }
 
 func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
-	// TODO: resolve workDir if it is git worktree
-	for _, m := range s.Mounts() {
-		rel, err := filepath.Rel(m.Host, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
+	sm, rel := s.spec.Resolve(path)
+	switch {
+	case sm == nil:
+		return "", false
+
+	case sm.Type == MountTypeDirect:
+		return filepath.Join(sm.At, rel), true
+
+	case sm.Type == MountTypeGitWorktree:
+		for _, v := range s.data.Worktree {
+			if v.Repository == sm.Path {
+				return filepath.Join(v.Dir, rel), true
+			}
 		}
-		return filepath.Join(m.Target, rel), true
+		return "", false
+
+	default:
+		return "", false
 	}
-	return "", false
 }

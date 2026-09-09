@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,18 +10,25 @@ import (
 	"nhatp.com/go/nestor"
 )
 
+var ErrInterrupted = errors.New("interrupted")
+
 func Input(label string, initial string) (string, error) {
 	if label == "" {
 		label = "Input text"
 	}
 
+	interrupted := false
 	textInput := pterm.DefaultInteractiveTextInput.WithMultiLine().
 		WithDefaultText(label).
+		WithOnInterruptFunc(func() { interrupted = true }).
 		WithDefaultValue(initial)
 
 	result, err := textInput.Show()
 	if err != nil {
 		return "", err
+	}
+	if interrupted {
+		return "", ErrInterrupted
 	}
 	return strings.TrimSpace(result), nil
 }
@@ -36,7 +44,7 @@ func SelectSandboxSpec(specs []nestor.SandboxSpec) (nestor.SandboxSpec, error) {
 		)
 	}
 
-	result, err := Select(specs, "select sandbox spec", optionText)
+	result, err := Select(specs, "Select sandbox spec", optionText)
 	if err != nil {
 		return nestor.SandboxSpec{}, err
 	}

@@ -1,5 +1,11 @@
 package nestor
 
+import (
+	"maps"
+	"slices"
+	"sort"
+)
+
 type auth string
 
 const AuthCredentials = auth("credentials")
@@ -22,25 +28,44 @@ type Profile struct {
 	modelAliases map[string]string
 }
 
-func (s *Profile) Model(alias string) string {
-	if s.modelAliases == nil {
-		s.modelAliases = map[string]string{}
-		for m, aliases := range s.Models {
+func (p *Profile) SupportedModels() []string {
+	models := slices.Collect(maps.Keys(p.Models))
+	sort.Strings(models)
+
+	return models
+}
+
+func (p *Profile) SupportedModelsWithoutDefault() []string {
+	var out []string
+	for _, v := range p.SupportedModels() {
+		if v == p.DefaultModel {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func (p *Profile) Model(alias string) string {
+	if p.modelAliases == nil {
+		p.modelAliases = map[string]string{}
+		for m, aliases := range p.Models {
+			p.modelAliases[m] = m
 			for _, v := range aliases {
-				s.modelAliases[v] = m
+				p.modelAliases[v] = m
 			}
 		}
 	}
 
-	v, ok := s.modelAliases[alias]
+	v, ok := p.modelAliases[alias]
 	if !ok {
-		return s.DefaultModel
+		return p.DefaultModel
 	}
 	return v
 }
 
-func (s *Profile) dockerfile(h Harness, r Runtime) string {
-	v, ok := s.Options[ProfileOptionDockerfile]
+func (p *Profile) dockerfile(h Harness, r Runtime) string {
+	v, ok := p.Options[ProfileOptionDockerfile]
 	if !ok {
 		return h.DefaultDockerfile(r)
 	}

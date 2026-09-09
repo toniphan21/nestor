@@ -77,6 +77,8 @@ func (l *Lease) Extend(ctx context.Context) error {
 	}
 
 	ld.ExpiresAt = time.Now().Add(sandbox.spec.LeaseExtendDuration())
+	l.data.ExpiresAt = ld.ExpiresAt
+
 	sandbox.data.Leases[ld.Path] = *ld
 	l.log.Info("extend lease",
 		slog.String("sandbox", sandbox.ID()),
@@ -157,8 +159,7 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 		SessionID:      meta.SessionID,
 	}
 
-	proxyRoute := sandbox.harness.ProxyRoute(l, req)
-	if proxyRoute != nil {
+	if proxyRoute := sandbox.harness.ProxyRoute(l, req); proxyRoute != nil {
 		if err = l.runProxy(proxyRoute); err != nil {
 			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
 		}
@@ -203,7 +204,10 @@ func (l *Lease) Run(ctx context.Context, prompt string, opt RunOption) (RunResul
 
 	meta.SessionID = sessCapturer.SessionID()
 	l.sessionID = meta.SessionID
+
 	meta.Run = append(meta.Run, run)
+	meta.Data.ExpiresAt = l.ExpiresAt()
+
 	if err = l.save(metaFP, meta); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}

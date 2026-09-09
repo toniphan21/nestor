@@ -2,6 +2,7 @@ package nestor
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -74,6 +75,17 @@ func (s *SandboxSpec) Validate(runtime Runtime) error {
 
 	// TODO: continue
 	return nil
+}
+
+func (s *SandboxSpec) Resolve(path string) (*SandboxSpecMount, string) {
+	for _, m := range s.Mounts {
+		rel, err := filepath.Rel(m.Path, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return &m, rel
+	}
+	return nil, ""
 }
 
 func (s *SandboxSpec) LeaseInitDuration() time.Duration {
