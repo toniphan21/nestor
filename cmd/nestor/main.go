@@ -21,7 +21,7 @@ var shortDesc = map[string]string{
 	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
 	"launch":  "Start an interactive harness session in a sandbox",
-	"prompt":  "Run a prompt in a sandbox",
+	"prompt":  "Run a prompt in a sandbox headless mode (demo of library usage)",
 	"down":    "Stop all running sandboxes so the next run picks up config changes",
 	"release": "Release the lease held on a sandbox",
 	"view":    "Show the current nestor state",
@@ -53,7 +53,7 @@ func main() {
 	root.AddCommand(
 		&cobra.Command{Use: "version", Short: shortDesc["version"], Run: printVersion},
 
-		command("setup", setup),
+		&cobra.Command{Use: "setup", Short: shortDesc["setup"], RunE: setup},
 		command("destroy", destroy),
 		command("build", build),
 		commandWithAlias("launch", []string{"open", "start"}, launch),
@@ -119,7 +119,18 @@ func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cob
 			return nil
 		}
 
-		logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)
+		ll := slog.LevelInfo
+		switch config.LogLevel {
+		case "debug":
+			ll = slog.LevelDebug
+		case "error":
+			ll = slog.LevelError
+		case "warn":
+			ll = slog.LevelWarn
+		default:
+			ll = slog.LevelInfo
+		}
+		logger, closer, err := nestor.DefaultLogger(ll, options...)
 		if err != nil {
 			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger %q", err.Error(), dir)))
 			return nil
@@ -157,11 +168,6 @@ func commandWithAlias(name string, aliases []string, fn func(nestor.API, *cli.Co
 
 func printVersion(cmd *cobra.Command, args []string) {
 	fmt.Println(nestor.Version)
-}
-
-func setup(api nestor.API, cf *cli.Config, args ...string) error {
-	fmt.Println("setup is not implemented yet - TODO", api.Runtime().Platform.NestorDir())
-	return nil
 }
 
 func destroy(api nestor.API, cf *cli.Config, args ...string) error {

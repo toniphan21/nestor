@@ -1,5 +1,6 @@
 dir: .nestor
 root: ""
+log_level: info
 redacted:
     options:
         - CLAUDE_CODE_OAUTH_TOKEN
@@ -29,3 +30,8 @@ total_bytes_written:
         5000: none
         10000: yellow
         15000: red
+hidden:
+    - time
+    - system
+    - os
+    - templates

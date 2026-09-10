@@ -65,6 +65,8 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 }
 
 func Prompt(api nestor.API, args []string) error {
+	fmt.Printf("\n%s %s\n\n", pterm.Yellow("Note: nestor prompt is only a demo of a headless call. Headless mode isn't practical from a standalone binary — the real use is"), pterm.Blue("nestor launch"))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

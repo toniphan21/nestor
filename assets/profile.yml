@@ -6,7 +6,7 @@ data:
     settings:
       CLAUDE_CODE_OAUTH_TOKEN: "sk-..."
     default_target: base
-    default_model: claude-opus-5
+    default_model: claude-sonnet-5
     targets:
       - base
       - go

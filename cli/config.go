@@ -3,6 +3,7 @@ package cli
 type Config struct {
 	Dir               string            `yaml:"dir"`
 	Root              string            `yaml:"root"`
+	LogLevel          string            `yaml:"log_level"`
 	PathReplacements  map[string]string `yaml:"paths,omitempty"`
 	Redacted          redacted          `yaml:"redacted,omitempty"`
 	PowerOverhead     float64           `yaml:"power_overhead"`
@@ -55,6 +56,7 @@ func DefaultConfig(wd string) *Config {
 	return &Config{
 		Dir:              ".nestor",
 		Root:             "",
+		LogLevel:         "info",
 		PowerOverhead:    1,
 		SectorSize:       512,
 		PathReplacements: pathReplacements,
