@@ -13,26 +13,6 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-type Config struct {
-	Dir                         string            `yaml:"dir"`
-	Root                        string            `yaml:"root"`
-	PowerOverhead               float64           `yaml:"power_overhead"`
-	SectorSize                  uint64            `yaml:"sector_size"`
-	TotalBytesWrittenOverhead   uint64            `yaml:"total_bytes_written_overhead"`
-	TotalBytesWrittenFormat     string            `yaml:"total_bytes_written_format"`
-	TotalBytesWrittenThresholds map[uint64]string `yaml:"total_bytes_written_thresholds"`
-	PathReplacements            map[string]string `yaml:"paths,omitempty"`
-	Redacted                    redacted          `yaml:"redacted,omitempty"`
-}
-
-type redacted struct {
-	Options  []string `yaml:"options"`
-	Settings []string `yaml:"settings"`
-	Envs     []string `yaml:"envs"`
-}
-
-const defaultTotalBytesWrittenFormat = "TBW=%.3f"
-
 func View(api nestor.API, cf *Config) error {
 	result, err := collectViewData(api, cf)
 	if err == nil {
@@ -51,12 +31,7 @@ func Explain(api nestor.API, cf *Config) error {
 
 func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	if config == nil {
-		config = &Config{
-			PowerOverhead:             1.2,
-			SectorSize:                512,
-			TotalBytesWrittenOverhead: 0,
-			TotalBytesWrittenFormat:   defaultTotalBytesWrittenFormat,
-		}
+		config = DefaultConfig("")
 	}
 
 	var result viewData
@@ -179,6 +154,10 @@ func (d *viewData) PrintArch(drawPadding int, textPadding int) {
 	fmt.Println(text)
 }
 
+func (d *viewData) show(part string) bool {
+	return d.Config.show(part)
+}
+
 func (d *viewData) Print() {
 	ctx := context.Background()
 
@@ -187,19 +166,33 @@ func (d *viewData) Print() {
 	fmt.Println()
 
 	if d.Stat != nil {
-		fmt.Printf("%*s: %s\n", w, pterm.Blue("time"), d.Stat.Time.Format("02.01.2006 15:04:05 MST"))
-		fmt.Printf("%*s: %s\n", w, pterm.Blue("system"), d.statLine())
+		if d.show(partTime) {
+			fmt.Printf("%*s: %s\n", w, pterm.Blue("time"), d.Stat.Time.Format("02.01.2006 15:04:05 MST"))
+		}
+		if d.show(partSystem) {
+			fmt.Printf("%*s: %s\n", w, pterm.Blue("system"), d.statLine())
+		}
 	}
-	fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.ReplacePath(d.NestorDir))
-	fmt.Printf("%*s: %s%s\n", w, pterm.Blue("spec file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.SpecFilePath), nd))
-	fmt.Printf("%*s: %s%s\n", w, pterm.Blue("profile file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.ProfileFilePath), nd))
-	fmt.Printf("%*s: %s\n", w, pterm.Blue("platform os"), d.Platform.OS())
+	if d.show(partDir) {
+		fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.ReplacePath(d.NestorDir))
+	}
+	if d.show(partSpecPath) {
+		fmt.Printf("%*s: %s%s\n", w, pterm.Blue("spec file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.SpecFilePath), nd))
+	}
+	if d.show(partProfilePath) {
+		fmt.Printf("%*s: %s%s\n", w, pterm.Blue("profile file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.ProfileFilePath), nd))
+	}
+	if d.show(partOS) {
+		fmt.Printf("%*s: %s\n", w, pterm.Blue("platform os"), d.Platform.OS())
+	}
 
-	fmt.Printf("%*s: %s = %q\n", w, pterm.Blue("templates"), "SandboxID       ", d.Template.SandboxID)
-	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxTag      ", d.Template.SandboxTag)
-	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxContainer", d.Template.SandboxContainer)
-	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "WorktreeID      ", d.Template.WorktreeID)
-	fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "InitialBranch   ", d.Template.InitialBranch)
+	if d.show(partTemplates) {
+		fmt.Printf("%*s: %s = %q\n", w, pterm.Blue("templates"), "SandboxID       ", d.Template.SandboxID)
+		fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxTag      ", d.Template.SandboxTag)
+		fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxContainer", d.Template.SandboxContainer)
+		fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "WorktreeID      ", d.Template.WorktreeID)
+		fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "InitialBranch   ", d.Template.InitialBranch)
+	}
 
 	fmt.Println()
 
@@ -454,14 +447,14 @@ func (d *viewData) statLine() string {
 	if d.Stat.DiskTotalBytesWritten != nil {
 		tbw := *d.Stat.DiskTotalBytesWritten
 		tbw *= d.Config.SectorSize
-		tbw += d.Config.TotalBytesWrittenOverhead * gigabyte
+		tbw += d.Config.TotalBytesWritten.Overhead * gigabyte
 		value := float64(tbw) / float64(gigabyte)
 
 		disk = fmt.Sprintf(
 			"disk: %s - %s %s",
 			pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.DiskPercent)),
 			bytePairAuto(d.Stat.DiskUsed, d.Stat.DiskTotal),
-			formatTBW(d.Config.TotalBytesWrittenFormat, value, d.Config.TotalBytesWrittenThresholds),
+			formatTBW(d.Config.TotalBytesWritten.Format, value, d.Config.TotalBytesWritten.Thresholds),
 		)
 	}
 

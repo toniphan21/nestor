@@ -76,10 +76,16 @@ func withDirFlag(cmd *cobra.Command) *cobra.Command {
 
 func readConfig() *cli.Config {
 	var config *cli.Config
-	if wd, err := os.Getwd(); err == nil {
-		if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
-			_ = yaml.Unmarshal(c, &config)
-		}
+	wd, err := os.Getwd()
+	if err != nil {
+		return cli.DefaultConfig("")
+	}
+
+	if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
+		_ = yaml.Unmarshal(c, &config)
+	}
+	if config == nil {
+		config = cli.DefaultConfig(wd)
 	}
 	return config
 }
@@ -108,6 +114,11 @@ func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cob
 		}
 
 		options := []nestor.Option{nestor.WithDir(dir)}
+		if err = fs.MkdirAll(dir); err != nil {
+			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create work dir %q", err.Error(), dir)))
+			return nil
+		}
+
 		logger, closer, err := nestor.DefaultLogger(slog.LevelDebug, options...)
 		if err != nil {
 			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger %q", err.Error(), dir)))

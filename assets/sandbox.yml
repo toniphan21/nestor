@@ -1,13 +1,10 @@
 version: "1"
 type: "sandbox-spec"
 data:
-  claude-go:
-    harness: "claude"
-    target: "go"
-    max_instances: 2
-    mounts:
-      - type: "direct"
-        path: /Users/nhatp/github/toniphan21/nestor/work/chats
-        at: /chats
-      - type: "git_worktree"
-        path: /Users/nhatp/github/toniphan21/go-reshard
+#  claude-go:
+#    harness: "claude"
+#    target: "go"
+#    max_instances: 2
+#    mounts:
+#      - type: "git_worktree"
+#        path: /Users/nhatp/github/toniphan21/nestor
