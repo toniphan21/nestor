@@ -39,7 +39,9 @@ func (h Headless) validate() error {
 }
 
 type Interactive struct {
-	Model string
+	Model                string
+	OnInit               func(proxy string)
+	OnSessionEstablished func(sessionID string)
 }
 
 func (i Interactive) validate() error {
@@ -180,12 +182,10 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	l.sessionID = meta.SessionID
 
 	// create proxy
-	hasProxy := false
 	if proxyRoute := sandbox.harness.ProxyRoute(l); proxyRoute != nil {
 		if err = l.runProxy(proxyRoute); err != nil {
 			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
 		}
-		hasProxy = true
 	}
 
 	switch v := param.(type) {
@@ -196,18 +196,21 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
 	case Interactive:
-		// run one predefine prompt to create a session (for now, TODO: remove when we have session management)
-		prompt := "Confirm your environment: are you inside a Docker container, and what is your working directory? Answer briefly, then wait."
-		if hasProxy {
-			prompt = fmt.Sprintf("Confirm your environment: are you inside a Docker container, what is your working directory, and can you reach %s? Answer briefly, then wait.", l.proxyAddr)
+		// Run a predefined prompt to confirm the harness is running inside the
+		// container. This is intentional: on launch the user sees the confirmation
+		// before the TUI opens. As a side effect, the headless run gives us the
+		// session ID to resume with.
+		if v.OnInit != nil {
+			v.OnInit(l.proxyAddr)
 		}
+		prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAddr)
 		l.save(metaFP, meta)
-		hl := Headless{
-			Prompt: prompt,
-		}
-		_, _ = l.runHeadless(ctx, sandbox, &hl, meta, &run, runDir, date)
+		_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt}, meta, &run, runDir, date)
 		l.save(metaFP, meta)
 
+		if v.OnSessionEstablished != nil {
+			v.OnSessionEstablished(l.sessionID)
+		}
 		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
 		return RunResult{ExitCode: code}, err
 
@@ -399,6 +402,8 @@ func (l *Lease) save(fp string, meta *leaseMeta) {
 }
 
 func (l *Lease) runProxy(route *ProxyRoute) error {
+	l.proxyAddr = ""
+
 	target, err := url.Parse(route.Target)
 	if err != nil {
 		return fmt.Errorf("parse proxy target %q: %w", route.Target, err)

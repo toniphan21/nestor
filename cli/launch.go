@@ -2,7 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -37,13 +41,16 @@ func Launch(api nestor.API, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	if !info.run {
+		fmt.Println(pterm.Yellow("nothing to launch"))
 		fmt.Println(pterm.Green("done"))
 		return nil
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	log := api.Runtime().Logger
 	lease, err := api.Acquire(ctx, info.spec, info.path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
@@ -52,17 +59,49 @@ func Launch(api nestor.API, args []string) error {
 		return fmt.Errorf("extend lease: %w", err)
 	}
 
-	var returnErr error
-	defer func() {
-		if err := lease.Release(ctx); err != nil {
-			returnErr = fmt.Errorf("run lease: %w", err)
-			return
-		}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
 
-		fmt.Println(pterm.Green("done"))
-		returnErr = nil
+			case <-t.C:
+				log.Debug("extend lease in interactive mode", slog.String("lease", lease.ID()))
+				if err := lease.Extend(ctx); err != nil {
+					if !errors.Is(err, context.Canceled) {
+						log.Warn("cannot extend lease while running harness", slog.Any("error", err))
+					}
+				}
+			}
+		}
+	})
+
+	defer func() {
+		cancel()
+		wg.Wait()
+
+		if rErr := lease.Release(context.WithoutCancel(ctx)); rErr != nil {
+			err = errors.Join(err, fmt.Errorf("release lease: %w", rErr))
+		} else if err == nil {
+			fmt.Println(pterm.Green("done"))
+		}
 	}()
 
-	_, returnErr = lease.Run(ctx, nestor.Interactive{})
-	return returnErr
+	_, err = lease.Run(ctx, nestor.Interactive{
+		OnInit: func(proxy string) {
+			if proxy == "" {
+				fmt.Println("initializing")
+			} else {
+				fmt.Printf("open proxy %s\n", proxy)
+				fmt.Println("initializing")
+			}
+		},
+		OnSessionEstablished: func(sess string) {
+			fmt.Printf("start session %s\n", sess)
+		},
+	})
+	return err
 }

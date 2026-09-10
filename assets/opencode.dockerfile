@@ -4,14 +4,21 @@ FROM node:24-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates curl less \
+      ripgrep jq make procps unzip xz-utils patch diffutils file tree \
+      python3 fd-find netcat-openbsd dnsutils strace \
     && rm -rf /var/lib/apt/lists/*
 
 # install Claude Code
 RUN npm i -g opencode-ai
 
 # set up agent user
-RUN useradd -m -s /bin/bash agent
-USER agent
+ARG UID=1000
+ARG GID=1000
+
+# on linux when mounting it take user node:1000, so set agent as 1000
+RUN (userdel -r node 2>/dev/null || true) \
+ && groupadd -o -g ${GID} agent \
+ && useradd -o -m -u ${UID} -g ${GID} -s /bin/bash agent
 
 USER agent
 ENTRYPOINT ["sleep", "infinity"]

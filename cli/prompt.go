@@ -99,21 +99,18 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		stdout = os.Stdout
 	}
 
-	var returnErr error
 	defer func() {
-		if err := lease.Release(ctx); err != nil {
-			returnErr = fmt.Errorf("run lease: %w", err)
-			return
+		if rErr := lease.Release(ctx); err != nil {
+			err = errors.Join(err, fmt.Errorf("release lease: %w", rErr))
+		} else if err == nil {
+			fmt.Println(pterm.Green("done"))
 		}
-
-		fmt.Println(pterm.Green("done"))
-		returnErr = nil
 	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return returnErr
+			return nil
 
 		default:
 			prompt, err := Input("Prompt", "")
@@ -121,20 +118,21 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 				if errors.Is(err, ErrInterrupted) {
 					return nil
 				}
-				return returnErr
+				return err
 			}
 
 			switch prompt {
 			case "":
 				continue
 			case "exit":
-				return returnErr
+				return nil
 			default:
 				fmt.Println(pterm.Blue(fmt.Sprintf("running in container %s...", lease.Sandbox().Container())))
 
 				if err = lease.Extend(ctx); err != nil {
 					return fmt.Errorf("extend lease: %w", err)
 				}
+
 				_, err = lease.Run(ctx, nestor.Headless{Prompt: prompt, Stdout: stdout, Model: model})
 				fmt.Println("")
 			}

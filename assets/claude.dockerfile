@@ -3,20 +3,28 @@ FROM node:24-trixie-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates curl less \
+      ripgrep jq make procps unzip xz-utils patch diffutils file tree \
+      python3 fd-find netcat-openbsd dnsutils strace \
     && rm -rf /var/lib/apt/lists/*
 
 # install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 
 # set up agent user
-RUN useradd -m -s /bin/bash agent
+ARG UID=1000
+ARG GID=1000
+
+# on linux when mounting it take user node:1000, so set agent as 1000
+RUN (userdel -r node 2>/dev/null || true) \
+ && groupadd -o -g ${GID} agent \
+ && useradd -o -m -u ${UID} -g ${GID} -s /bin/bash agent
+
 USER agent
 
 # install rtk
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 ENV PATH="/home/agent/.local/bin:${PATH}"
 
-USER agent
 ENTRYPOINT ["sleep", "infinity"]
 
 #--- claude: go

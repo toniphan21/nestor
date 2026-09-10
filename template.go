@@ -31,6 +31,17 @@ func DefaultTemplate() Template {
 		SandboxContainer: "nestor-sandbox-[sandbox-id]",
 		AgentSuffix:      fmt.Sprintf("%d:%s", DefaultAgentIDLength, DefaultIDLetters),
 		AgentID:          "[alias]-[id]",
+
+		InteractiveConfirmPromptWithoutProxy: strings.Join([]string{
+			"Confirm your environment: are you inside a Docker container,",
+			"and what is your working directory?",
+			"Answer briefly, then wait.",
+		}, " "),
+		InteractiveConfirmPromptWithProxy: strings.Join([]string{
+			"Confirm your environment: are you inside a Docker container",
+			"and what is your working directory, and can you reach [proxy]?",
+			"Answer briefly, then wait.",
+		}, " "),
 	}
 
 	_ = LoadBuiltinAgentAliases(&template)
@@ -48,14 +59,16 @@ func LoadBuiltinAgentAliases(template *Template) error {
 }
 
 type Template struct {
-	SandboxTag       string
-	SandboxID        string
-	WorktreeID       string
-	InitialBranch    string
-	SandboxContainer string
-	AgentSuffix      string
-	AgentID          string
-	picker           *agentAliasPicker
+	SandboxTag                           string
+	SandboxID                            string
+	WorktreeID                           string
+	InitialBranch                        string
+	SandboxContainer                     string
+	AgentSuffix                          string
+	AgentID                              string
+	InteractiveConfirmPromptWithoutProxy string
+	InteractiveConfirmPromptWithProxy    string
+	picker                               *agentAliasPicker
 }
 
 func (t *Template) MakeSandboxID(exists []string) (string, error) {
@@ -145,6 +158,18 @@ func (t *Template) MakeSandboxContainer(sandboxID string) string {
 		"$sandboxId":   sandboxID,
 		"[id]":         sandboxID,
 		"$id":          sandboxID,
+	})
+}
+
+func (t *Template) MakeInteractiveConfirmPrompt(proxy string) string {
+	if proxy == "" {
+		return t.InteractiveConfirmPromptWithoutProxy
+	}
+	return t.fillTemplate(t.InteractiveConfirmPromptWithProxy, map[string]string{
+		"[proxy]":      proxy,
+		"$proxy":       proxy,
+		"[proxy-addr]": proxy,
+		"$proxyAddr":   proxy,
 	})
 }
 

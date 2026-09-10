@@ -41,6 +41,9 @@ func main() {
 			case "explain":
 				fn := runWithAPI(explain)
 				return fn(cmd, args)
+			case "launch":
+				fn := runWithAPI(launch)
+				return fn(cmd, args)
 			default:
 				return cmd.Usage()
 			}
