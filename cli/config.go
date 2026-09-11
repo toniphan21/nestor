@@ -1,5 +1,9 @@
 package cli
 
+import (
+	"slices"
+)
+
 type Config struct {
 	Dir               string            `yaml:"dir"`
 	Root              string            `yaml:"root"`
@@ -9,21 +13,35 @@ type Config struct {
 	PowerOverhead     float64           `yaml:"power_overhead"`
 	SectorSize        uint64            `yaml:"sector_size"`
 	TotalBytesWritten totalBytesWritten `yaml:"total_bytes_written"`
-	Hidden            []string          `yaml:"hidden,omitempty"`
-
-	hidden map[string]bool
+	Hidden            *hidden           `yaml:"hidden,omitempty"`
 }
 
-func (c *Config) show(part string) bool {
-	if c.hidden == nil {
-		c.hidden = make(map[string]bool)
+func (c *Config) showPart(part string) bool {
+	if c.Hidden == nil {
+		return true
 	}
-	for _, h := range c.Hidden {
-		c.hidden[h] = true
-	}
+	return !c.Hidden.isHidden(part, c.Hidden.Parts)
+}
 
-	_, ok := c.hidden[part]
-	return !ok
+func (c *Config) showProfile(profile string) bool {
+	if c.Hidden == nil {
+		return true
+	}
+	return !c.Hidden.isHidden(profile, c.Hidden.Profiles)
+}
+
+func (c *Config) showHarness(harness string) bool {
+	if c.Hidden == nil {
+		return true
+	}
+	return !c.Hidden.isHidden(harness, c.Hidden.Harnesses)
+}
+
+func (c *Config) showSandboxSpec(spec string) bool {
+	if c.Hidden == nil {
+		return true
+	}
+	return !c.Hidden.isHidden(spec, c.Hidden.SandboxSpecs)
 }
 
 type redacted struct {
@@ -36,6 +54,17 @@ type totalBytesWritten struct {
 	Overhead   uint64            `yaml:"overhead"`
 	Format     string            `yaml:"format"`
 	Thresholds map[uint64]string `yaml:"thresholds"`
+}
+
+type hidden struct {
+	Parts        []string `yaml:"parts,omitempty"`
+	Profiles     []string `yaml:"profiles,omitempty"`
+	Harnesses    []string `yaml:"harnesses,omitempty"`
+	SandboxSpecs []string `yaml:"sandbox_specs,omitempty"`
+}
+
+func (h *hidden) isHidden(name string, typ []string) bool {
+	return slices.Index(typ, name) != -1
 }
 
 const defaultTotalBytesWrittenFormat = "TBW=%.3f"
@@ -65,11 +94,13 @@ func DefaultConfig(wd string) *Config {
 			Options:  secrets,
 			Envs:     secrets,
 		},
-		Hidden: []string{
-			partTime,
-			partSystem,
-			partOS,
-			partTemplates,
+		Hidden: &hidden{
+			Parts: []string{
+				partTime,
+				partSystem,
+				partOS,
+				partTemplates,
+			},
 		},
 		TotalBytesWritten: totalBytesWritten{
 			Overhead: 0,

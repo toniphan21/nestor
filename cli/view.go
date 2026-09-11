@@ -47,6 +47,20 @@ func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	result.Specs = runtime.Registry.SandboxSpecs()
 	result.Profiles = runtime.Registry.Profiles()
 	result.Harnesses = runtime.Registry.Harnesses()
+
+	slices.SortFunc(result.Harnesses, func(a, b nestor.Harness) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+	slices.SortFunc(result.Profiles, func(a, b nestor.Profile) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	slices.SortFunc(result.Specs, func(a, b nestor.SandboxSpec) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	slices.SortFunc(result.Sandboxes, func(a, b nestor.Sandbox) int {
+		return strings.Compare(a.ID(), b.ID())
+	})
+
 	sbs, err := api.ListSandboxes(ctx)
 	if err != nil {
 		return result, err
@@ -155,7 +169,7 @@ func (d *viewData) PrintArch(drawPadding int, textPadding int) {
 }
 
 func (d *viewData) show(part string) bool {
-	return d.Config.show(part)
+	return d.Config.showPart(part)
 }
 
 func (d *viewData) Print() {
@@ -196,13 +210,25 @@ func (d *viewData) Print() {
 
 	fmt.Println()
 
+	var hide []string
+
 	for _, harness := range d.Harnesses {
+		if !d.Config.showHarness(harness.Name()) {
+			hide = append(hide, fmt.Sprintf("%s %s", "harness", harness.Name()))
+			continue
+		}
+
 		fmt.Printf("%*s: %s · %s \n", w, pterm.Magenta("harness"), harness.Name(), harness.DisplayName())
 		d.printKeyValues(w, harness.DefaultOptions(d.Runtime), "option", pterm.Magenta("options"), pterm.Magenta(""))
 		fmt.Println()
 	}
 
 	for _, profile := range d.Profiles {
+		if !d.Config.showProfile(profile.Name) {
+			hide = append(hide, fmt.Sprintf("%s %s", "profile", profile.Name))
+			continue
+		}
+
 		fmt.Printf("%*s: %s\n", w, pterm.Red("profile"), profile.Name)
 		fmt.Printf("%*s: %s\n", w, pterm.Red("auth"), profile.Auth)
 		proxy := "off" + pterm.Yellow(" (the API token is mounted into the container)")
@@ -222,7 +248,7 @@ func (d *viewData) Print() {
 				continue
 			}
 		}
-		fmt.Printf("%*s: %s\n", w, pterm.Red("models"), strings.Join(models, pterm.Gray(" · ")))
+		d.printModels(w, models)
 
 		var targets []string
 		for _, v := range profile.Targets {
@@ -239,6 +265,11 @@ func (d *viewData) Print() {
 	}
 
 	for _, spec := range d.Specs {
+		if !d.Config.showSandboxSpec(spec.Name) {
+			hide = append(hide, fmt.Sprintf("%s %s", "spec", spec.Name))
+			continue
+		}
+
 		fmt.Printf("%*s: %s %s %s \n", w, pterm.Cyan("sandbox spec"), spec.Name, pterm.Gray("· docker image ="), pterm.Green(d.Template.MakeSandboxTag(spec.Name)))
 		fmt.Printf("%*s: %d\n", w, pterm.Cyan("max instances"), spec.MaxInstances)
 
@@ -325,6 +356,24 @@ func (d *viewData) Print() {
 		}
 
 		fmt.Println()
+	}
+
+	if len(hide) > 0 {
+		hid := strings.Join(hide, " · ")
+		fmt.Printf("%*s: %s %s \n", w, pterm.White("hidden"), pterm.Gray(hid), pterm.Gray("(edit .nestor.yaml to show them)"))
+		fmt.Println()
+	}
+}
+
+func (d *viewData) printModels(w int, models []string) {
+	const perLine = 10
+	sep := pterm.Gray(" · ")
+	prefix := fmt.Sprintf("%*s: ", w, pterm.Red("models"))
+	indent := fmt.Sprintf("%*s  ", w, pterm.Red(""))
+
+	for chunk := range slices.Chunk(models, perLine) {
+		fmt.Println(prefix + strings.Join(chunk, sep))
+		prefix = indent
 	}
 }
 

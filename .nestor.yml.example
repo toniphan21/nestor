@@ -31,7 +31,8 @@ total_bytes_written:
         10000: yellow
         15000: red
 hidden:
-    - time
-    - system
-    - os
-    - templates
+    parts:
+        - time
+        - system
+        - os
+        - templates

@@ -7,4 +7,4 @@ data:
 #    max_instances: 2
 #    mounts:
 #      - type: "git_worktree"
-#        path: /Users/nhatp/github/toniphan21/nestor
+#        path: /your/awesome/project/with/git
