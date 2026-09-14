@@ -138,19 +138,19 @@ func (a *api) init() error {
 	a.log.Debug("Init start", slog.String("dir", a.dir))
 	runtime := a.Runtime()
 
-	// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
-	pf := a.platform.ProfileYmlFile()
-	if !fs.HasFile(pf) {
-		if err := fs.CopyFileFS(Embed, "assets/profile.yml", pf); err != nil {
-			a.log.Error(err.Error(), slog.Any("error", err))
-			return err
-		}
-		a.log.Info("saved builtin profile.yml file", slog.String("path", pf))
-	}
-
 	// if there is no profiles provided, parse from NESTOR_DIR/profile.yml
 	// for other location the caller need to parse manually add pass via WithProfiles
 	if len(a.registry.Profiles()) == 0 {
+		// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
+		pf := a.platform.ProfileYmlFile()
+		if !fs.HasFile(pf) {
+			if err := fs.CopyFileFS(Embed, "assets/profile.yml", pf); err != nil {
+				a.log.Error(err.Error(), slog.Any("error", err))
+				return err
+			}
+			a.log.Info("saved builtin profile.yml file", slog.String("path", pf))
+		}
+
 		yml, err := fs.AtomicReadFile(pf)
 		if err != nil {
 			e := fmt.Errorf("cannot read profile.yml file: %w", err)
@@ -180,19 +180,19 @@ func (a *api) init() error {
 	}
 	a.log.Debug("builtin harnesses initialized")
 
-	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
-	sf := a.platform.SandboxYmlFile()
-	if !fs.HasFile(sf) {
-		if err := fs.CopyFileFS(Embed, "assets/sandbox.yml", sf); err != nil {
-			a.log.Error(err.Error(), slog.Any("error", err))
-			return err
-		}
-		a.log.Info("saved builtin sandbox.yml file", slog.String("path", sf))
-	}
-
 	// if there is no sandbox provided, parse from NESTOR_DIR/sandbox.yml
 	// for other location the caller need to parse manually add pass via WithSandboxSpecs
 	if len(a.registry.SandboxSpecs()) == 0 {
+		// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
+		sf := a.platform.SandboxYmlFile()
+		if !fs.HasFile(sf) {
+			if err := fs.CopyFileFS(Embed, "assets/sandbox.yml", sf); err != nil {
+				a.log.Error(err.Error(), slog.Any("error", err))
+				return err
+			}
+			a.log.Info("saved builtin sandbox.yml file", slog.String("path", sf))
+		}
+
 		yml, err := fs.AtomicReadFile(sf)
 		if err != nil {
 			e := fmt.Errorf("cannot read sandbox.yml file: %w", err)
@@ -362,11 +362,16 @@ func (a *api) createSandboxLocked(ctx context.Context, spec string) (Sandbox, er
 func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.log.Debug("Acquire start", slog.String("dir", a.dir))
+	a.log.Debug("Acquire start", slog.String("dir", a.dir), slog.String("spec", spec), slog.String("path", path))
 
 	ss, ok := a.registry.SandboxSpec(spec)
 	if !ok {
 		return nil, fmt.Errorf("%w: sandbox spec %q", ErrNotFound, spec)
+	}
+
+	lease, err := a.acquireLocked(ctx, spec, path)
+	if err != nil {
+		return nil, err
 	}
 
 	if !a.docker.HasImage(ctx, a.template.MakeSandboxTag(ss.Name)) {
@@ -375,7 +380,11 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 			return nil, err
 		}
 	}
+	a.log.Debug("Acquire end", slog.String("dir", a.dir))
+	return lease, nil
+}
 
+func (a *api) acquireLocked(ctx context.Context, spec string, path string) (*Lease, error) {
 	// search exists first
 	sandboxes, err := a.listSandboxesLocked(ctx, spec)
 	if err != nil {
@@ -405,8 +414,6 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 	if err != nil {
 		return nil, err
 	}
-
-	a.log.Debug("Acquire end", slog.String("dir", a.dir))
 	return lease, nil
 }
 

@@ -12,8 +12,11 @@ type Tenancy interface {
 	Err() error
 }
 
-func Tenancies(ctx context.Context, api API, spec, path string) <-chan Tenancy {
+func Tenancies(ctx context.Context, api API, spec, path string, interval time.Duration) <-chan Tenancy {
 	stream := make(chan Tenancy)
+	if interval <= 0 {
+		interval = 1 * time.Second
+	}
 
 	go func() {
 		defer close(stream)
@@ -26,6 +29,12 @@ func Tenancies(ctx context.Context, api API, spec, path string) <-chan Tenancy {
 			switch {
 			case errors.Is(err, ErrNotAvailable):
 				log.Debug("lease is not available")
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(interval):
+					// no lease available — back off before retrying, to avoid hammering the nestor files
+				}
 
 			case err != nil:
 				if ctx.Err() != nil {
