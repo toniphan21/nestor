@@ -3,6 +3,7 @@ type: "sandbox-spec"
 data:
 #  claude-go:
 #    harness: "claude"
+#    state_scope: "shared"
 #    target: "go"
 #    max_instances: 2
 #    mounts:

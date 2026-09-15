@@ -273,6 +273,12 @@ func (d *viewData) Print() {
 		fmt.Printf("%*s: %s %s %s \n", w, pterm.Cyan("sandbox spec"), spec.Name, pterm.Gray("· docker image ="), pterm.Green(d.Template.MakeSandboxTag(spec.Name)))
 		fmt.Printf("%*s: %d\n", w, pterm.Cyan("max instances"), spec.MaxInstances)
 
+		scopeDesc := "each sandbox instance gets its own harness state (config, projects, sessions, etc.)"
+		if spec.StateScope == nestor.StateScopeShared {
+			scopeDesc = "all sandboxes share one harness state (config, projects, sessions, etc.)"
+		}
+		fmt.Printf("%*s: %s %s\n", w, pterm.Cyan("state scope"), spec.StateScope, pterm.Gray("· "+scopeDesc))
+
 		fmt.Printf("%*s: %s\n", w, pterm.Cyan("harness"), spec.Harness)
 
 		var profile = ""

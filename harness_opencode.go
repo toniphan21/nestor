@@ -21,7 +21,7 @@ func newHarnessOpenCode() Harness {
 }
 
 const OpenCodeConfigDir = "config-dir"
-const OpenCodeSandboxConfigDirName = "config-opencode"
+const OpenCodeSandboxConfigDirName = "config"
 const OpenCodeSandboxDotLocalDirName = ".local"
 
 const OpenCodeSettingProvider = "provider"
@@ -90,9 +90,9 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		ch = h.defaultContainerHomeDir()
 	}
 
-	cfp := sandbox.Dir(OpenCodeSandboxConfigDirName)
+	cfp := sandbox.StateDir(OpenCodeSandboxConfigDirName)
 
-	dlp := sandbox.Dir(OpenCodeSandboxDotLocalDirName)
+	dlp := sandbox.StateDir(OpenCodeSandboxDotLocalDirName)
 	if !fs.HasDir(dlp) {
 		if err := os.MkdirAll(dlp, 0755); err != nil {
 			return nil, err
@@ -223,7 +223,7 @@ type harnessOpenCodeSyncer struct {
 }
 
 func (h *harnessOpenCodeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
-	targetDir := sandbox.Dir()
+	targetDir := sandbox.StateDir()
 	err := fs.MergeDir(h.configDir, filepath.Join(targetDir, OpenCodeSandboxConfigDirName))
 	if err != nil {
 		return err

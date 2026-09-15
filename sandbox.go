@@ -18,6 +18,8 @@ type Sandbox interface {
 	ID() string
 	Runtime() Runtime
 	Dir(elem ...string) string
+	ShareDir(elem ...string) string
+	StateDir(elem ...string) string
 	Tag() string
 	Spec() SandboxSpec
 	Container() string
@@ -167,6 +169,28 @@ func (s *sandboxImpl) Dir(elem ...string) string {
 	args := []string{s.ID()}
 	args = append(args, elem...)
 	return s.runtime.Platform.SandboxDir(args...)
+}
+
+func (s *sandboxImpl) ShareDir(elem ...string) string {
+	b := s.runtime.Platform.ShareSandboxSpecDir(s.spec.Name)
+	if len(elem) == 0 {
+		return b
+	}
+
+	args := []string{s.spec.Name}
+	args = append(args, elem...)
+	return s.runtime.Platform.ShareSandboxSpecDir(args...)
+}
+
+func (s *sandboxImpl) StateDir(elem ...string) string {
+	switch s.spec.StateScope {
+	case StateScopeShared:
+		return s.ShareDir(elem...)
+	case StateScopeInstance:
+		return s.Dir(elem...)
+	default:
+		return s.Dir(elem...)
+	}
 }
 
 func (s *sandboxImpl) Tag() string {

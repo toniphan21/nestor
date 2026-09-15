@@ -95,8 +95,8 @@ func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error)
 		ch = h.defaultContainerHomeDir()
 	}
 
-	cd := sandbox.Dir(ClaudeDir)
-	cj := sandbox.Dir(ClaudeConfigFile)
+	cd := sandbox.StateDir(ClaudeDir)
+	cj := sandbox.StateDir(ClaudeConfigFile)
 	mounts := map[string]SandboxMount{
 		cd: {Host: cd, Target: filepath.Join(ch, ClaudeDir)},
 		cj: {Host: cj, Target: filepath.Join(ch, ClaudeConfigFile)},
@@ -207,7 +207,7 @@ type harnessClaudeSyncer struct {
 }
 
 func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
-	targetDir := sandbox.Dir()
+	targetDir := sandbox.StateDir()
 	var err error
 	err = fs.MergeDir(h.claudeDir, filepath.Join(targetDir, ClaudeDir))
 	if err != nil {

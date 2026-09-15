@@ -75,7 +75,7 @@ func setup(cmd *cobra.Command, args []string) error {
 		wd,
 	)
 
-	accept, err = pterm.DefaultInteractiveConfirm.WithDefaultText(text).Show()
+	accept, err = pterm.DefaultInteractiveConfirm.WithDefaultText(text).WithDefaultValue(true).Show()
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func setup(cmd *cobra.Command, args []string) error {
 	useWT := false
 	if fs.HasDir(filepath.Join(wd, ".git")) {
 		wtq := "The current directory is a git repository. Use a separate worktree per sandbox?"
-		useWT, err = pterm.DefaultInteractiveConfirm.WithDefaultText(wtq).Show()
+		useWT, err = pterm.DefaultInteractiveConfirm.WithDefaultText(wtq).WithDefaultValue(true).Show()
 		if err != nil {
 			return err
 		}
@@ -100,10 +100,18 @@ func setup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	shareHarnessState := true
+	shsq := "Share harness state across all sandbox instances? Sessions are then shared too (recommended)"
+	shareHarnessState, err = pterm.DefaultInteractiveConfirm.WithDefaultText(shsq).WithDefaultValue(shareHarnessState).Show()
+	if err != nil {
+		return err
+	}
+
 	scf := sandboxCfg{
-		maxInstances: maxInstances,
-		worktree:     useWT,
-		path:         wd,
+		maxInstances:      maxInstances,
+		worktree:          useWT,
+		shareHarnessState: shareHarnessState,
+		path:              wd,
 	}
 
 	var h *cli.SelectResult[string]
@@ -194,9 +202,10 @@ func setup(cmd *cobra.Command, args []string) error {
 }
 
 type sandboxCfg struct {
-	maxInstances int
-	worktree     bool
-	path         string
+	maxInstances      int
+	worktree          bool
+	shareHarnessState bool
+	path              string
 }
 
 func (s *sandboxCfg) ToSandboxSpecs(profile string) []nestor.SandboxSpec {
@@ -204,11 +213,16 @@ func (s *sandboxCfg) ToSandboxSpecs(profile string) []nestor.SandboxSpec {
 }
 
 func (s *sandboxCfg) toSandboxSpec(profile string) nestor.SandboxSpec {
+	stateScope := nestor.StateScopeInstance
+	if s.shareHarnessState {
+		stateScope = nestor.StateScopeShared
+	}
 	switch profile {
 	case profileOpencode:
 		return nestor.SandboxSpec{
 			Name:         profile,
 			Harness:      nestor.HarnessOpenCode,
+			StateScope:   stateScope,
 			Profile:      profile,
 			Target:       "base",
 			MaxInstances: s.maxInstances,
@@ -219,6 +233,7 @@ func (s *sandboxCfg) toSandboxSpec(profile string) nestor.SandboxSpec {
 		return nestor.SandboxSpec{
 			Name:         profile,
 			Harness:      nestor.HarnessClaudeCode,
+			StateScope:   stateScope,
 			Profile:      profile,
 			Target:       "base",
 			MaxInstances: s.maxInstances,

@@ -23,6 +23,8 @@ type Platform interface {
 
 	SandboxDir(elem ...string) string
 
+	ShareSandboxSpecDir(elem ...string) string
+
 	ProfileYmlFile() string
 
 	SandboxYmlFile() string
@@ -88,6 +90,17 @@ func (p *platform) SandboxDir(elem ...string) string {
 	}
 
 	args := []string{sbd}
+	args = append(args, elem...)
+	return filepath.Join(args...)
+}
+
+func (p *platform) ShareSandboxSpecDir(elem ...string) string {
+	base := filepath.Join(p.nestorDir, "share", "sandbox-spec")
+	if len(elem) == 0 {
+		return base
+	}
+
+	args := []string{base}
 	args = append(args, elem...)
 	return filepath.Join(args...)
 }
