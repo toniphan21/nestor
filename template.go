@@ -33,15 +33,24 @@ func DefaultTemplate() Template {
 		AgentID:          "[alias]-[id]",
 
 		InteractiveConfirmPromptWithoutProxy: strings.Join([]string{
-			"Confirm your environment: are you inside a Docker container,",
-			"and what is your working directory?",
-			"Answer briefly, then wait.",
-		}, " "),
+			"Before any work, report your environment in exactly this form:",
+			"",
+			"Container: yes/no",
+			"Working dir: <path>",
+			"Git worktree: <repo root and branch>",
+			"",
+			"Check each one rather than assuming. Then stop and wait.",
+		}, "\n"),
 		InteractiveConfirmPromptWithProxy: strings.Join([]string{
-			"Confirm your environment: are you inside a Docker container",
-			"and what is your working directory, and can you reach [proxy]?",
-			"Answer briefly, then wait.",
-		}, " "),
+			"Before any work, report your environment in exactly this form:",
+			"",
+			"Container: yes/no",
+			"Working dir: <path>",
+			"Git worktree: <repo root and branch>",
+			"[proxy]: reachable/not reachable",
+			"",
+			"Check each one rather than assuming. Then stop and wait.",
+		}, "\n"),
 	}
 
 	_ = LoadBuiltinAgentAliases(&template)
