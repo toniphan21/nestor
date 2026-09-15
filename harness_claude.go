@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
@@ -197,6 +199,21 @@ func (h *harnessClaude) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
+func (h *harnessClaude) ListSessions(lease *Lease) []HarnessSession {
+	sandbox := lease.Sandbox()
+	cd := sandbox.StateDir(ClaudeDir)
+	wd := lease.WorkDir()
+
+	var out []HarnessSession
+	for _, s := range readSessionFiles(cd) {
+		if s.CWD != wd {
+			continue
+		}
+		out = append(out, s.toHarnessSession())
+	}
+	return out
+}
+
 var _ Harness = (*harnessClaude)(nil)
 
 type harnessClaudeSyncer struct {
@@ -314,4 +331,141 @@ func (c *harnessClaudeCredentials) Save(path string) (err error) {
 		return fmt.Errorf("save credentials: %w", err)
 	}
 	return nil
+}
+
+type claudeSession struct {
+	Dir            string // project dir name (slug, opaque)
+	Path           string // abs path to the .jsonl
+	SessionID      string // file stem
+	CWD            string // from first event that carries it
+	Title          string // ai-title or custom-title - last one win
+	FirstTimestamp time.Time
+	LastTimestamp  time.Time
+}
+
+func readSessionFiles(path string) []*claudeSession {
+	projects := filepath.Join(path, "projects")
+
+	dirs, err := os.ReadDir(projects)
+	if err != nil {
+		return nil
+	}
+
+	var out []*claudeSession
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+
+		dir := filepath.Join(projects, d.Name())
+
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+
+		for _, f := range files {
+			if f.IsDir() || filepath.Ext(f.Name()) != ".jsonl" {
+				continue
+			}
+
+			s, err := readSessionFile(dir, filepath.Join(dir, f.Name()))
+			if err != nil {
+				continue
+			}
+
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func readSessionFile(dir, file string) (*claudeSession, error) {
+	s := &claudeSession{
+		Dir:       filepath.Base(dir),
+		Path:      file,
+		SessionID: strings.TrimSuffix(filepath.Base(file), ".jsonl"),
+	}
+
+	fh, err := os.Open(file)
+	if err != nil {
+		return s, err
+	}
+	defer fh.Close()
+
+	var timestamp *time.Time
+	var hasCustomTitle = false
+
+	err = scanLines(fh, func(line []byte) {
+		var event map[string]any
+		if json.Unmarshal(line, &event) != nil {
+			return
+		}
+
+		// collect First and Last timestamp
+		if t, have := event["timestamp"]; have {
+			if v, ok := t.(string); ok {
+				if tt, err := time.Parse(time.RFC3339, v); err == nil {
+					if timestamp == nil {
+						timestamp = &tt
+						s.FirstTimestamp = tt
+					} else {
+						if tt.After(*timestamp) {
+							timestamp = &tt
+						}
+					}
+				}
+			}
+		}
+
+		// collect title
+		if t, have := event["type"]; have {
+			if v, ok := t.(string); ok {
+				switch v {
+				case "ai-title":
+					if !hasCustomTitle {
+						if tt, hv := event["aiTitle"]; hv {
+							if vv, ok := tt.(string); ok {
+								s.Title = vv
+							}
+						}
+					}
+
+				case "custom-title":
+					if tt, hv := event["customTitle"]; hv {
+						if vv, ok := tt.(string); ok {
+							s.Title = vv
+							hasCustomTitle = true
+						}
+					}
+
+				}
+			}
+		}
+
+		// collect cwd
+		if t, have := event["cwd"]; have {
+			if v, ok := t.(string); ok {
+				s.CWD = v
+			}
+		}
+	})
+
+	s.LastTimestamp = *timestamp
+
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *claudeSession) toHarnessSession() HarnessSession {
+	return HarnessSession{
+		ID:        s.SessionID,
+		ProjectID: s.Dir,
+		Title:     s.Title,
+		Directory: s.CWD,
+		CreatedAt: s.FirstTimestamp,
+		UpdatedAt: s.LastTimestamp,
+	}
 }

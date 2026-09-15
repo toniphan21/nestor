@@ -22,13 +22,18 @@ import (
 
 type RunParam interface {
 	validate() error
+
+	resumeSession() bool
+
+	sessionID() string
 }
 
 type Headless struct {
-	Prompt string
-	Model  string
-	Stdout io.Writer
-	Stderr io.Writer
+	Prompt    string
+	Model     string
+	SessionID string
+	Stdout    io.Writer
+	Stderr    io.Writer
 }
 
 func (h Headless) validate() error {
@@ -38,14 +43,31 @@ func (h Headless) validate() error {
 	return nil
 }
 
+func (h Headless) resumeSession() bool {
+	return strings.TrimSpace(h.SessionID) != ""
+}
+
+func (h Headless) sessionID() string {
+	return strings.TrimSpace(h.SessionID)
+}
+
 type Interactive struct {
 	Model                string
+	SessionID            string
 	OnInit               func(proxy string)
 	OnSessionEstablished func(sessionID string)
 }
 
 func (i Interactive) validate() error {
 	return nil
+}
+
+func (i Interactive) resumeSession() bool {
+	return strings.TrimSpace(i.SessionID) != ""
+}
+
+func (i Interactive) sessionID() string {
+	return strings.TrimSpace(i.SessionID)
 }
 
 type leaseAPI interface {
@@ -59,6 +81,7 @@ type leaseAPI interface {
 	Release(ctx context.Context) error
 	Run(ctx context.Context, param RunParam) (RunResult, error)
 	SessionID() string
+	ListSessions() []HarnessSession
 }
 
 var errUnknownSandbox = errors.New("unknown sandbox implementation, use default one, don't implement Sandbox")
@@ -135,25 +158,36 @@ func (l *Lease) Release(ctx context.Context) error {
 	return sandbox.save(ctx)
 }
 
+const (
+	RunExitCodeInvalidParam       = -1
+	RunExitCodeUnknownSandbox     = -2
+	RunExitCodeCannotStartSandbox = -3
+	RunExitCodeInternalError      = -4
+)
+
 func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	if param == nil {
-		return RunResult{ExitCode: -1}, fmt.Errorf("%w: param is nil", ErrInvalid)
+		return RunResult{ExitCode: RunExitCodeInvalidParam}, fmt.Errorf("%w: param is nil", ErrInvalid)
 	}
 
 	if err := param.validate(); err != nil {
-		return RunResult{ExitCode: -1}, err
+		return RunResult{ExitCode: RunExitCodeInvalidParam}, err
 	}
 
 	start := time.Now()
 	sandbox, ok := l.sandbox.(*sandboxImpl)
 	if !ok {
-		return RunResult{ExitCode: -1}, errUnknownSandbox
+		return RunResult{ExitCode: RunExitCodeUnknownSandbox}, errUnknownSandbox
 	}
 
 	if !sandbox.IsRunning(ctx) {
 		if err := l.sandbox.Start(ctx); err != nil {
-			return RunResult{ExitCode: -1}, err
+			return RunResult{ExitCode: RunExitCodeCannotStartSandbox}, err
 		}
+	}
+
+	if param.resumeSession() && !l.hasSession(param.sessionID()) {
+		return RunResult{ExitCode: RunExitCodeInvalidParam}, fmt.Errorf("%w: session %q", ErrNotFound, param.sessionID())
 	}
 
 	run := leaseRun{
@@ -166,25 +200,26 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	date := l.data.CreatedAt.UTC().Format("2006-01-02")
 	dir := sandbox.Dir("runs", date, l.ID())
 	if err := fs.MkdirAll(dir); err != nil {
-		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot make lease dir: %w", err)
+		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease dir: %w", err)
 	}
 
 	runDir := filepath.Join(dir, run.ID)
 	if err := fs.MkdirAll(runDir); err != nil {
-		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot make lease run dir: %w", err)
+		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease run dir: %w", err)
 	}
 
 	metaFP := filepath.Join(dir, "meta.yml")
-	meta, err := l.load(metaFP)
+	meta, err := l.load(metaFP, param)
 	if err != nil {
-		return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot read lease meta file: %w", err)
+		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot read lease meta file: %w", err)
 	}
+
 	l.sessionID = meta.SessionID
 
 	// create proxy
 	if proxyRoute := sandbox.harness.ProxyRoute(l); proxyRoute != nil {
 		if err = l.runProxy(proxyRoute); err != nil {
-			return RunResult{ExitCode: -1}, fmt.Errorf("nestor: cannot start proxy: %w", err)
+			return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot start proxy: %w", err)
 		}
 	}
 
@@ -196,31 +231,46 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
 	case Interactive:
-		// Run a predefined prompt to confirm the harness is running inside the
-		// container. This is intentional: on launch the user sees the confirmation
-		// before the TUI opens. As a side effect, the headless run gives us the
-		// session ID to resume with.
-		if v.OnInit != nil {
-			v.OnInit(l.proxyAddr)
-		}
-		prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAddr)
-		l.save(metaFP, meta)
-		_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt}, meta, &run, runDir, date)
-		l.save(metaFP, meta)
+		if !param.resumeSession() {
+			// Run a predefined prompt to confirm the harness is running inside the
+			// container. This is intentional: on launch the user sees the confirmation
+			// before the TUI opens. As a side effect, the headless run gives us the
+			// session ID to resume with.
+			if v.OnInit != nil {
+				v.OnInit(l.proxyAddr)
+			}
+			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAddr)
+			l.save(metaFP, meta)
+			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt}, meta, &run, runDir, date)
+			l.save(metaFP, meta)
 
-		if v.OnSessionEstablished != nil {
-			v.OnSessionEstablished(l.sessionID)
+			if v.OnSessionEstablished != nil {
+				v.OnSessionEstablished(l.sessionID)
+			}
 		}
+
 		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
 		return RunResult{ExitCode: code}, err
 
 	default:
-		return RunResult{ExitCode: -1}, fmt.Errorf("%w: unknown param type", ErrInvalid)
+		return RunResult{ExitCode: RunExitCodeInvalidParam}, fmt.Errorf("%w: unknown param type", ErrInvalid)
 	}
 }
 
 func (l *Lease) SessionID() string {
 	return l.sessionID
+}
+
+func (l *Lease) ListSessions() []HarnessSession {
+	return l.sandbox.Harness().ListSessions(l)
+}
+
+func (l *Lease) hasSession(id string) bool {
+	seen := make(map[string]bool)
+	for _, v := range l.ListSessions() {
+		seen[v.ID] = true
+	}
+	return seen[id]
 }
 
 func (l *Lease) runHeadless(
@@ -309,10 +359,18 @@ func (l *Lease) runInteractive(
 	run.Stdout = false
 	run.Stderr = false
 
+	var sessionID string
+	if param.resumeSession() {
+		sessionID = param.SessionID
+	} else {
+		// if there is no SessionID in the param, resume from the initial prompt (meta.SessionID)
+		sessionID = meta.SessionID
+	}
+
 	req := ExecRequest{
 		Interactive: true,
 		Model:       run.ModelRequested,
-		SessionID:   meta.SessionID,
+		SessionID:   sessionID,
 	}
 
 	// collect harness exec info
@@ -371,9 +429,9 @@ func (l *Lease) findLeaseData() (*sandboxImpl, *leaseData, error) {
 	return sandbox, &ld, nil
 }
 
-func (l *Lease) load(fp string) (*leaseMeta, error) {
+func (l *Lease) load(fp string, param RunParam) (*leaseMeta, error) {
 	if !fs.HasFile(fp) {
-		return &leaseMeta{Data: l.data}, nil
+		return &leaseMeta{Data: l.data, SessionID: param.sessionID()}, nil
 	}
 
 	b, err := fs.AtomicReadFile(fp)

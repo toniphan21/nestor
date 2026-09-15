@@ -109,10 +109,12 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		}
 	}()
 
+	selectedSessionID := selectSession(lease)
+
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return err
 
 		default:
 			prompt, err := Input("Prompt", "")
@@ -127,7 +129,7 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 			case "":
 				continue
 			case "exit":
-				return nil
+				return err
 			default:
 				fmt.Println(pterm.Blue(fmt.Sprintf("running in container %s...", lease.Sandbox().Container())))
 
@@ -135,7 +137,7 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 					return fmt.Errorf("extend lease: %w", err)
 				}
 
-				_, err = lease.Run(ctx, nestor.Headless{Prompt: prompt, Stdout: stdout, Model: model})
+				_, err = lease.Run(ctx, nestor.Headless{Prompt: prompt, SessionID: selectedSessionID, Stdout: stdout, Model: model})
 				fmt.Println("")
 			}
 		}

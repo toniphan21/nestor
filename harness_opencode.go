@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
 )
@@ -215,6 +217,32 @@ func (h *harnessOpenCode) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
+func (h *harnessOpenCode) ListSessions(lease *Lease) []HarnessSession {
+	sandbox := lease.Sandbox()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cmd := []string{"opencode", "session", "list", "--format", "json"}
+
+	out := bytes.Buffer{}
+	_, err := sandbox.Docker().Exec(ctx, lease.Sandbox().Container(), cmd, DockerExecOption{
+		WorkDir: lease.WorkDir(),
+		Stdout:  &out,
+	})
+	if err != nil {
+		sandbox.Runtime().Logger.Warn("opencode list sessions error", slog.Any("error", err))
+		return nil
+	}
+
+	result, err := parseOpenCodeSessions(out.Bytes())
+	if err != nil {
+		sandbox.Runtime().Logger.Warn("opencode parse sessions error", slog.Any("error", err))
+		return nil
+	}
+	return result
+}
+
 var _ Harness = (*harnessOpenCode)(nil)
 
 type harnessOpenCodeSyncer struct {
@@ -229,4 +257,37 @@ func (h *harnessOpenCodeSyncer) Sync(ctx context.Context, sandbox Sandbox) error
 		return err
 	}
 	return nil
+}
+
+type opencodeSession struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Updated   int64  `json:"updated"`
+	Created   int64  `json:"created"`
+	ProjectID string `json:"projectId"`
+	Directory string `json:"directory"`
+}
+
+func (s *opencodeSession) toHarnessSession() HarnessSession {
+	return HarnessSession{
+		ID:        s.ID,
+		Title:     s.Title,
+		ProjectID: s.ProjectID,
+		Directory: s.Directory,
+		CreatedAt: time.UnixMilli(s.Created).UTC(),
+		UpdatedAt: time.UnixMilli(s.Updated).UTC(),
+	}
+}
+
+func parseOpenCodeSessions(b []byte) ([]HarnessSession, error) {
+	var raw []*opencodeSession
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, fmt.Errorf("parse opencode sessions: %w", err)
+	}
+
+	out := make([]HarnessSession, len(raw))
+	for i, s := range raw {
+		out[i] = s.toHarnessSession()
+	}
+	return out, nil
 }

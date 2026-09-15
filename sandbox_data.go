@@ -3,6 +3,7 @@ package nestor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -35,11 +36,41 @@ const sandboxType = "sandbox"
 const sandboxDataFileName = "data.yml"
 
 func (s *sandboxData) save(ctx context.Context, dir string) error {
-	s.UpdatedAt = time.Now()
-	file := ymlFile[*sandboxData]{
+	return writeDataFile(dir, sandboxType, sandboxDataFileName, s)
+}
+
+func readSandboxData(dir string) (*sandboxData, error) {
+	return readDataFile[sandboxData](dir, sandboxType, sandboxDataFileName)
+}
+
+const sandboxSharedType = "sandbox-shared"
+const sandboxSharedDataFileName = "sandboxes.yml"
+
+type sandboxSharedData struct {
+	Sessions map[string][]string
+}
+
+func (s *sandboxSharedData) save(ctx context.Context, dir string) error {
+	return writeDataFile(dir, sandboxSharedType, sandboxSharedDataFileName, s)
+}
+
+func readSandboxSharedData(dir string) (*sandboxSharedData, error) {
+	out, err := readDataFile[sandboxSharedData](dir, sandboxSharedType, sandboxSharedDataFileName)
+	if err == nil {
+		return out, nil
+	}
+
+	if errors.Is(err, fs.ErrNotExist) {
+		return &sandboxSharedData{}, nil
+	}
+	return nil, err
+}
+
+func writeDataFile[T any](dir string, typ string, fn string, data *T) error {
+	file := ymlFile[*T]{
 		Version: "1",
-		Type:    "sandbox",
-		Data:    s,
+		Type:    typ,
+		Data:    data,
 	}
 
 	err := fs.MkdirAll(dir)
@@ -51,16 +82,16 @@ func (s *sandboxData) save(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	return fs.AtomicWriteFile(filepath.Join(dir, sandboxDataFileName), b, 0644)
+	return fs.AtomicWriteFile(filepath.Join(dir, fn), b, 0644)
 }
 
-func readSandboxData(dir string) (*sandboxData, error) {
-	yml, err := fs.AtomicReadFile(filepath.Join(dir, sandboxDataFileName))
+func readDataFile[T any](dir string, typ string, fn string) (*T, error) {
+	yml, err := fs.AtomicReadFile(filepath.Join(dir, fn))
 	if err != nil {
-		return nil, fmt.Errorf("cannot read %q in %q: %w", sandboxDataFileName, dir, err)
+		return nil, fmt.Errorf("cannot read %q in %q: %w", fn, dir, err)
 	}
 
-	return parseYML(bytes.NewBuffer(yml), sandboxType, func(file *ymlFile[*sandboxData]) (*sandboxData, error) {
+	return parseYML(bytes.NewBuffer(yml), typ, func(file *ymlFile[*T]) (*T, error) {
 		if file == nil {
 			return nil, nil
 		}

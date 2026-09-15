@@ -91,6 +91,8 @@ func (t *failedTenancy) Run(ctx context.Context, param RunParam) (RunResult, err
 
 func (t *failedTenancy) SessionID() string { return "" }
 
+func (t *failedTenancy) ListSessions() []HarnessSession { return nil }
+
 func (t *failedTenancy) Err() error {
 	return t.err
 }
@@ -122,6 +124,8 @@ func (t *leaseTenancy) Run(ctx context.Context, param RunParam) (RunResult, erro
 }
 
 func (t *leaseTenancy) SessionID() string { return t.lease.SessionID() }
+
+func (t *leaseTenancy) ListSessions() []HarnessSession { return t.lease.ListSessions() }
 
 func (t *leaseTenancy) Err() error {
 	return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -55,6 +56,9 @@ func Launch(api nestor.API, args []string) error {
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
+
+	selectedSessionID := selectSession(lease)
+
 	if err = lease.Extend(ctx); err != nil {
 		return fmt.Errorf("extend lease: %w", err)
 	}
@@ -102,6 +106,28 @@ func Launch(api nestor.API, args []string) error {
 		OnSessionEstablished: func(sess string) {
 			fmt.Printf("start session %s\n", sess)
 		},
+		SessionID: selectedSessionID,
 	})
 	return err
+}
+
+func selectSession(lease *nestor.Lease) string {
+	sessions := lease.ListSessions()
+	if len(sessions) > 0 {
+		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
+			Title: "New session",
+		})
+		dt := fmt.Sprintf("Select sessions (%d available)", len(sessions))
+		r, err := Select(sessions, dt, func(i int, s nestor.HarnessSession) string {
+			if i == 0 {
+				return fmt.Sprintf("%d. %s", i+1, s.Title)
+			}
+			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
+		})
+		if err != nil {
+			return ""
+		}
+		return r.Value.ID
+	}
+	return ""
 }

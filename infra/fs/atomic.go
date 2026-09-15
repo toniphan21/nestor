@@ -3,9 +3,12 @@ package fs
 import (
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 )
+
+var ErrNotExist = iofs.ErrNotExist
 
 func AtomicReadFile(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)

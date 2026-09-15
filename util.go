@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"sync"
@@ -46,4 +47,37 @@ func multiWriter(w ...io.Writer) io.Writer {
 		}
 	}
 	return io.MultiWriter(args...)
+}
+
+func dedup[T comparable](list []T) []T {
+	seen := make(map[T]bool)
+	var out []T
+	for _, v := range list {
+		if _, have := seen[v]; have {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+// scanLines calls fn for each line. Lines grow unbounded; no size limit.
+func scanLines(r io.Reader, fn func([]byte)) error {
+	br := bufio.NewReader(r)
+
+	for {
+		line, err := br.ReadBytes('\n')
+
+		if line = bytes.TrimRight(line, "\r\n"); len(line) > 0 {
+			fn(line)
+		}
+
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }

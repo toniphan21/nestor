@@ -1,6 +1,9 @@
 package nestor
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 type harness string
 
@@ -36,6 +39,8 @@ type Harness interface {
 	CaptureSessionID(line []byte) (string, bool)
 
 	ProxyRoute(lease *Lease) *ProxyRoute
+
+	ListSessions(lease *Lease) []HarnessSession
 }
 
 type ProxyRoute struct {
@@ -48,4 +53,13 @@ type HarnessExec struct {
 	Command   []string
 	Model     string
 	SessionID string
+}
+
+type HarnessSession struct {
+	ID        string
+	Title     string
+	ProjectID string
+	Directory string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

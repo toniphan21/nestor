@@ -29,6 +29,8 @@ type Sandbox interface {
 	Paths() []string
 	Mounts() []SandboxMount
 	Leases() []*Lease
+	Git() Git
+	Docker() Docker
 	CreatedAt() time.Time
 	UpdatedAt() time.Time
 
@@ -260,6 +262,14 @@ func (s *sandboxImpl) Leases() []*Lease {
 	return out
 }
 
+func (s *sandboxImpl) Git() Git {
+	return s.git
+}
+
+func (s *sandboxImpl) Docker() Docker {
+	return s.docker
+}
+
 func (s *sandboxImpl) CreatedAt() time.Time {
 	return s.data.CreatedAt
 }
@@ -409,21 +419,42 @@ func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) er
 	session, ok := s.data.Sessions[path]
 	if !ok {
 		s.data.Sessions[path] = []string{sessionId}
+		if err := s.addSessionToSharedScope(ctx, path, sessionId); err != nil {
+			return err
+		}
 		return s.save(ctx)
 	}
 	session = append(session, sessionId)
+	s.data.Sessions[path] = dedup(session)
 
-	seen := make(map[string]bool)
-	var dedup []string
-	for _, v := range session {
-		if _, have := seen[v]; have {
-			continue
-		}
-		seen[v] = true
-		dedup = append(dedup, v)
+	if err := s.addSessionToSharedScope(ctx, path, sessionId); err != nil {
+		return err
 	}
-	s.data.Sessions[path] = dedup
 	return s.save(ctx)
+}
+
+func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, sessionId string) error {
+	if s.spec.StateScope != StateScopeShared {
+		return nil
+	}
+	sd, err := readSandboxSharedData(s.ShareDir())
+	if err != nil {
+		return err
+	}
+
+	if sd.Sessions == nil {
+		sd.Sessions = make(map[string][]string)
+	}
+
+	session, ok := sd.Sessions[path]
+	if !ok {
+		sd.Sessions[path] = []string{sessionId}
+		return sd.save(ctx, s.ShareDir())
+	}
+	session = append(session, sessionId)
+	sd.Sessions[path] = dedup(session)
+
+	return sd.save(ctx, s.ShareDir())
 }
 
 func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
