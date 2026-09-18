@@ -18,11 +18,17 @@ type NewGitFunc func(*slog.Logger) Git
 type Git interface {
 	RemoveBranchForce(ctx context.Context, repository, branch string) error
 
+	HasBranch(ctx context.Context, repository, branch string) bool
+
+	RenameBranch(ctx context.Context, repository, oldBranch, newBranch string) error
+
 	ListWorktrees(ctx context.Context, repository string) ([]GitWorktree, error)
 
 	AddWorktree(ctx context.Context, repository, dir, initialBranch string) error
 
 	RemoveWorktree(ctx context.Context, repository, dir, initialBranch string) error
+
+	MoveWorktree(ctx context.Context, repository, oldPath, newPath string) error
 }
 
 func newGitCLI(logger *slog.Logger) Git {
@@ -37,6 +43,15 @@ type gitCLI struct {
 
 func (g *gitCLI) RemoveBranchForce(ctx context.Context, repository, branch string) error {
 	return git.RemoveBranchForce(ctx, repository, branch, g.log)
+}
+
+func (g *gitCLI) HasBranch(ctx context.Context, repository, branch string) bool {
+	v, _ := git.HasBranch(ctx, repository, branch, g.log)
+	return v
+}
+
+func (g *gitCLI) RenameBranch(ctx context.Context, repository, oldBranch, newBranch string) error {
+	return git.RenameBranch(ctx, repository, oldBranch, newBranch, g.log)
 }
 
 func (g *gitCLI) ListWorktrees(ctx context.Context, repository string) ([]GitWorktree, error) {
@@ -62,6 +77,10 @@ func (g *gitCLI) AddWorktree(ctx context.Context, repository, dir, initialBranch
 
 func (g *gitCLI) RemoveWorktree(ctx context.Context, repository, dir, initialBranch string) error {
 	return git.RemoveWorktree(ctx, repository, dir, initialBranch, g.log)
+}
+
+func (g *gitCLI) MoveWorktree(ctx context.Context, repository, oldPath, newPath string) error {
+	return git.MoveWorktree(ctx, repository, oldPath, newPath, g.log)
 }
 
 var _ Git = (*gitCLI)(nil)

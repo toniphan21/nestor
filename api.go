@@ -23,6 +23,8 @@ type API interface {
 
 	CreateSandbox(ctx context.Context, spec string) (Sandbox, error)
 
+	RenameSandbox(ctx context.Context, sandbox Sandbox, newName string) error
+
 	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
 }
 
@@ -214,6 +216,21 @@ func (a *api) init() error {
 		a.log.Info("use sandbox specs from WithSandboxSpecs")
 	}
 
+	ssf := a.platform.SandboxSlugsFile()
+	if !fs.HasFile(ssf) {
+		if err := fs.CopyFileFS(Embed, "assets/sandbox-slugs.txt", ssf); err != nil {
+			a.log.Error(err.Error(), slog.Any("error", err))
+			return err
+		}
+		a.log.Info("saved builtin sandbox-slugs.txt file", slog.String("path", ssf))
+	}
+
+	b, err := fs.AtomicReadFile(ssf)
+	if err != nil {
+		return err
+	}
+	_ = a.template.LoadSandboxSlugs(bytes.NewBuffer(b))
+
 	a.log.Debug("Init done", slog.String("dir", a.dir))
 	return nil
 }
@@ -357,6 +374,14 @@ func (a *api) createSandboxLocked(ctx context.Context, spec string) (Sandbox, er
 		return nil, err
 	}
 	return sandbox, nil
+}
+
+func (a *api) RenameSandbox(ctx context.Context, sandbox Sandbox, newName string) error {
+	s, ok := sandbox.(*sandboxImpl)
+	if !ok {
+		return errUnknownSandbox
+	}
+	return s.rename(ctx, newName)
 }
 
 func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, error) {

@@ -54,6 +54,35 @@ Run your coding agent:
 nestor launch
 ```
 
+options
+```bash
+❯ go run ./cmd/nestor --help
+Run coding agents in sandboxed containers
+
+Usage:
+  nestor [flags]
+  nestor [command]
+
+Available Commands:
+  build       Build a sandbox image from a spec
+  completion  Generate the autocompletion script for the specified shell
+  delete      Remove a single sandbox
+  destroy     Remove all sandboxes, images
+  down        Stop all running sandboxes so the next run picks up config changes
+  explain     Show the nestor architecture and how it works
+  help        Help about any command
+  launch      Start an interactive harness session in a sandbox
+  prompt      Run a headless prompt in a sandbox (demo of library usage)
+  release     Release the lease held on a sandbox
+  rename      Give a sandbox a memorable name
+  setup       Initialize the nestor directory
+  version     Print the nestor version
+  view        Show the current nestor state
+
+Flags:
+  -d, --dir string   nestor directory; use NESTOR_DIR if not specified
+  -h, --help         help for nestor
+```
 
 ## Use as library
 

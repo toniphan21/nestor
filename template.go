@@ -1,20 +1,17 @@
 package nestor
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
-	"errors"
 	"fmt"
 	"io"
-	randv2 "math/rand/v2"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 )
 
+const SandboxSlugsKeyword = "slugs"
 const DefaultSandboxIDLength = 5
 const DefaultAgentIDLength = 10
 const DefaultIDLetters = "abcdefghijklmnopqrstuvwxyz"
@@ -25,7 +22,7 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 func DefaultTemplate() Template {
 	template := Template{
 		SandboxTag:       "nestor-[sandbox-spec-name]",
-		SandboxID:        fmt.Sprintf("%d:%s", DefaultSandboxIDLength, DefaultIDLetters),
+		SandboxID:        fmt.Sprintf("%s|%d:%s", SandboxSlugsKeyword, DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
 		InitialBranch:    "nestor/initial-branch-[sandbox-id]-[hash]",
 		SandboxContainer: "nestor-sandbox-[sandbox-id]",
@@ -77,7 +74,8 @@ type Template struct {
 	AgentID                              string
 	InteractiveConfirmPromptWithoutProxy string
 	InteractiveConfirmPromptWithProxy    string
-	picker                               *agentAliasPicker
+	sandboxSlugsPicker                   Picker
+	agentNamePicker                      Picker
 }
 
 func (t *Template) MakeSandboxID(exists []string) (string, error) {
@@ -86,7 +84,7 @@ func (t *Template) MakeSandboxID(exists []string) (string, error) {
 		taken[e] = struct{}{}
 	}
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := t.genSandboxID()
 		if _, ok := taken[id]; !ok {
 			return id, nil
@@ -96,6 +94,13 @@ func (t *Template) MakeSandboxID(exists []string) (string, error) {
 }
 
 func (t *Template) genSandboxID() string {
+	parts := strings.SplitSeq(t.SandboxID, "|")
+	for part := range parts {
+		if part == SandboxSlugsKeyword && t.sandboxSlugsPicker != nil {
+			return t.sandboxSlugsPicker.Pick()
+		}
+		return t.genRand(t.SandboxID, DefaultSandboxIDLength)
+	}
 	return t.genRand(t.SandboxID, DefaultSandboxIDLength)
 }
 
@@ -184,7 +189,7 @@ func (t *Template) MakeInteractiveConfirmPrompt(proxy string) string {
 
 func (t *Template) MakeAgentID() string {
 	id := t.genRand(t.AgentSuffix, DefaultSandboxIDLength)
-	alias := t.picker.pick()
+	alias := t.agentNamePicker.Pick()
 	return t.fillTemplate(t.AgentID, map[string]string{
 		"[id]":    id,
 		"$id":     id,
@@ -243,51 +248,23 @@ func (t *Template) sanitize(s string) string {
 }
 
 func (t *Template) LoadAgentAliases(txt io.Reader) error {
-	var names []string
-	sc := bufio.NewScanner(txt)
-	for sc.Scan() {
-		if l := strings.TrimSpace(sc.Text()); l != "" {
-			names = append(names, l)
-		}
-	}
-	if err := sc.Err(); err != nil {
+	p, err := NewPickerWithReader(txt)
+	if err != nil {
 		return err
 	}
+	t.agentNamePicker = p
+	return nil
+}
 
-	if len(names) == 0 {
-		return errors.New("names: empty list")
+func (t *Template) LoadSandboxSlugs(txt io.Reader) error {
+	p, err := NewPickerWithReader(txt)
+	if err != nil {
+		return err
 	}
-
-	t.picker = &agentAliasPicker{names: names}
-	t.picker.shuffle()
+	t.sandboxSlugsPicker = p
 	return nil
 }
 
 func (t *Template) PickAgentAlias() string {
-	return t.picker.pick()
-}
-
-type agentAliasPicker struct {
-	mu    sync.Mutex
-	names []string
-	idx   int
-}
-
-func (p *agentAliasPicker) pick() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	n := p.names[p.idx]
-	p.idx++
-	if p.idx == len(p.names) {
-		p.idx = 0
-		p.shuffle()
-	}
-	return n
-}
-
-func (p *agentAliasPicker) shuffle() {
-	randv2.Shuffle(len(p.names), func(i, j int) {
-		p.names[i], p.names[j] = p.names[j], p.names[i]
-	})
+	return t.agentNamePicker.Pick()
 }

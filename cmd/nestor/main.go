@@ -16,14 +16,16 @@ import (
 )
 
 var shortDesc = map[string]string{
-	"root":    "Inspect and manage the nestor directory",
+	"root":    "Run coding agents in sandboxed containers",
 	"setup":   "Initialize the nestor directory",
+	"delete":  "Remove a single sandbox",
 	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
 	"launch":  "Start an interactive harness session in a sandbox",
-	"prompt":  "Run a prompt in a sandbox headless mode (demo of library usage)",
+	"prompt":  "Run a headless prompt in a sandbox (demo of library usage)",
 	"down":    "Stop all running sandboxes so the next run picks up config changes",
 	"release": "Release the lease held on a sandbox",
+	"rename":  "Give a sandbox a memorable name",
 	"view":    "Show the current nestor state",
 	"explain": "Show the nestor architecture and how it works",
 	"version": "Print the nestor version",
@@ -54,12 +56,14 @@ func main() {
 		&cobra.Command{Use: "version", Short: shortDesc["version"], Run: printVersion},
 
 		&cobra.Command{Use: "setup", Short: shortDesc["setup"], RunE: setup},
+		command("delete", delete),
 		command("destroy", destroy),
 		command("build", build),
 		commandWithAlias("launch", []string{"open", "start"}, launch),
 		command("prompt", prompt),
 		command("down", down),
 		command("release", release),
+		command("rename", rename),
 		command("view", view),
 		command("explain", explain),
 	)
@@ -170,6 +174,10 @@ func printVersion(cmd *cobra.Command, args []string) {
 	fmt.Println(nestor.Version)
 }
 
+func delete(api nestor.API, cf *cli.Config, args ...string) error {
+	return cli.Delete(api)
+}
+
 func destroy(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Destroy(api)
 }
@@ -192,6 +200,10 @@ func down(api nestor.API, cf *cli.Config, args ...string) error {
 
 func release(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Release(api, args)
+}
+
+func rename(api nestor.API, cf *cli.Config, args ...string) error {
+	return cli.Rename(api)
 }
 
 func view(api nestor.API, cf *cli.Config, args ...string) error {

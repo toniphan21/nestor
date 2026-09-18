@@ -176,3 +176,23 @@ func copyFile(src, dst string, mode os.FileMode) (err error) {
 	_, err = io.Copy(out, in)
 	return err
 }
+
+// ListEntries returns the names of the directories and the regular files
+// directly inside dir, each sorted by filename. Symlinks and other
+// non-regular entries are skipped.
+func ListEntries(dir string) (dirs, files []string, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, e := range entries {
+		switch {
+		case e.IsDir():
+			dirs = append(dirs, e.Name())
+		case e.Type().IsRegular():
+			files = append(files, e.Name())
+		}
+	}
+	return dirs, files, nil
+}

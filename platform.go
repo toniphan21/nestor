@@ -29,6 +29,8 @@ type Platform interface {
 
 	SandboxYmlFile() string
 
+	SandboxSlugsFile() string
+
 	OS() OSKind
 
 	HarnessDefaultOption(harness string, name string) string
@@ -111,6 +113,10 @@ func (p *platform) ProfileYmlFile() string {
 
 func (p *platform) SandboxYmlFile() string {
 	return p.NestorDir("sandbox.yml")
+}
+
+func (p *platform) SandboxSlugsFile() string {
+	return p.NestorDir("sandbox-slugs.txt")
 }
 
 func (p *platform) HarnessDefaultOption(harness string, name string) string {

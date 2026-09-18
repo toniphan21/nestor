@@ -392,6 +392,88 @@ func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) 
 	return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
 }
 
+func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
+	if s.IsRunning(ctx) {
+		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, newName)
+	}
+	if err := s.Stop(ctx); err != nil {
+		return err
+	}
+
+	// create a dir for the new sandbox first
+	target := s.runtime.Platform.SandboxDir(newName)
+	if fs.HasDir(target) {
+		return fmt.Errorf("%w: sandbox %q is already exists", ErrNotAllowed, newName)
+	}
+
+	if err := fs.MkdirAll(target); err != nil {
+		return fmt.Errorf("%w: cannot make dir for new sandbox", err)
+	}
+
+	skipDirs := make(map[string]bool)
+	srcDirs, srcFiles, err := fs.ListEntries(s.Dir())
+	if err != nil {
+		return fmt.Errorf("%w: cannot list sandbox entries", err)
+	}
+
+	// move worktree
+	for _, m := range s.spec.Mounts {
+		if m.Type == MountTypeGitWorktree {
+			id := s.runtime.Template.MakeWorktreeID(m.Path)
+			skipDirs[id] = true
+
+			src := s.Dir(id)
+			dst := filepath.Join(target, id)
+			if err = s.git.MoveWorktree(ctx, m.Path, src, dst); err != nil {
+				return fmt.Errorf("cannot move worktree: %w", err)
+			}
+
+			// rename initial branch
+			oldBranch := s.runtime.Template.MakeInitialBranch(s.ID(), src)
+			if s.git.HasBranch(ctx, m.Path, oldBranch) {
+				newBranch := s.runtime.Template.MakeInitialBranch(newName, dst)
+				if !s.git.HasBranch(ctx, m.Path, newBranch) {
+					if err = s.git.RenameBranch(ctx, m.Path, oldBranch, newBranch); err != nil {
+						return fmt.Errorf("cannot rename initial branch: %w", err)
+					}
+				}
+			}
+		}
+	}
+
+	// copy other from current sandbox to new one
+	for _, file := range srcFiles {
+		if file == "data.yml" {
+			continue
+		}
+		if err = fs.CopyFile(s.Dir(file), filepath.Join(target, file)); err != nil {
+			return fmt.Errorf("cannot copy file %q: %w", file, err)
+		}
+	}
+
+	for _, dir := range srcDirs {
+		if skipDirs[dir] {
+			continue
+		}
+		if err = fs.MergeDir(s.Dir(dir), filepath.Join(target, dir)); err != nil {
+			return fmt.Errorf("cannot copy dir %q: %w", dir, err)
+		}
+	}
+
+	oldDir := s.Dir()
+
+	// save with new ID
+	s.data.ID = newName
+	if err = s.data.save(ctx, target); err != nil {
+		return fmt.Errorf("cannot save data.yml file: %w", err)
+	}
+
+	if err = fs.RemoveDir(oldDir); err != nil {
+		return fmt.Errorf("cannot remove dir %q: %w", oldDir, err)
+	}
+	return nil
+}
+
 func (s *sandboxImpl) clear(ctx context.Context) error {
 	if err := s.removeAllWorktrees(ctx); err != nil {
 		return fmt.Errorf("nestor: cannot remove sandbox worktrees: %w", err)
@@ -468,7 +550,7 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 	for _, m := range s.spec.Mounts {
 		if m.Type == MountTypeGitWorktree {
 			id := s.runtime.Template.MakeWorktreeID(m.Path)
-			wtDir := filepath.Join(s.Dir(), id)
+			wtDir := s.Dir(id)
 
 			wt := SandboxWorktree{
 				ID:            id,

@@ -110,3 +110,22 @@ func RemoveWorktree(ctx context.Context, repository string, dir string, initialB
 	_ = RemoveBranchForce(ctx, repository, initialBranch, logger)
 	return nil
 }
+
+func MoveWorktree(ctx context.Context, repository string, oldPath, newPath string, logger *slog.Logger) error {
+	args := []string{
+		"-C", repository, "worktree", "move", oldPath, newPath,
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
+
+	log := logger.WithGroup("git").With(slog.Any("args", args))
+	w := &logWriter{log, slog.LevelDebug}
+	cmd.Stdout = w
+	cmd.Stderr = w
+
+	log.Info("git worktree move", slog.String("repository", repository), slog.String("oldPath", oldPath), slog.String("newPath", newPath))
+	if err := cmd.Run(); err != nil {
+		log.Error("git worktree remove", slog.Any("error", err))
+		return fmt.Errorf("git worktree move: %w", err)
+	}
+	return nil
+}

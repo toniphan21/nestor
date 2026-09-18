@@ -11,7 +11,7 @@ func TestTemplate_makeAgentName_stressTest(t *testing.T) {
 	taken := make(map[string]struct{})
 	template := DefaultTemplate()
 	n := 10_000_000
-	for i := 0; i < n; i++ {
+	for i := range n {
 		name := template.MakeAgentID()
 		_, have := taken[name]
 		if have {

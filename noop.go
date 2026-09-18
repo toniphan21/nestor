@@ -21,6 +21,16 @@ func (n *noopGit) RemoveBranchForce(ctx context.Context, repository, branch stri
 	return nil
 }
 
+func (n *noopGit) HasBranch(ctx context.Context, repository, branch string) bool {
+	n.log.Debug("HasBranch", slog.String("repository", repository), slog.String("branch", branch))
+	return false
+}
+
+func (n *noopGit) RenameBranch(ctx context.Context, repository, oldBranch, newBranch string) error {
+	n.log.Debug("RenameBranch", slog.String("repository", repository), slog.String("oldBranch", oldBranch), slog.String("newBranch", newBranch))
+	return nil
+}
+
 func (n *noopGit) ListWorktrees(ctx context.Context, repository string) ([]GitWorktree, error) {
 	n.log.Debug("ListWorktrees", slog.String("repository", repository))
 	return nil, nil
@@ -33,6 +43,11 @@ func (n *noopGit) AddWorktree(ctx context.Context, repository, dir, initialBranc
 
 func (n *noopGit) RemoveWorktree(ctx context.Context, repository, dir, initialBranch string) error {
 	n.log.Debug("RemoveWorktree", slog.String("repository", repository), slog.String("dir", dir), slog.String("initialBranch", initialBranch))
+	return nil
+}
+
+func (n *noopGit) MoveWorktree(ctx context.Context, repository, oldPath, newPath string) error {
+	n.log.Debug("MoveWorktree", slog.String("repository", repository), slog.String("oldPath", oldPath), slog.String("newPath", newPath))
 	return nil
 }
 
