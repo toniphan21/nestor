@@ -109,7 +109,7 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		}
 	}()
 
-	selectedSessionID := selectSession(lease)
+	selectedSessionID, title := selectSession(lease)
 
 	for {
 		select {
@@ -137,7 +137,13 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 					return fmt.Errorf("extend lease: %w", err)
 				}
 
-				_, err = lease.Run(ctx, nestor.Headless{Prompt: prompt, SessionID: selectedSessionID, Stdout: stdout, Model: model})
+				_, err = lease.Run(ctx, nestor.Headless{
+					Prompt:    prompt,
+					SessionID: selectedSessionID,
+					Title:     title,
+					Stdout:    stdout,
+					Model:     model,
+				})
 				fmt.Println("")
 			}
 		}

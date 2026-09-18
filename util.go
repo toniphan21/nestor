@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"strings"
 	"sync"
 
 	"nhatp.com/go/nestor/infra/fs"
@@ -80,4 +81,8 @@ func scanLines(r io.Reader, fn func([]byte)) error {
 			return err
 		}
 	}
+}
+
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
@@ -157,9 +158,15 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		}
 	}
 
-	if req.SessionID != "" {
-		out.Command = append(out.Command, "--session", req.SessionID)
-		out.SessionID = req.SessionID
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID != "" {
+		out.Command = append(out.Command, "--session", sessionID)
+		out.SessionID = sessionID
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title != "" {
+		out.Command = append(out.Command, "--title", shQuote(title))
 	}
 
 	if !req.Interactive && req.PromptFilePath != "" {

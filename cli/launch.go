@@ -57,7 +57,7 @@ func Launch(api nestor.API, args []string) error {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
 
-	selectedSessionID := selectSession(lease)
+	selectedSessionID, title := selectSession(lease)
 
 	if err = lease.Extend(ctx); err != nil {
 		return fmt.Errorf("extend lease: %w", err)
@@ -107,12 +107,14 @@ func Launch(api nestor.API, args []string) error {
 			fmt.Printf("start session %s\n", sess)
 		},
 		SessionID: selectedSessionID,
+		Title:     title,
 	})
 	return err
 }
 
-func selectSession(lease *nestor.Lease) string {
+func selectSession(lease *nestor.Lease) (string, string) {
 	sessions := lease.ListSessions()
+	var selectedId, title string
 	if len(sessions) > 0 {
 		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
 			Title: "New session",
@@ -125,9 +127,19 @@ func selectSession(lease *nestor.Lease) string {
 			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
 		})
 		if err != nil {
-			return ""
+			return selectedId, title
 		}
-		return r.Value.ID
+
+		selectedId = r.Value.ID
 	}
-	return ""
+
+	if selectedId == "" {
+		t := "Session title (optional — leave blank for an auto-generated name)"
+		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
+		if err != nil {
+			return "", ""
+		}
+		title = v
+	}
+	return selectedId, title
 }

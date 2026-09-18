@@ -32,6 +32,7 @@ type Headless struct {
 	Prompt    string
 	Model     string
 	SessionID string
+	Title     string
 	Stdout    io.Writer
 	Stderr    io.Writer
 }
@@ -54,6 +55,7 @@ func (h Headless) sessionID() string {
 type Interactive struct {
 	Model                string
 	SessionID            string
+	Title                string
 	OnInit               func(proxy string)
 	OnSessionEstablished func(sessionID string)
 }
@@ -241,7 +243,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAddr)
 			l.save(metaFP, meta)
-			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt}, meta, &run, runDir, date)
+			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run, runDir, date)
 			l.save(metaFP, meta)
 
 			if v.OnSessionEstablished != nil {
@@ -296,6 +298,9 @@ func (l *Lease) runHeadless(
 		PromptFilePath: promptTargetPath,
 		Model:          run.ModelRequested,
 		SessionID:      meta.SessionID,
+	}
+	if meta.SessionID == "" {
+		req.Title = param.Title
 	}
 
 	// collect harness exec info
@@ -371,6 +376,9 @@ func (l *Lease) runInteractive(
 		Interactive: true,
 		Model:       run.ModelRequested,
 		SessionID:   sessionID,
+	}
+	if meta.SessionID == "" {
+		req.Title = param.Title
 	}
 
 	// collect harness exec info

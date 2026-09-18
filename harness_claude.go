@@ -152,9 +152,15 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.Model = model
 	}
 
-	if req.SessionID != "" {
-		out.Command = append(out.Command, "--resume", req.SessionID)
-		out.SessionID = req.SessionID
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID != "" {
+		out.Command = append(out.Command, "--resume", sessionID)
+		out.SessionID = sessionID
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title != "" {
+		out.Command = append(out.Command, "--name", shQuote(title))
 	}
 
 	if !req.Interactive {

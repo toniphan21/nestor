@@ -15,6 +15,7 @@ type ExecRequest struct {
 	PromptFilePath string
 	Model          string
 	SessionID      string
+	Title          string
 }
 
 type Harness interface {
