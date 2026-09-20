@@ -73,9 +73,11 @@ func (t *failedTenancy) ID() string { return "" }
 
 func (t *failedTenancy) Sandbox() Sandbox { return nil }
 
-func (t *failedTenancy) HostPath() string { return "" }
+func (t *failedTenancy) RequestedPath() string { return "" }
 
 func (t *failedTenancy) WorkDir() string { return "" }
+
+func (t *failedTenancy) HostWorkDir() string { return "" }
 
 func (t *failedTenancy) ProxyAddr() string { return "" }
 
@@ -107,9 +109,11 @@ func (t *leaseTenancy) ID() string { return t.lease.ID() }
 
 func (t *leaseTenancy) Sandbox() Sandbox { return t.lease.Sandbox() }
 
-func (t *leaseTenancy) HostPath() string { return t.lease.HostPath() }
+func (t *leaseTenancy) RequestedPath() string { return t.lease.RequestedPath() }
 
 func (t *leaseTenancy) WorkDir() string { return t.lease.WorkDir() }
+
+func (t *leaseTenancy) HostWorkDir() string { return t.lease.HostWorkDir() }
 
 func (t *leaseTenancy) ProxyAddr() string { return t.lease.ProxyAddr() }
 

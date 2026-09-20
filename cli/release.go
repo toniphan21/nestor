@@ -92,7 +92,7 @@ func DoRelease(ctx context.Context, api nestor.API, spec, path string) error {
 	for _, sandbox := range sandboxes {
 		leases := sandbox.Leases()
 		for _, lease := range leases {
-			if lease.HostPath() != path {
+			if lease.RequestedPath() != path {
 				continue
 			}
 

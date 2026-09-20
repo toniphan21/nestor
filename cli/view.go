@@ -355,7 +355,7 @@ func (d *viewData) Print() {
 						lt,
 						l.ID(), pterm.Gray("·"),
 						pterm.Cyan(l.ExpiresAt().Format(time.RFC3339)), pterm.Gray("·"),
-						d.ReplacePath(l.HostPath()),
+						d.ReplacePath(l.RequestedPath()),
 					)
 				}
 			}

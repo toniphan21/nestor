@@ -376,7 +376,7 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
-	workDir, ok := s.resolveWorkDir(path)
+	workDir, hostWorkDir, ok := s.resolveWorkDir(path)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q is not under any mount", ErrNotAllowed, path)
 	}
@@ -387,7 +387,7 @@ func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) 
 
 	ld, ok := s.data.Leases[path]
 	if !ok || ld.ExpiresAt.Before(time.Now()) {
-		return s.newLease(ctx, path, workDir)
+		return s.newLease(ctx, path, workDir, hostWorkDir)
 	}
 	return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
 }
@@ -620,19 +620,20 @@ func (s *sandboxImpl) collectMounts(ctx context.Context) error {
 	return s.save(ctx)
 }
 
-func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Lease, error) {
+func (s *sandboxImpl) newLease(ctx context.Context, requestedPath, workDir, hostWorkDir string) (*Lease, error) {
 	ld := leaseData{
-		ID:        xid.New().String(),
-		Path:      path,
-		WorkDir:   workDir,
-		ExpiresAt: time.Now().Add(s.spec.LeaseInitDuration()),
-		CreatedAt: time.Now(),
+		ID:          xid.New().String(),
+		Path:        requestedPath,
+		WorkDir:     workDir,
+		HostWorkDir: hostWorkDir,
+		ExpiresAt:   time.Now().Add(s.spec.LeaseInitDuration()),
+		CreatedAt:   time.Now(),
 	}
 
 	if s.data.Leases == nil {
 		s.data.Leases = make(map[string]leaseData)
 	}
-	s.data.Leases[path] = ld
+	s.data.Leases[requestedPath] = ld
 
 	if err := s.save(ctx); err != nil {
 		return nil, err
@@ -640,24 +641,24 @@ func (s *sandboxImpl) newLease(ctx context.Context, path, workDir string) (*Leas
 	return &Lease{data: ld, sandbox: s, log: s.leaseLog}, nil
 }
 
-func (s *sandboxImpl) resolveWorkDir(path string) (string, bool) {
+func (s *sandboxImpl) resolveWorkDir(path string) (string, string, bool) {
 	sm, rel := s.spec.Resolve(path)
 	switch {
 	case sm == nil:
-		return "", false
+		return "", "", false
 
 	case sm.Type == MountTypeDirect:
-		return filepath.Join(sm.At, rel), true
+		return filepath.Join(sm.At, rel), filepath.Join(sm.Path, rel), true
 
 	case sm.Type == MountTypeGitWorktree:
 		for _, v := range s.data.Worktree {
 			if v.Repository == sm.Path {
-				return filepath.Join(v.Dir, rel), true
+				return filepath.Join(v.Dir, rel), filepath.Join(v.Dir, rel), true
 			}
 		}
-		return "", false
+		return "", "", false
 
 	default:
-		return "", false
+		return "", "", false
 	}
 }

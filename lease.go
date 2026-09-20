@@ -75,8 +75,9 @@ func (i Interactive) sessionID() string {
 type leaseAPI interface {
 	ID() string
 	Sandbox() Sandbox
-	HostPath() string
+	RequestedPath() string
 	WorkDir() string
+	HostWorkDir() string
 	ProxyAddr() string
 	ExpiresAt() time.Time
 	Extend(ctx context.Context) error
@@ -107,12 +108,16 @@ func (l *Lease) Sandbox() Sandbox {
 	return l.sandbox
 }
 
-func (l *Lease) HostPath() string {
+func (l *Lease) RequestedPath() string {
 	return l.data.Path
 }
 
 func (l *Lease) WorkDir() string {
 	return l.data.WorkDir
+}
+
+func (l *Lease) HostWorkDir() string {
+	return l.data.HostWorkDir
 }
 
 func (l *Lease) ProxyAddr() string {

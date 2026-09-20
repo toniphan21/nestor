@@ -25,11 +25,12 @@ type sandboxData struct {
 }
 
 type leaseData struct {
-	ID        string    `yaml:"id"`
-	Path      string    `yaml:"path"`
-	WorkDir   string    `yaml:"work_dir"`
-	ExpiresAt time.Time `yaml:"expires_at"`
-	CreatedAt time.Time `yaml:"created_at"`
+	ID          string    `yaml:"id"`
+	Path        string    `yaml:"path"`
+	WorkDir     string    `yaml:"work_dir"`
+	HostWorkDir string    `yaml:"host_work_dir"`
+	ExpiresAt   time.Time `yaml:"expires_at"`
+	CreatedAt   time.Time `yaml:"created_at"`
 }
 
 const sandboxType = "sandbox"
