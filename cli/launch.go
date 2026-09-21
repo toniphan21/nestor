@@ -57,6 +57,10 @@ func Launch(api nestor.API, args []string) error {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
 
+	if !lease.Sandbox().IsRunning(ctx) {
+		_ = lease.Sandbox().Start(ctx)
+	}
+
 	selectedSessionID, title := selectSession(lease)
 
 	if err = lease.Extend(ctx); err != nil {

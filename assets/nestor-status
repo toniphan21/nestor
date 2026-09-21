@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# container
+if [[ -z "${NESTOR_CONTAINER:-}" && -z "${NESTOR_IMAGE:-}" ]]; then
+  echo "container: no"
+else
+  echo "container: ${NESTOR_CONTAINER:-?} - ${NESTOR_IMAGE:-?}"
+fi
+
+# workdir
+branch=
+if git rev-parse --is-inside-work-tree &>/dev/null; then
+  branch=$(git branch --show-current)
+  [[ -z $branch ]] && branch="detached@$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+fi
+echo "workdir: $PWD${branch:+ ($branch)}"
+
+# repository (only shown when it differs from pwd)
+if common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  main=$(dirname "$common")
+  if [[ $main != "$(pwd -P)" ]]; then
+    echo "repository: $main"
+  fi
+fi
+
+# proxy
+addr=${NESTOR_EXEC_PROXY_ADDR:-}
+if [[ -z $addr ]]; then
+  echo "proxy: not set"
+else
+  hp=${addr#*://}   # strip scheme
+  hp=${hp%%/*}      # strip path
+  host=${hp%:*}
+  port=${hp##*:}
+  if timeout 2 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
+    echo "proxy: $addr (reachable)"
+  else
+    echo "proxy: $addr (unreachable)"
+  fi
+fi

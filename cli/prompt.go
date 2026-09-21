@@ -109,6 +109,10 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		}
 	}()
 
+	if !lease.Sandbox().IsRunning(ctx) {
+		_ = lease.Sandbox().Start(ctx)
+	}
+
 	selectedSessionID, title := selectSession(lease)
 
 	for {

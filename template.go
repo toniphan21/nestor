@@ -30,24 +30,17 @@ func DefaultTemplate() Template {
 		AgentID:          "[alias]-[id]",
 
 		InteractiveConfirmPromptWithoutProxy: strings.Join([]string{
-			"Before any work, report your environment in exactly this form:",
-			"",
-			"Container: yes/no",
-			"Working dir: <path>",
-			"Git worktree: <repo root and branch>",
-			"",
-			"Check each one rather than assuming. Then stop and wait.",
-		}, "\n"),
+			"Run `~/nestor-status` and show its output verbatim.",
+			"If it exits non-zero, say \"Environment check FAILED\".",
+			"Do not interpret otherwise.",
+			"Then stop and wait for my next instruction.",
+		}, " "),
 		InteractiveConfirmPromptWithProxy: strings.Join([]string{
-			"Before any work, report your environment in exactly this form:",
-			"",
-			"Container: yes/no",
-			"Working dir: <path>",
-			"Git worktree: <repo root and branch>",
-			"[proxy]: reachable/not reachable",
-			"",
-			"Check each one rather than assuming. Then stop and wait.",
-		}, "\n"),
+			"Run `~/nestor-status` and show its output verbatim.",
+			"If it exits non-zero, say \"Environment check FAILED\".",
+			"Do not interpret otherwise.",
+			"Then stop and wait for my next instruction.",
+		}, " "),
 	}
 
 	_ = LoadBuiltinAgentAliases(&template)

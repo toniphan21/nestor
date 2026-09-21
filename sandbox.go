@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 const DefaultStopContainerTimeout = 2 * time.Second
 const SandboxRunsTargetPath = "/sandbox/runs"
+const DefaultContainerHomeDir = "/home/agent"
 
 type Sandbox interface {
 	ID() string
@@ -311,6 +313,25 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		})
 	}
 
+	// save nestor-status bash file to share dir and mount to home
+	statusFP := s.ShareDir("nestor-status")
+	bash, err := Embed.ReadFile("assets/nestor-status")
+	if err != nil {
+		return err
+	}
+	if err = fs.AtomicWriteFile(statusFP, bash, 0o755); err != nil {
+		return err
+	}
+	containerHomeDir := s.profile.Options[ProfileOptionContainerHomeDir]
+	if containerHomeDir == "" {
+		containerHomeDir = DefaultContainerHomeDir
+	}
+	options.Mounts = append(options.Mounts, DockerMount{
+		Source:   statusFP,
+		Target:   filepath.Join(containerHomeDir, "nestor-status"),
+		ReadOnly: true,
+	})
+
 	// mounts for the sandbox
 	runsPath := s.Dir("runs")
 	if err := fs.MkdirAll(runsPath); err != nil {
@@ -323,18 +344,17 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		ReadOnly: true,
 	})
 
-	var env = make(map[string]string)
-	for k, v := range s.spec.Env {
-		env[k] = v
+	var env = map[string]string{
+		"NESTOR_CONTAINER": container,
+		"NESTOR_IMAGE":     image,
 	}
-	for k, v := range s.harness.StartEnv(s) {
-		env[k] = v
-	}
+	maps.Copy(env, s.spec.Env)
+	maps.Copy(env, s.harness.StartEnv(s))
 	if len(env) > 0 {
 		options.Env = env
 	}
 
-	_, err := s.docker.Run(ctx, image, container, options)
+	_, err = s.docker.Run(ctx, image, container, options)
 
 	return err
 }

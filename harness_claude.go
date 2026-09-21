@@ -46,7 +46,7 @@ func (h *harnessClaude) DisplayName() string {
 }
 
 func (h *harnessClaude) defaultContainerHomeDir() string {
-	return "/home/agent"
+	return DefaultContainerHomeDir
 }
 
 func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {

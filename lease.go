@@ -29,12 +29,13 @@ type RunParam interface {
 }
 
 type Headless struct {
-	Prompt    string
-	Model     string
-	SessionID string
-	Title     string
-	Stdout    io.Writer
-	Stderr    io.Writer
+	Prompt       string
+	Model        string
+	SessionID    string
+	Title        string
+	Instructions string
+	Stdout       io.Writer
+	Stderr       io.Writer
 }
 
 func (h Headless) validate() error {
@@ -56,6 +57,7 @@ type Interactive struct {
 	Model                string
 	SessionID            string
 	Title                string
+	Instructions         string
 	OnInit               func(proxy string)
 	OnSessionEstablished func(sessionID string)
 }

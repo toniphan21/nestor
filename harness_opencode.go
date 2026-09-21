@@ -26,6 +26,7 @@ func newHarnessOpenCode() Harness {
 const OpenCodeConfigDir = "config-dir"
 const OpenCodeSandboxConfigDirName = "config"
 const OpenCodeSandboxDotLocalDirName = ".local"
+const OpenCodeConfigFileName = "nestor.json"
 
 const OpenCodeSettingProvider = "provider"
 const OpenCodeSettingUpstream = "upstream"
@@ -46,7 +47,7 @@ func (h *harnessOpenCode) DisplayName() string {
 }
 
 func (h *harnessOpenCode) defaultContainerHomeDir() string {
-	return "/home/agent"
+	return DefaultContainerHomeDir
 }
 
 func (h *harnessOpenCode) DefaultOptions(runtime Runtime) map[string]string {
@@ -102,17 +103,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		}
 	}
 
-	mounts := map[string]SandboxMount{
-		cfp: {Host: cfp, Target: filepath.Join(ch, ".config", "opencode")},
-		dlp: {Host: dlp, Target: filepath.Join(ch, ".local")},
-	}
-	return mounts, nil
-}
-
-func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
-	profile := sandbox.Profile()
 	provider := profile.Settings[OpenCodeSettingProvider]
-
 	config := map[string]any{
 		"provider": map[string]any{
 			provider: map[string]map[string]string{
@@ -124,13 +115,32 @@ func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
 		},
 	}
 
-	b, err := json.Marshal(config)
+	b, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return nil
+		return nil, nil
+	}
+	configFilePath := sandbox.StateDir(OpenCodeConfigFileName)
+	if err = fs.AtomicWriteFile(configFilePath, b, 0644); err != nil {
+		return nil, nil
+	}
+
+	mounts := map[string]SandboxMount{
+		cfp:            {Host: cfp, Target: filepath.Join(ch, ".config", "opencode")},
+		dlp:            {Host: dlp, Target: filepath.Join(ch, ".local")},
+		configFilePath: {Host: configFilePath, Target: filepath.Join(ch, OpenCodeConfigFileName), ReadOnly: true},
+	}
+	return mounts, nil
+}
+
+func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
+	profile := sandbox.Profile()
+	ch := profile.Options[ProfileOptionContainerHomeDir]
+	if ch == "" {
+		ch = h.defaultContainerHomeDir()
 	}
 
 	return map[string]string{
-		"OPENCODE_CONFIG_CONTENT": string(b),
+		"OPENCODE_CONFIG": filepath.Join(ch, OpenCodeConfigFileName),
 	}
 }
 
