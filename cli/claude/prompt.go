@@ -92,7 +92,7 @@ func handleAssistant(w *jsonlWriter, e event, line []byte) {
 		case "text":
 			if w.lastModel != e.Message.Model {
 				w.lastModel = e.Message.Model
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
 			}
 			w.lastAssistantTextMessage = c.Text
 			fmt.Fprintln(os.Stderr, "")
@@ -102,21 +102,21 @@ func handleAssistant(w *jsonlWriter, e event, line []byte) {
 		case "tool_use":
 			if e.Message.Model != "" && w.lastModel != e.Message.Model {
 				w.lastModel = e.Message.Model
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf(" model: use %s\n", w.lastModel)))
 			}
 
 			switch c.Name {
 			case "Bash":
 				command := c.Input["command"]
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, command)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, command)))
 
 			case "Read":
 				filePath := c.Input["file_path"]
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
 
 			case "Edit":
 				filePath := c.Input["file_path"]
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
 
 			case "Write":
 				filePath := c.Input["file_path"]
@@ -125,7 +125,7 @@ func handleAssistant(w *jsonlWriter, e event, line []byte) {
 					if len(parts) > 3 {
 						base := strings.Join(parts[0:3], "/") + "/"
 						val := strings.TrimPrefix(fps, base)
-						fmt.Fprintf(
+						fmt.Fprint(
 							os.Stderr,
 							fmt.Sprintf("%s%s\n",
 								pterm.Gray(fmt.Sprintf("  tool: %s %s", pterm.Blue(c.Name), base)),
@@ -135,10 +135,10 @@ func handleAssistant(w *jsonlWriter, e event, line []byte) {
 					}
 					return
 				}
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", c.Name, filePath)))
 
 			default:
-				fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Message.Model, c.Name)))
+				fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Message.Model, c.Name)))
 
 			}
 		}

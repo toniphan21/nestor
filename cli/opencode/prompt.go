@@ -120,14 +120,14 @@ func handleToolUse(w *jsonlWriter, e event, line []byte) {
 
 		case "read":
 			filePath := e.Part.State.Input["filePath"]
-			fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Part.Tool, filePath)))
+			fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Part.Tool, filePath)))
 
 		case "edit":
 			filePath := e.Part.State.Input["filePath"]
-			fmt.Fprintf(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Part.Tool, filePath)))
-			fmt.Fprintf(os.Stderr, pterm.Red(e.Part.State.Input["oldString"]))
+			fmt.Fprint(os.Stderr, pterm.Gray(fmt.Sprintf("  tool: %s %s\n", e.Part.Tool, filePath)))
+			fmt.Fprint(os.Stderr, pterm.Red(e.Part.State.Input["oldString"]))
 			fmt.Fprintln(os.Stderr, "")
-			fmt.Fprintf(os.Stderr, pterm.Green(e.Part.State.Input["newString"]))
+			fmt.Fprint(os.Stderr, pterm.Green(e.Part.State.Input["newString"]))
 			fmt.Fprintln(os.Stderr, "")
 		}
 	}

@@ -163,6 +163,10 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.Command = append(out.Command, "--name", shQuote(title))
 	}
 
+	if req.InstructionFiles.HasFiles() {
+		out.Command = append(out.Command, "--append-system-prompt-file", req.InstructionFiles.CombinedPath)
+	}
+
 	if !req.Interactive {
 		out.Command = append(out.Command, "--print")
 

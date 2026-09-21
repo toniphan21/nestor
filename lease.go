@@ -33,7 +33,7 @@ type Headless struct {
 	Model        string
 	SessionID    string
 	Title        string
-	Instructions string
+	Instructions []string
 	Stdout       io.Writer
 	Stderr       io.Writer
 }
@@ -57,7 +57,7 @@ type Interactive struct {
 	Model                string
 	SessionID            string
 	Title                string
-	Instructions         string
+	Instructions         []string
 	OnInit               func(proxy string)
 	OnSessionEstablished func(sessionID string)
 }
@@ -216,6 +216,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	if err := fs.MkdirAll(runDir); err != nil {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease run dir: %w", err)
 	}
+	runDirInContainer := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID)
 
 	metaFP := filepath.Join(dir, "meta.yml")
 	meta, err := l.load(metaFP, param)
@@ -235,7 +236,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	switch v := param.(type) {
 	case Headless:
 		l.save(metaFP, meta)
-		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run, runDir, date)
+		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run, runDir, runDirInContainer)
 		l.save(metaFP, meta)
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
@@ -250,7 +251,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAddr)
 			l.save(metaFP, meta)
-			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run, runDir, date)
+			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run, runDir, runDirInContainer)
 			l.save(metaFP, meta)
 
 			if v.OnSessionEstablished != nil {
@@ -258,7 +259,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 		}
 
-		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
+		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run, runDir, runDirInContainer)
 		return RunResult{ExitCode: code}, err
 
 	default:
@@ -289,7 +290,7 @@ func (l *Lease) runHeadless(
 	meta *leaseMeta,
 	run *leaseRun,
 	runDir string,
-	date string,
+	runDirInContainer string,
 ) (int, error) {
 	run.ModelRequested = param.Model
 	run.Stdout = param.Stdout != nil
@@ -299,12 +300,13 @@ func (l *Lease) runHeadless(
 		return -1, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
-	promptTargetPath := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID, "prompt")
+	promptTargetPath := filepath.Join(runDirInContainer, "prompt")
 	req := ExecRequest{
-		Interactive:    false,
-		PromptFilePath: promptTargetPath,
-		Model:          run.ModelRequested,
-		SessionID:      meta.SessionID,
+		Interactive:      false,
+		PromptFilePath:   promptTargetPath,
+		Model:            run.ModelRequested,
+		SessionID:        meta.SessionID,
+		InstructionFiles: l.makeInstructionFiles(runDir, runDirInContainer, param.Instructions),
 	}
 	if meta.SessionID == "" {
 		req.Title = param.Title
@@ -365,6 +367,8 @@ func (l *Lease) runInteractive(
 	param *Interactive,
 	meta *leaseMeta,
 	run *leaseRun,
+	runDir string,
+	runDirInContainer string,
 ) (int, error) {
 	run.Interactive = true
 	run.ModelRequested = param.Model
@@ -380,9 +384,10 @@ func (l *Lease) runInteractive(
 	}
 
 	req := ExecRequest{
-		Interactive: true,
-		Model:       run.ModelRequested,
-		SessionID:   sessionID,
+		Interactive:      true,
+		Model:            run.ModelRequested,
+		SessionID:        sessionID,
+		InstructionFiles: l.makeInstructionFiles(runDir, runDirInContainer, param.Instructions),
 	}
 	if meta.SessionID == "" {
 		req.Title = param.Title
@@ -417,6 +422,43 @@ func (l *Lease) runInteractive(
 	meta.Run = append(meta.Run, run)
 	meta.Data.ExpiresAt = l.ExpiresAt()
 	return code, runErr
+}
+
+func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instructions []string) InstructionFiles {
+	var out InstructionFiles
+	if len(instructions) == 0 {
+		return out
+	}
+
+	var sb strings.Builder
+
+	os := l.Sandbox().Runtime().Platform.OS()
+	for i, v := range instructions {
+		vv := strings.TrimSpace(v)
+		if vv == "" {
+			continue
+		}
+
+		hp := filepath.Join(hostDir, fmt.Sprintf("instruction-%d", i))
+		cp := filepath.Join(containerDir, fmt.Sprintf("instruction-%d", i))
+		ins := parseInstruction(vv, os)
+
+		if err := ins.saveTo(hp); err == nil {
+			sb.WriteString(ins.content())
+			sb.WriteString("\n\n")
+			out.Paths = append(out.Paths, cp)
+		}
+	}
+
+	if sb.Len() != 0 {
+		hp := filepath.Join(hostDir, "instruction")
+		cp := filepath.Join(containerDir, "instruction")
+
+		if err := fs.WriteFile(hp, []byte(sb.String())); err == nil {
+			out.CombinedPath = cp
+		}
+	}
+	return out
 }
 
 func (l *Lease) findLeaseData() (*sandboxImpl, *leaseData, error) {

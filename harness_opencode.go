@@ -179,6 +179,15 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.Command = append(out.Command, "--title", shQuote(title))
 	}
 
+	if req.InstructionFiles.HasFiles() {
+		config := map[string][]string{
+			"instructions": req.InstructionFiles.Paths,
+		}
+		if b, err := json.MarshalIndent(config, "", "  "); err == nil {
+			out.Env["OPENCODE_CONFIG_CONTENT"] = string(b)
+		}
+	}
+
 	if !req.Interactive && req.PromptFilePath != "" {
 		out.Command = append(out.Command, "<", req.PromptFilePath)
 	}

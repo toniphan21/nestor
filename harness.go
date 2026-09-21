@@ -11,11 +11,21 @@ const HarnessClaudeCode = harness("claude")
 const HarnessOpenCode = harness("opencode")
 
 type ExecRequest struct {
-	Interactive    bool
-	PromptFilePath string
-	Model          string
-	SessionID      string
-	Title          string
+	Interactive      bool
+	PromptFilePath   string
+	Model            string
+	SessionID        string
+	Title            string
+	InstructionFiles InstructionFiles
+}
+
+type InstructionFiles struct {
+	Paths        []string
+	CombinedPath string
+}
+
+func (f *InstructionFiles) HasFiles() bool {
+	return len(f.Paths) > 0 && f.CombinedPath != ""
 }
 
 type Harness interface {
