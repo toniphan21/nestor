@@ -1,0 +1,20 @@
+version: "1"
+type: "mcp"
+data:
+# Note: all MCP servers are served per sandbox through a proxy. The harness
+# never connects to an MCP server directly, so it never sees these secrets.
+#
+#  gh: # MCP name, used as the tool prefix
+#    type: "local"
+#    command: [github-mcp-server, stdio, --toolsets, "repos,issues"]
+#    env:
+#      GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_xxx"
+#    use_tools: [issue_read] # pick tools from the MCP's toolset; omit this key to use all tools
+#
+#  github: # MCP name, used as the tool prefix
+#    type: "remote"
+#    url: "https://api.githubcopilot.com/mcp/"
+#    headers:
+#      Authorization: "Bearer ghp_xxx"
+#      X-MCP-Toolsets: "pull_requests"
+#    use_tools: [issue_read] # pick tools from the MCP's toolset; omit this key to use all tools

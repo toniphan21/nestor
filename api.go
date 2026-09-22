@@ -138,84 +138,142 @@ type api struct {
 
 func (a *api) init() error {
 	a.log.Debug("Init start", slog.String("dir", a.dir))
-	runtime := a.Runtime()
+	steps := []func() error{
+		a.initProfilesFromYmlIfRuntimeHasNoProfiles,
+		a.initMCPFromYmlIfRuntimeHasNoMCPs,
+		a.initBuiltinHarnesses,
+		a.initSpecsFromYmlIfRuntimeHasNoSpecs,
+		a.initSandboxSlugs,
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	a.log.Debug("Init done", slog.String("dir", a.dir))
+	return nil
+}
 
-	// if there is no profiles provided, parse from NESTOR_DIR/profile.yml
-	// for other location the caller need to parse manually add pass via WithProfiles
-	if len(a.registry.Profiles()) == 0 {
-		// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
-		pf := a.platform.ProfileYmlFile()
-		if !fs.HasFile(pf) {
-			if err := fs.CopyFileFS(Embed, "assets/profile.yml", pf); err != nil {
-				a.log.Error(err.Error(), slog.Any("error", err))
-				return err
-			}
-			a.log.Info("saved builtin profile.yml file", slog.String("path", pf))
-		}
-
-		yml, err := fs.AtomicReadFile(pf)
-		if err != nil {
-			e := fmt.Errorf("cannot read profile.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", pf))
-			return e
-		}
-		hss, err := ParseProfiles(bytes.NewBuffer(yml))
-		if err != nil {
-			e := fmt.Errorf("cannot parse profile.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", pf))
-			return e
-		}
-
-		for _, v := range hss {
-			a.registry.RegisterProfile(v)
-		}
-		a.log.Info("loaded profile from profile.yml", slog.String("path", pf))
-	} else {
+func (a *api) initProfilesFromYmlIfRuntimeHasNoProfiles() error {
+	if len(a.registry.Profiles()) != 0 {
 		a.log.Info("use profile from WithProfiles")
+		return nil
 	}
 
+	// profile.yml is saved from assets for the first time in NESTOR_DIR/profile.yml
+	fp := a.platform.ProfileYmlFile()
+	if !fs.HasFile(fp) {
+		if err := fs.CopyFileFS(Embed, "assets/profile.yml", fp); err != nil {
+			a.log.Error(err.Error(), slog.Any("error", err))
+			return err
+		}
+		a.log.Info("saved builtin profile.yml file", slog.String("path", fp))
+	}
+
+	yml, err := fs.AtomicReadFile(fp)
+	if err != nil {
+		e := fmt.Errorf("cannot read profile.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+	hss, err := ParseProfiles(bytes.NewBuffer(yml))
+	if err != nil {
+		e := fmt.Errorf("cannot parse profile.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+
+	for _, v := range hss {
+		a.registry.RegisterProfile(v)
+	}
+	a.log.Info("loaded profile from profile.yml", slog.String("path", fp))
+	return nil
+}
+
+func (a *api) initBuiltinHarnesses() error {
 	// initialize builtin harnesses
 	for _, v := range a.registry.Harnesses() {
-		if err := v.Init(runtime); err != nil {
+		if err := v.Init(a.Runtime()); err != nil {
 			return err
 		}
 	}
 	a.log.Debug("builtin harnesses initialized")
+	return nil
+}
 
-	// if there is no sandbox provided, parse from NESTOR_DIR/sandbox.yml
-	// for other location the caller need to parse manually add pass via WithSandboxSpecs
-	if len(a.registry.SandboxSpecs()) == 0 {
-		// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
-		sf := a.platform.SandboxYmlFile()
-		if !fs.HasFile(sf) {
-			if err := fs.CopyFileFS(Embed, "assets/sandbox.yml", sf); err != nil {
-				a.log.Error(err.Error(), slog.Any("error", err))
-				return err
-			}
-			a.log.Info("saved builtin sandbox.yml file", slog.String("path", sf))
-		}
-
-		yml, err := fs.AtomicReadFile(sf)
-		if err != nil {
-			e := fmt.Errorf("cannot read sandbox.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
-			return e
-		}
-		sbs, err := ParseSandboxSpecs(runtime, bytes.NewBuffer(yml))
-		if err != nil {
-			e := fmt.Errorf("cannot parse sandbox.yml file: %w", err)
-			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", sf))
-			return e
-		}
-
-		for _, v := range sbs {
-			a.registry.RegisterSandboxSpec(v)
-		}
-		a.log.Info("loaded sandbox specs from sandbox.yml", slog.String("path", sf))
-	} else {
-		a.log.Info("use sandbox specs from WithSandboxSpecs")
+func (a *api) initMCPFromYmlIfRuntimeHasNoMCPs() error {
+	if len(a.registry.MCPs()) != 0 {
+		a.log.Info("use MCPs from WithMCPs")
+		return nil
 	}
 
+	// mcp.yml is saved from assets for the first time in NESTOR_DIR/mcp.yml
+	fp := a.platform.MCPYmlFile()
+	if !fs.HasFile(fp) {
+		if err := fs.CopyFileFS(Embed, "assets/mcp.yml", fp); err != nil {
+			a.log.Error(err.Error(), slog.Any("error", err))
+			return err
+		}
+		a.log.Info("saved builtin mcp.yml file", slog.String("path", fp))
+	}
+
+	yml, err := fs.AtomicReadFile(fp)
+	if err != nil {
+		e := fmt.Errorf("cannot read mcp.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+	mcps, err := ParseMCPs(bytes.NewBuffer(yml))
+	if err != nil {
+		e := fmt.Errorf("cannot parse mcp.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+
+	for _, v := range mcps {
+		a.registry.RegisterMCP(v)
+	}
+	a.log.Info("loaded MCPs from mcp.yml", slog.String("path", fp))
+	return nil
+}
+
+func (a *api) initSpecsFromYmlIfRuntimeHasNoSpecs() error {
+	if len(a.registry.SandboxSpecs()) != 0 {
+		a.log.Info("use sandbox specs from WithSandboxSpecs")
+		return nil
+	}
+
+	// sandbox.yml is saved from assets for the first time in NESTOR_DIR/sandbox.yml
+	fp := a.platform.SandboxYmlFile()
+	if !fs.HasFile(fp) {
+		if err := fs.CopyFileFS(Embed, "assets/sandbox.yml", fp); err != nil {
+			a.log.Error(err.Error(), slog.Any("error", err))
+			return err
+		}
+		a.log.Info("saved builtin sandbox.yml file", slog.String("path", fp))
+	}
+
+	yml, err := fs.AtomicReadFile(fp)
+	if err != nil {
+		e := fmt.Errorf("cannot read sandbox.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+	sbs, err := ParseSandboxSpecs(a.Runtime(), bytes.NewBuffer(yml))
+	if err != nil {
+		e := fmt.Errorf("cannot parse sandbox.yml file: %w", err)
+		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+		return e
+	}
+
+	for _, v := range sbs {
+		a.registry.RegisterSandboxSpec(v)
+	}
+	a.log.Info("loaded sandbox specs from sandbox.yml", slog.String("path", fp))
+	return nil
+}
+
+func (a *api) initSandboxSlugs() error {
 	ssf := a.platform.SandboxSlugsFile()
 	if !fs.HasFile(ssf) {
 		if err := fs.CopyFileFS(Embed, "assets/sandbox-slugs.txt", ssf); err != nil {
@@ -230,8 +288,6 @@ func (a *api) init() error {
 		return err
 	}
 	_ = a.template.LoadSandboxSlugs(bytes.NewBuffer(b))
-
-	a.log.Debug("Init done", slog.String("dir", a.dir))
 	return nil
 }
 

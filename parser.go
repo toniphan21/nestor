@@ -35,13 +35,7 @@ func parseYML[T, R any](yml io.Reader, typ string, callback func(*ymlFile[T]) (R
 		versions = []string{defaultVersion}
 	}
 
-	hasVersion := false
-	for _, v := range versions {
-		if file.Version == v {
-			hasVersion = true
-			break
-		}
-	}
+	hasVersion := slices.Contains(versions, file.Version)
 
 	if !hasVersion {
 		dv, _ := callback(nil)
@@ -114,4 +108,10 @@ func MarshallSandboxSpecs(specs []SandboxSpec) ([]byte, error) {
 		Data:    data,
 	}
 	return yaml.Marshal(f)
+}
+
+const mcpType = "mcp"
+
+func ParseMCPs(yml io.Reader) ([]MCP, error) {
+	return nil, nil
 }

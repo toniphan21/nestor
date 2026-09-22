@@ -29,6 +29,8 @@ type Platform interface {
 
 	SandboxYmlFile() string
 
+	MCPYmlFile() string
+
 	SandboxSlugsFile() string
 
 	OS() OSKind
@@ -109,6 +111,10 @@ func (p *platform) ShareSandboxSpecDir(elem ...string) string {
 
 func (p *platform) ProfileYmlFile() string {
 	return p.NestorDir("profile.yml")
+}
+
+func (p *platform) MCPYmlFile() string {
+	return p.NestorDir("mcp.yml")
 }
 
 func (p *platform) SandboxYmlFile() string {
