@@ -112,6 +112,50 @@ func MarshallSandboxSpecs(specs []SandboxSpec) ([]byte, error) {
 
 const mcpType = "mcp"
 
+type mcpServer struct {
+	Type     string            `yaml:"type"`
+	Command  []string          `yaml:"command,omitempty"`
+	Env      map[string]string `yaml:"env,omitempty"`
+	URL      string            `yaml:"url,omitempty"`
+	Headers  map[string]string `yaml:"headers,omitempty"`
+	UseTools []string          `yaml:"use_tools,omitempty"`
+}
+
 func ParseMCPs(yml io.Reader) ([]MCP, error) {
-	return nil, nil
+	return parseYML(yml, mcpType, func(file *ymlFile[map[string]mcpServer]) ([]MCP, error) {
+		if file == nil {
+			return nil, nil
+		}
+
+		result := make([]MCP, 0, len(file.Data))
+		for name, v := range file.Data {
+			var tp MCPToolPolicy
+			if len(v.UseTools) == 0 {
+				tp = AllMCPTools()
+			} else {
+				tp = UseMCPTools(v.UseTools...)
+			}
+
+			switch v.Type {
+			case "local":
+				if len(v.Command) == 0 {
+					return nil, fmt.Errorf(`%w: mcp type "local" requires command`, ErrInvalid)
+				}
+				result = append(result, LocalMCP(name, v.Command, v.Env, tp))
+
+			case "remote":
+				if len(v.Command) == 0 {
+					return nil, fmt.Errorf(`%w: mcp type "remote" requires url`, ErrInvalid)
+				}
+				result = append(result, RemoteMCP(name, v.URL, v.Headers, tp))
+
+			default:
+				return nil, fmt.Errorf("%w: unknown mcp type %q", ErrNotSupported, v.Type)
+			}
+		}
+		slices.SortFunc(result, func(a, b MCP) int {
+			return strings.Compare(a.Name(), b.Name())
+		})
+		return result, nil
+	})
 }

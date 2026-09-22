@@ -3,7 +3,9 @@ type: "sandbox-spec"
 data:
 #  claude-go:
 #    harness: "claude"
+#    profile: "claude-subscription"
 #    state_scope: "shared"
+#    mcp: ["local-name", "remote-name", "see mcp.yml"]
 #    target: "go"
 #    max_instances: 2
 #    mounts:

@@ -59,6 +59,7 @@ type SandboxSpec struct {
 	Name         string             `yaml:"-"`
 	Harness      harness            `yaml:"harness"`
 	Profile      string             `yaml:"profile,omitempty"`
+	MCPs         []string           `yaml:"mcp,omitempty"`
 	Target       string             `yaml:"target"`
 	MaxInstances int                `yaml:"max_instances"`
 	StateScope   stateScope         `yaml:"state_scope,omitempty"`
