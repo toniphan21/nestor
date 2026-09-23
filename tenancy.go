@@ -81,7 +81,7 @@ func (t *failedTenancy) HostWorkDir() string { return "" }
 
 func (t *failedTenancy) AuthProxyAddr() string { return "" }
 
-func (t *failedTenancy) MCPProxyAddr() string { return "" }
+func (t *failedTenancy) ProxyAddr() string { return "" }
 
 func (t *failedTenancy) ExpiresAt() time.Time { return time.Time{} }
 
@@ -119,7 +119,7 @@ func (t *leaseTenancy) HostWorkDir() string { return t.lease.HostWorkDir() }
 
 func (t *leaseTenancy) AuthProxyAddr() string { return t.lease.AuthProxyAddr() }
 
-func (t *leaseTenancy) MCPProxyAddr() string { return t.lease.MCPProxyAddr() }
+func (t *leaseTenancy) ProxyAddr() string { return t.lease.ProxyAddr() }
 
 func (t *leaseTenancy) ExpiresAt() time.Time { return t.lease.ExpiresAt() }
 

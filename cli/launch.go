@@ -99,12 +99,12 @@ func Launch(api nestor.API, args []string) error {
 	}()
 
 	_, err = lease.Run(ctx, nestor.Interactive{
-		OnInit: func(authProxy string, mcpProxy string) {
+		OnInit: func(authProxy string, proxy string) {
 			if authProxy != "" {
 				fmt.Printf("open auth proxy %s\n", authProxy)
 			}
-			if mcpProxy != "" {
-				fmt.Printf("open MCP proxy %s\n", mcpProxy)
+			if proxy != "" {
+				fmt.Printf("open proxy %s\n", proxy)
 			}
 			fmt.Println("initializing")
 		},

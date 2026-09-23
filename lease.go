@@ -58,7 +58,7 @@ type Interactive struct {
 	SessionID            string
 	Title                string
 	Instructions         []string
-	OnInit               func(authProxy string, mcpProxy string)
+	OnInit               func(authProxy string, proxy string)
 	OnSessionEstablished func(sessionID string)
 }
 
@@ -81,7 +81,7 @@ type leaseAPI interface {
 	WorkDir() string
 	HostWorkDir() string
 	AuthProxyAddr() string
-	MCPProxyAddr() string
+	ProxyAddr() string
 	ExpiresAt() time.Time
 	Extend(ctx context.Context) error
 	Release(ctx context.Context) error
@@ -95,14 +95,14 @@ var errUnknownSandbox = errors.New("unknown sandbox implementation, use default 
 var _ leaseAPI = (*Lease)(nil)
 
 type Lease struct {
-	data          leaseData
-	sandbox       Sandbox
-	log           *slog.Logger
-	sessionID     string
-	proxyAuthAddr string
-	proxyAuthSrv  *http.Server
-	proxyMCPAddr  string
-	proxyMCPSrv   *http.Server
+	data            leaseData
+	sandbox         Sandbox
+	log             *slog.Logger
+	sessionID       string
+	authProxyAddr   string
+	authProxyServer *http.Server
+	proxyAddr       string
+	proxyServer     *http.Server
 }
 
 func (l *Lease) ID() string {
@@ -126,11 +126,11 @@ func (l *Lease) HostWorkDir() string {
 }
 
 func (l *Lease) AuthProxyAddr() string {
-	return l.proxyAuthAddr
+	return l.authProxyAddr
 }
 
-func (l *Lease) MCPProxyAddr() string {
-	return l.proxyMCPAddr
+func (l *Lease) ProxyAddr() string {
+	return l.proxyAddr
 }
 
 func (l *Lease) ExpiresAt() time.Time {
@@ -241,7 +241,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	}
 
 	// create mcp proxy
-	if err = l.runMCPProxy(sandbox.spec.MCPs); err != nil {
+	if err = l.runProxy(ctx, sandbox.spec.MCPs); err != nil {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot start mcp proxy: %w", err)
 	}
 
@@ -259,9 +259,9 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			// before the TUI opens. As a side effect, the headless run gives us the
 			// session ID to resume with.
 			if v.OnInit != nil {
-				v.OnInit(l.proxyAuthAddr, l.proxyMCPAddr)
+				v.OnInit(l.authProxyAddr, l.proxyAddr)
 			}
-			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.proxyAuthAddr, l.proxyMCPAddr)
+			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.authProxyAddr, l.proxyAddr)
 			l.save(metaFP, meta)
 			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run, runDir, runDirInContainer)
 			l.save(metaFP, meta)
@@ -529,7 +529,7 @@ func (l *Lease) save(fp string, meta *leaseMeta) {
 }
 
 func (l *Lease) runAuthProxy(route *ProxyRoute) error {
-	l.proxyAuthAddr = ""
+	l.authProxyAddr = ""
 
 	target, err := url.Parse(route.Target)
 	if err != nil {
@@ -562,7 +562,7 @@ func (l *Lease) runAuthProxy(route *ProxyRoute) error {
 		Handler:           proxy,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	l.proxyAuthSrv = srv
+	l.authProxyServer = srv
 
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
@@ -571,16 +571,47 @@ func (l *Lease) runAuthProxy(route *ProxyRoute) error {
 	}()
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	l.proxyAuthAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
-	log.Info("auth proxy started", "addr", l.proxyAuthAddr, "target", target.Host)
+	l.authProxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
+	log.Info("auth proxy started", "addr", l.authProxyAddr, "target", target.Host)
 
 	return nil
 }
 
-func (l *Lease) runMCPProxy(mcps []string) error {
-	addr, server, err := runMCPProxy(l.sandbox.Runtime(), mcps)
-	l.proxyMCPAddr = addr
-	l.proxyMCPSrv = server
+func (l *Lease) runProxy(ctx context.Context, mcps []string) error {
+	log := l.log.With("component", "mcp-proxy")
+	mcpHandler, err := mcpProxyHandler(ctx, l.sandbox.Runtime(), mcps, log)
+	if err != nil {
+		return err
+	}
+
+	if mcpHandler != nil {
+		return nil
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(ProxyMCPEndpoint, mcpHandler)
+
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return fmt.Errorf("listen for auth proxy: %w", err)
+	}
+
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			log.Error("mcp proxy stopped", "err", err)
+		}
+	}()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	addr := net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
+	//log.Info("auth proxy started", "addr", l.proxyAuthAddr, "target", target.Host)
+	l.proxyAddr = addr
+	l.proxyServer = srv
 
 	return err
 }
@@ -589,33 +620,33 @@ func (l *Lease) stopProxies() error {
 	if err := l.stopAuthProxy(); err != nil {
 		return err
 	}
-	if err := l.stopMCPProxy(); err != nil {
+	if err := l.stopProxy(); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (l *Lease) stopAuthProxy() error {
-	if l.proxyAuthSrv == nil {
+	if l.authProxyServer == nil {
 		return nil
 	}
 
-	l.log.Info("auth proxy stop", "addr", l.proxyAuthAddr)
-	srv := l.proxyAuthSrv
-	l.proxyAuthSrv = nil
+	l.log.Info("auth proxy stop", "addr", l.authProxyAddr)
+	srv := l.authProxyServer
+	l.authProxyServer = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)
 }
 
-func (l *Lease) stopMCPProxy() error {
-	if l.proxyMCPSrv == nil {
+func (l *Lease) stopProxy() error {
+	if l.proxyServer == nil {
 		return nil
 	}
 
-	l.log.Info("MCP proxy stop", "addr", l.proxyMCPAddr)
-	srv := l.proxyMCPSrv
-	l.proxyMCPSrv = nil
+	l.log.Info("MCP proxy stop", "addr", l.proxyAddr)
+	srv := l.proxyServer
+	l.proxyServer = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)

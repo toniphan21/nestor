@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # install Claude Code
-RUN npm i -g opencode-ai
+ARG OPENCODE_VERSION=1.18.32
+RUN npm i -g opencode-ai@${OPENCODE_VERSION}
 
 # set up agent user
 ARG UID=1000

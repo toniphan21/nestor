@@ -168,8 +168,8 @@ func (t *Template) MakeSandboxContainer(sandboxID string) string {
 	})
 }
 
-func (t *Template) MakeInteractiveConfirmPrompt(authProxy string, mcpProxy string) string {
-	if authProxy == "" && mcpProxy == "" {
+func (t *Template) MakeInteractiveConfirmPrompt(authProxy string, proxy string) string {
+	if authProxy == "" && proxy == "" {
 		return t.InteractiveConfirmPromptWithoutProxy
 	}
 	return t.fillTemplate(t.InteractiveConfirmPromptWithProxy, map[string]string{
@@ -177,10 +177,10 @@ func (t *Template) MakeInteractiveConfirmPrompt(authProxy string, mcpProxy strin
 		"$authProxy":        authProxy,
 		"[auth-proxy-addr]": authProxy,
 		"$authProxyAddr":    authProxy,
-		"[mcp-proxy]":       mcpProxy,
-		"$mcpProxy":         mcpProxy,
-		"[mcp-proxy-addr]":  mcpProxy,
-		"$mcpProxyAddr":     mcpProxy,
+		"[proxy]":           proxy,
+		"$proxy":            proxy,
+		"[proxy-addr]":      proxy,
+		"$proxyAddr":        proxy,
 	})
 }
 

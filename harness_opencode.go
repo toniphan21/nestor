@@ -108,7 +108,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		"provider": map[string]any{
 			provider: map[string]map[string]string{
 				"options": {
-					"baseURL": "{env:NESTOR_EXEC_PROXY_ADDR}",
+					"baseURL": "{env:NESTOR_AUTH_PROXY_ADDR}",
 					"apiKey":  "dummy",
 				},
 			},
@@ -148,7 +148,7 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	authProxyAddr := lease.AuthProxyAddr()
 	out := HarnessExec{
 		Env: map[string]string{
-			"NESTOR_EXEC_PROXY_ADDR": authProxyAddr,
+			"NESTOR_AUTH_PROXY_ADDR": authProxyAddr,
 		},
 		Command: []string{"opencode"},
 	}
