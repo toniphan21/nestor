@@ -20,6 +20,7 @@ type opts struct {
 	template      Template
 	sandboxSpecs  []SandboxSpec
 	profiles      []Profile
+	mcps          []MCP
 	harnesses     []Harness
 	newGitFunc    NewGitFunc
 	newDockerFunc NewDockerFunc
@@ -41,8 +42,12 @@ func WithSandboxSpecs(specs []SandboxSpec) Option {
 	return optionFunc(func(o *opts) { o.sandboxSpecs = specs })
 }
 
-func WithProfiles(specs []Profile) Option {
-	return optionFunc(func(o *opts) { o.profiles = specs })
+func WithProfiles(profiles []Profile) Option {
+	return optionFunc(func(o *opts) { o.profiles = profiles })
+}
+
+func WithMCPs(mcps []MCP) Option {
+	return optionFunc(func(o *opts) { o.mcps = mcps })
 }
 
 func WithHarnesses(harnesses Harness) Option {

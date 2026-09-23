@@ -2,6 +2,7 @@ package nestor
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -88,6 +89,15 @@ func (s *SandboxSpec) Validate(runtime Runtime) error {
 	if s.StateScope == "" {
 		s.StateScope = StateScopeShared
 	}
+
+	if len(s.MCPs) > 0 {
+		for _, v := range s.MCPs {
+			mcp, ok := runtime.Registry.MCP(v)
+			if !ok {
+				return fmt.Errorf("%w: MCP %q", ErrNotFound, mcp)
+			}
+		}
+	}
 	// TODO: continue
 	return nil
 }
@@ -142,9 +152,7 @@ func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, 
 
 	po := make(map[string]string)
 	if p.Options != nil {
-		for k, v := range p.Options {
-			po[k] = v
-		}
+		maps.Copy(po, p.Options)
 	}
 
 	defaultOptions := h.DefaultOptions(runtime)

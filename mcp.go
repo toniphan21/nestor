@@ -3,6 +3,7 @@ package nestor
 import (
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 )
 
@@ -105,4 +106,11 @@ func (s *remoteMCP) String() string {
 		"%s [remote], url: %v, headers: %v, tools: %v",
 		s.name, s.url, slices.Sorted(maps.Keys(s.headers)), s.toolPolicy,
 	)
+}
+
+func runMCPProxy(runtime Runtime, names []string) (string, *http.Server, error) {
+	if len(names) == 0 {
+		return "", nil, nil
+	}
+	return "", nil, nil
 }

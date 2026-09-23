@@ -110,6 +110,9 @@ func New(options ...Option) (API, error) {
 	for _, v := range o.profiles {
 		a.registry.RegisterProfile(v)
 	}
+	for _, v := range o.mcps {
+		a.registry.RegisterMCP(v)
+	}
 	for _, v := range o.sandboxSpecs {
 		a.registry.RegisterSandboxSpec(v)
 	}

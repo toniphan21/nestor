@@ -142,7 +142,7 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	switch profile.Auth {
 	case AuthAPIKey:
 		if profile.Proxy {
-			out.Env[AnthropicBaseURLName] = lease.ProxyAddr()
+			out.Env[AnthropicBaseURLName] = lease.AuthProxyAddr()
 			out.Env[AnthropicAuthTokenName] = "dummy"
 		}
 	}

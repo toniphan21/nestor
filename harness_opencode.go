@@ -145,10 +145,10 @@ func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
 }
 
 func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
-	proxyAddr := lease.ProxyAddr()
+	authProxyAddr := lease.AuthProxyAddr()
 	out := HarnessExec{
 		Env: map[string]string{
-			"NESTOR_EXEC_PROXY_ADDR": proxyAddr,
+			"NESTOR_EXEC_PROXY_ADDR": authProxyAddr,
 		},
 		Command: []string{"opencode"},
 	}
