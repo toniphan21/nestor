@@ -159,7 +159,7 @@ func setup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err = fs.WriteFile(filepath.Join(dir, "sandbox.yml"), b); err != nil {
+	if err = fs.WriteFile(filepath.Join(dir, "sandbox.yml"), b, 0644); err != nil {
 		return err
 	}
 	fmt.Printf("saved %s\n", filepath.Join(dir, "sandbox.yml"))
@@ -177,7 +177,7 @@ func setup(cmd *cobra.Command, args []string) error {
 		config.Hidden.Harnesses = []string{string(nestor.HarnessClaudeCode)}
 	}
 	b, err = yaml.Marshal(config)
-	if err = fs.WriteFile(filepath.Join(wd, ".nestor.yml"), b); err != nil {
+	if err = fs.WriteFile(filepath.Join(wd, ".nestor.yml"), b, 0644); err != nil {
 		return err
 	}
 	fmt.Printf("saved %s\n", filepath.Join(wd, ".nestor.yml"))

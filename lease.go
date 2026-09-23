@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +20,9 @@ import (
 	"gopkg.in/yaml.v3"
 	"nhatp.com/go/nestor/infra/fs"
 )
+
+const EnvVarAuthProxyAddress = "NESTOR_AUTH_PROXY_ADDR"
+const EnvVarProxyAddress = "NESTOR_PROXY_ADDR"
 
 type RunParam interface {
 	validate() error
@@ -82,6 +86,7 @@ type leaseAPI interface {
 	HostWorkDir() string
 	AuthProxyAddr() string
 	ProxyAddr() string
+	MCPProxyURL() (string, bool)
 	ExpiresAt() time.Time
 	Extend(ctx context.Context) error
 	Release(ctx context.Context) error
@@ -95,10 +100,13 @@ var errUnknownSandbox = errors.New("unknown sandbox implementation, use default 
 var _ leaseAPI = (*Lease)(nil)
 
 type Lease struct {
-	data            leaseData
-	sandbox         Sandbox
-	log             *slog.Logger
-	sessionID       string
+	data              leaseData
+	sandbox           Sandbox
+	log               *slog.Logger
+	sessionID         string
+	runDir            string
+	runDirInContainer string
+
 	authProxyAddr   string
 	authProxyServer *http.Server
 	proxyAddr       string
@@ -131,6 +139,13 @@ func (l *Lease) AuthProxyAddr() string {
 
 func (l *Lease) ProxyAddr() string {
 	return l.proxyAddr
+}
+
+func (l *Lease) MCPProxyURL() (string, bool) {
+	if l.proxyAddr == "" {
+		return "", false
+	}
+	return "http://" + l.proxyAddr + ProxyMCPEndpoint, true
 }
 
 func (l *Lease) ExpiresAt() time.Time {
@@ -219,11 +234,11 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease dir: %w", err)
 	}
 
-	runDir := filepath.Join(dir, run.ID)
-	if err := fs.MkdirAll(runDir); err != nil {
+	l.runDir = filepath.Join(dir, run.ID)
+	if err := fs.MkdirAll(l.runDir); err != nil {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease run dir: %w", err)
 	}
-	runDirInContainer := filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID)
+	l.runDirInContainer = filepath.Join(SandboxRunsTargetPath, date, l.ID(), run.ID)
 
 	metaFP := filepath.Join(dir, "meta.yml")
 	meta, err := l.load(metaFP, param)
@@ -248,7 +263,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	switch v := param.(type) {
 	case Headless:
 		l.save(metaFP, meta)
-		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run, runDir, runDirInContainer)
+		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run)
 		l.save(metaFP, meta)
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
@@ -263,7 +278,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.authProxyAddr, l.proxyAddr)
 			l.save(metaFP, meta)
-			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run, runDir, runDirInContainer)
+			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run)
 			l.save(metaFP, meta)
 
 			if v.OnSessionEstablished != nil {
@@ -271,7 +286,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 		}
 
-		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run, runDir, runDirInContainer)
+		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
 		return RunResult{ExitCode: code}, err
 
 	default:
@@ -285,6 +300,18 @@ func (l *Lease) SessionID() string {
 
 func (l *Lease) ListSessions() []HarnessSession {
 	return l.sandbox.Harness().ListSessions(l)
+}
+
+func (l *Lease) StageFile(rel string, data []byte, perm os.FileMode) (string, error) {
+	hostDir := l.runDir
+	containerDir := l.runDirInContainer
+
+	hp := filepath.Join(hostDir, rel)
+	cp := filepath.Join(containerDir, rel)
+	if err := fs.WriteFile(hp, data, perm); err != nil {
+		return "", err
+	}
+	return cp, nil
 }
 
 func (l *Lease) hasSession(id string) bool {
@@ -301,24 +328,22 @@ func (l *Lease) runHeadless(
 	param *Headless,
 	meta *leaseMeta,
 	run *leaseRun,
-	runDir string,
-	runDirInContainer string,
 ) (int, error) {
 	run.ModelRequested = param.Model
 	run.Stdout = param.Stdout != nil
 	run.Stderr = param.Stderr != nil
 
-	if err := fs.AtomicWriteFile(filepath.Join(runDir, "prompt"), []byte(param.Prompt), 0644); err != nil {
+	if err := fs.AtomicWriteFile(filepath.Join(l.runDir, "prompt"), []byte(param.Prompt), 0644); err != nil {
 		return -1, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
-	promptTargetPath := filepath.Join(runDirInContainer, "prompt")
+	promptTargetPath := filepath.Join(l.runDirInContainer, "prompt")
 	req := ExecRequest{
 		Interactive:      false,
 		PromptFilePath:   promptTargetPath,
 		Model:            run.ModelRequested,
 		SessionID:        meta.SessionID,
-		InstructionFiles: l.makeInstructionFiles(runDir, runDirInContainer, param.Instructions),
+		InstructionFiles: l.makeInstructionFiles(l.runDir, l.runDirInContainer, param.Instructions),
 	}
 	if meta.SessionID == "" {
 		req.Title = param.Title
@@ -348,10 +373,10 @@ func (l *Lease) runHeadless(
 		Stderr:  multiWriter(param.Stderr, &stderr),
 	})
 
-	if _, err := stdout.Save(filepath.Join(runDir, "stdout")); err != nil {
+	if _, err := stdout.Save(filepath.Join(l.runDir, "stdout")); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
-	if _, err := stderr.Save(filepath.Join(runDir, "stderr")); err != nil {
+	if _, err := stderr.Save(filepath.Join(l.runDir, "stderr")); err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
 
@@ -379,8 +404,6 @@ func (l *Lease) runInteractive(
 	param *Interactive,
 	meta *leaseMeta,
 	run *leaseRun,
-	runDir string,
-	runDirInContainer string,
 ) (int, error) {
 	run.Interactive = true
 	run.ModelRequested = param.Model
@@ -399,7 +422,7 @@ func (l *Lease) runInteractive(
 		Interactive:      true,
 		Model:            run.ModelRequested,
 		SessionID:        sessionID,
-		InstructionFiles: l.makeInstructionFiles(runDir, runDirInContainer, param.Instructions),
+		InstructionFiles: l.makeInstructionFiles(l.runDir, l.runDirInContainer, param.Instructions),
 	}
 	if meta.SessionID == "" {
 		req.Title = param.Title
@@ -444,7 +467,7 @@ func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instru
 
 	var sb strings.Builder
 
-	os := l.Sandbox().Runtime().Platform.OS()
+	kind := l.Sandbox().Runtime().Platform.OS()
 	for i, v := range instructions {
 		vv := strings.TrimSpace(v)
 		if vv == "" {
@@ -453,7 +476,7 @@ func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instru
 
 		hp := filepath.Join(hostDir, fmt.Sprintf("instruction-%d", i))
 		cp := filepath.Join(containerDir, fmt.Sprintf("instruction-%d", i))
-		ins := parseInstruction(vv, os)
+		ins := parseInstruction(vv, kind)
 
 		if err := ins.saveTo(hp); err == nil {
 			sb.WriteString(ins.content())
@@ -466,7 +489,7 @@ func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instru
 		hp := filepath.Join(hostDir, "instruction")
 		cp := filepath.Join(containerDir, "instruction")
 
-		if err := fs.WriteFile(hp, []byte(sb.String())); err == nil {
+		if err := fs.WriteFile(hp, []byte(sb.String()), 0644); err == nil {
 			out.CombinedPath = cp
 		}
 	}
@@ -578,13 +601,19 @@ func (l *Lease) runAuthProxy(route *ProxyRoute) error {
 }
 
 func (l *Lease) runProxy(ctx context.Context, mcps []string) error {
-	log := l.log.With("component", "mcp-proxy")
+	l.log.Info("run proxy", slog.Any("mcp", mcps))
+
+	l.proxyAddr = ""
+	l.proxyServer = nil
+
+	log := l.log.With("component", "proxy")
 	mcpHandler, err := mcpProxyHandler(ctx, l.sandbox.Runtime(), mcps, log)
 	if err != nil {
 		return err
 	}
 
-	if mcpHandler != nil {
+	if mcpHandler == nil {
+		l.log.Info("no mcp handler")
 		return nil
 	}
 
@@ -600,18 +629,17 @@ func (l *Lease) runProxy(ctx context.Context, mcps []string) error {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	l.proxyServer = srv
 
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-			log.Error("mcp proxy stopped", "err", err)
+			log.Error("proxy stopped", "err", err)
 		}
 	}()
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	addr := net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
-	//log.Info("auth proxy started", "addr", l.proxyAuthAddr, "target", target.Host)
-	l.proxyAddr = addr
-	l.proxyServer = srv
+	l.proxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
+	log.Info("proxy started", "addr", l.authProxyAddr)
 
 	return err
 }
@@ -644,7 +672,7 @@ func (l *Lease) stopProxy() error {
 		return nil
 	}
 
-	l.log.Info("MCP proxy stop", "addr", l.proxyAddr)
+	l.log.Info("proxy stop", "addr", l.proxyAddr)
 	srv := l.proxyServer
 	l.proxyServer = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

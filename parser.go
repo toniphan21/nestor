@@ -144,10 +144,11 @@ func ParseMCPs(yml io.Reader) ([]MCP, error) {
 				result = append(result, LocalMCP(name, v.Command, v.Env, tp))
 
 			case "remote":
-				if len(v.Command) == 0 {
+				url := strings.TrimSpace(v.URL)
+				if url == "" {
 					return nil, fmt.Errorf(`%w: mcp type "remote" requires url`, ErrInvalid)
 				}
-				result = append(result, RemoteMCP(name, v.URL, v.Headers, tp))
+				result = append(result, RemoteMCP(name, url, v.Headers, tp))
 
 			default:
 				return nil, fmt.Errorf("%w: unknown mcp type %q", ErrNotSupported, v.Type)

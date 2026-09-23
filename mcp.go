@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"slices"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -63,7 +65,7 @@ type MCP interface {
 	ToolPolicy() MCPToolPolicy
 	String() string
 
-	connect(ctx context.Context) (*mcpUpstream, error)
+	connect(ctx context.Context, log *slog.Logger) (*mcpUpstream, error)
 }
 
 func LocalMCP(name string, command []string, env map[string]string, toolPolicy MCPToolPolicy) MCP {
@@ -92,9 +94,9 @@ func (s *localMCP) String() string {
 	)
 }
 
-func (s *localMCP) connect(ctx context.Context) (*mcpUpstream, error) {
+func (s *localMCP) connect(ctx context.Context, log *slog.Logger) (*mcpUpstream, error) {
 	cmd := exec.Command(s.command[0], s.command[1:]...)
-	cmd.Stderr = os.Stderr // TODO: set an writer for proxy
+	//cmd.Stderr = os.Stderr // TODO: set an writer for proxy
 
 	osEnv := os.Environ()
 	var env []string
@@ -103,7 +105,7 @@ func (s *localMCP) connect(ctx context.Context) (*mcpUpstream, error) {
 	}
 	cmd.Env = append(osEnv, env...)
 
-	return connect(ctx, s.name, s.toolPolicy, &mcp.CommandTransport{Command: cmd})
+	return connect(ctx, s.name, s.toolPolicy, log, &mcp.CommandTransport{Command: cmd})
 }
 
 func RemoteMCP(name string, url string, headers map[string]string, toolPolicy MCPToolPolicy) MCP {
@@ -132,13 +134,13 @@ func (s *remoteMCP) String() string {
 	)
 }
 
-func (s *remoteMCP) connect(ctx context.Context) (*mcpUpstream, error) {
+func (s *remoteMCP) connect(ctx context.Context, log *slog.Logger) (*mcpUpstream, error) {
 	headers := http.Header{}
 	for k, v := range s.headers {
 		headers.Set(k, v)
 	}
 
-	return connect(ctx, s.name, s.toolPolicy, &mcp.StreamableClientTransport{
+	return connect(ctx, s.name, s.toolPolicy, log, &mcp.StreamableClientTransport{
 		Endpoint: s.url,
 		HTTPClient: &http.Client{ // no Timeout: it would cut long-lived SSE streams
 			Transport: &remoteMCPHeaderTransport{base: http.DefaultTransport, headers: headers},
@@ -154,31 +156,31 @@ type remoteMCPHeaderTransport struct {
 
 func (t *remoteMCPHeaderTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context()) // RoundTripper must not mutate the caller's request
-	for k, vs := range t.headers {
-		r.Header[k] = vs
-	}
+	maps.Copy(r.Header, t.headers)
 	return t.base.RoundTrip(r)
 }
 
 // ---
 
-func connect(ctx context.Context, name string, tp MCPToolPolicy, t mcp.Transport) (*mcpUpstream, error) {
-	client := mcp.NewClient(&mcp.Implementation{Name: "nestor", Version: "v0.0.1"}, nil)
+func connect(ctx context.Context, name string, tp MCPToolPolicy, log *slog.Logger, t mcp.Transport) (*mcpUpstream, error) {
+	client := mcp.NewClient(&mcp.Implementation{Name: BinaryName, Version: "v" + Version}, nil)
 	cs, err := client.Connect(ctx, t, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", name, err)
 	}
-	return &mcpUpstream{Name: name, Session: cs, ToolPolicy: tp}, nil
+	return &mcpUpstream{Name: name, Session: cs, ToolPolicy: tp, Log: log}, nil
 }
 
 type mcpUpstream struct {
 	Name       string
 	Session    *mcp.ClientSession
 	ToolPolicy MCPToolPolicy
+	Log        *slog.Logger
 }
 
 func (u *mcpUpstream) mirror(ctx context.Context, srv *mcp.Server) (int, error) {
 	n := 0
+	var tools []string
 	for t, err := range u.Session.Tools(ctx, nil) {
 		if err != nil {
 			return n, fmt.Errorf("list tools %s: %w", u.Name, err)
@@ -187,12 +189,15 @@ func (u *mcpUpstream) mirror(ctx context.Context, srv *mcp.Server) (int, error) 
 		if !u.ToolPolicy.PermitTool(t.Name) {
 			continue
 		}
+		tools = append(tools, t.Name)
 
 		local := *t
 		local.Name = u.Name + "_" + t.Name
 		srv.AddTool(&local, u.forward(t.Name))
 		n++
 	}
+
+	u.Log.Info("mirror mcp upstream", slog.String("name", u.Name), slog.Any("tools", tools))
 	return n, nil
 }
 
@@ -208,6 +213,9 @@ func (u *mcpUpstream) forward(name string) mcp.ToolHandler {
 // ---
 
 func mcpProxyHandler(ctx context.Context, runtime Runtime, names []string, log *slog.Logger) (http.Handler, error) {
+	// sort names is important, it ensures that MCP registered and proxied in the same order
+	slices.Sort(names)
+
 	var mcps []MCP
 	for _, n := range names {
 		v, ok := runtime.Registry.MCP(n)
@@ -221,9 +229,49 @@ func mcpProxyHandler(ctx context.Context, runtime Runtime, names []string, log *
 		return nil, nil
 	}
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "nestor-mcp-proxy", Version: "v" + Version}, nil)
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: BinaryName, Version: "v" + Version},
+		&mcp.ServerOptions{Logger: log},
+	)
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if r, ok := req.(*mcp.InitializeRequest); ok && r.Params.ClientInfo != nil {
+				log.Info("initialize",
+					slog.String("client", r.Params.ClientInfo.Name),
+					slog.String("version", r.Params.ClientInfo.Version),
+					slog.String("protocol", r.Params.ProtocolVersion),
+				)
+			}
+
+			var tool string
+			if r, ok := req.(*mcp.CallToolRequest); ok && r.Params != nil {
+				tool = r.Params.Name
+			}
+
+			msg := "mcp"
+			attrs := []slog.Attr{slog.String("method", method)}
+			if tool != "" {
+				msg = "mcp " + tool
+				attrs = append(attrs, slog.String("tool", tool))
+			}
+
+			start := time.Now()
+			res, err := next(ctx, method, req)
+
+			if err != nil {
+				attrs = append(attrs, slog.Any("error", err))
+				log.LogAttrs(ctx, slog.LevelWarn, msg, attrs...)
+				return res, err
+			}
+
+			attrs = append(attrs, slog.Duration("duration", time.Since(start)))
+			log.LogAttrs(ctx, slog.LevelInfo, msg, attrs...)
+			return res, err
+		}
+	})
+
 	for _, m := range mcps {
-		u, err := m.connect(ctx)
+		u, err := m.connect(ctx, log)
 		if err != nil {
 			return nil, err
 		}
@@ -233,5 +281,26 @@ func mcpProxyHandler(ctx context.Context, runtime Runtime, names []string, log *
 		}
 	}
 
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil), nil
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{DisableLocalhostProtection: true},
+	)
+	allowHosts := func(next http.Handler, hosts ...string) http.Handler {
+		allowed := make(map[string]bool, len(hosts))
+		for _, h := range hosts {
+			allowed[h] = true
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host := r.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !allowed[host] {
+				http.Error(w, "forbidden host", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	return allowHosts(mcpHandler, DefaultHostAlias, "127.0.0.1", "localhost"), nil
 }

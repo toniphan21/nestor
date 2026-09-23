@@ -108,7 +108,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		"provider": map[string]any{
 			provider: map[string]map[string]string{
 				"options": {
-					"baseURL": "{env:NESTOR_AUTH_PROXY_ADDR}",
+					"baseURL": "{env:" + EnvVarAuthProxyAddress + "}",
 					"apiKey":  "dummy",
 				},
 			},
@@ -145,12 +145,27 @@ func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
 }
 
 func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
-	authProxyAddr := lease.AuthProxyAddr()
 	out := HarnessExec{
-		Env: map[string]string{
-			"NESTOR_AUTH_PROXY_ADDR": authProxyAddr,
-		},
+		Env:     map[string]string{},
 		Command: []string{"opencode"},
+	}
+
+	config := map[string]any{}
+
+	if lease.AuthProxyAddr() != "" {
+		out.Env[EnvVarAuthProxyAddress] = lease.AuthProxyAddr()
+	}
+
+	if mcpProxyURL, have := lease.MCPProxyURL(); have {
+		out.Env[EnvVarProxyAddress] = lease.ProxyAddr()
+		config["mcp"] = map[string]any{
+			BinaryName: map[string]any{
+				"type":    "remote",
+				"url":     mcpProxyURL,
+				"enabled": true,
+				"oauth":   false,
+			},
+		}
 	}
 
 	if !req.Interactive {
@@ -180,9 +195,10 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	}
 
 	if req.InstructionFiles.HasFiles() {
-		config := map[string][]string{
-			"instructions": req.InstructionFiles.Paths,
-		}
+		config["instructions"] = req.InstructionFiles.Paths
+	}
+
+	if len(config) != 0 {
 		if b, err := json.MarshalIndent(config, "", "  "); err == nil {
 			out.Env["OPENCODE_CONFIG_CONTENT"] = string(b)
 		}

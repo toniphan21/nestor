@@ -142,8 +142,29 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	switch profile.Auth {
 	case AuthAPIKey:
 		if profile.Proxy {
-			out.Env[AnthropicBaseURLName] = lease.AuthProxyAddr()
+			ap := lease.AuthProxyAddr()
+
+			out.Env[EnvVarAuthProxyAddress] = ap
+			out.Env[AnthropicBaseURLName] = ap
 			out.Env[AnthropicAuthTokenName] = "dummy"
+		}
+	}
+
+	if mcpProxyURL, have := lease.MCPProxyURL(); have {
+		out.Env[EnvVarProxyAddress] = lease.ProxyAddr()
+
+		config := map[string]any{}
+		config["mcpServers"] = map[string]any{
+			BinaryName: map[string]any{
+				"type": "http",
+				"url":  mcpProxyURL,
+			},
+		}
+
+		if b, err := json.MarshalIndent(config, "", "  "); err == nil {
+			if fp, err := lease.StageFile("mcp.json", b, 0644); err == nil {
+				out.Command = append(out.Command, "--mcp-config", fp)
+			}
 		}
 	}
 
@@ -331,7 +352,7 @@ func (c *harnessClaudeCredentials) Save(path string) (err error) {
 		return fmt.Errorf("marshal credentials: %w", err)
 	}
 
-	err = fs.WriteFile(path, data)
+	err = fs.WriteFile(path, data, 0644)
 	if err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}

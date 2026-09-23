@@ -38,7 +38,7 @@ func (l *literalInstruction) content() string {
 }
 
 func (l *literalInstruction) saveTo(path string) error {
-	return fs.WriteFile(path, []byte(l.value))
+	return fs.WriteFile(path, []byte(l.value), 0644)
 }
 
 func parseInstruction(s string, kind OSKind) instruction {

@@ -54,8 +54,8 @@ func CreateFile(path string) (io.WriteCloser, error) {
 	return os.Create(path)
 }
 
-func WriteFile(path string, data []byte) error {
-	return os.WriteFile(path, data, 0644)
+func WriteFile(path string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(path, data, perm)
 }
 
 func RemoveFile(path string) error {

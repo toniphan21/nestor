@@ -83,6 +83,8 @@ func (t *failedTenancy) AuthProxyAddr() string { return "" }
 
 func (t *failedTenancy) ProxyAddr() string { return "" }
 
+func (t *failedTenancy) MCPProxyURL() (string, bool) { return "", false }
+
 func (t *failedTenancy) ExpiresAt() time.Time { return time.Time{} }
 
 func (t *failedTenancy) Extend(ctx context.Context) error { return t.err }
@@ -120,6 +122,8 @@ func (t *leaseTenancy) HostWorkDir() string { return t.lease.HostWorkDir() }
 func (t *leaseTenancy) AuthProxyAddr() string { return t.lease.AuthProxyAddr() }
 
 func (t *leaseTenancy) ProxyAddr() string { return t.lease.ProxyAddr() }
+
+func (t *leaseTenancy) MCPProxyURL() (string, bool) { return t.lease.MCPProxyURL() }
 
 func (t *leaseTenancy) ExpiresAt() time.Time { return t.lease.ExpiresAt() }
 

@@ -34,7 +34,7 @@ func (b *bufferedFile) Save(path string) (bool, error) {
 	if b.buf.Len() == 0 {
 		return false, nil
 	}
-	if err := fs.WriteFile(path, b.buf.Bytes()); err != nil {
+	if err := fs.WriteFile(path, b.buf.Bytes(), 0644); err != nil {
 		return false, err
 	}
 	return true, nil

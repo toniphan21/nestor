@@ -24,18 +24,34 @@ if common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); 
   fi
 fi
 
-# proxy
-addr=${NESTOR_AUTH_PROXY_ADDR:-}
-if [[ -z $addr ]]; then
-  echo "proxy: not set"
+# auth-proxy
+authProxyAddr=${NESTOR_AUTH_PROXY_ADDR:-}
+if [[ -z $authProxyAddr ]]; then
+  echo "auth-proxy: not set"
 else
-  hp=${addr#*://}   # strip scheme
+  hp=${authProxyAddr#*://}   # strip scheme
   hp=${hp%%/*}      # strip path
   host=${hp%:*}
   port=${hp##*:}
   if timeout 2 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
-    echo "proxy: $addr (reachable)"
+    echo "auth-proxy: $authProxyAddr (reachable)"
   else
-    echo "proxy: $addr (unreachable)"
+    echo "auth-proxy: $authProxyAddr (unreachable)"
+  fi
+fi
+
+# proxy
+proxyAddr=${NESTOR_PROXY_ADDR:-}
+if [[ -z $proxyAddr ]]; then
+  echo "auth-proxy: not set"
+else
+  hp=${proxyAddr#*://}   # strip scheme
+  hp=${hp%%/*}      # strip path
+  host=${hp%:*}
+  port=${hp##*:}
+  if timeout 2 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
+    echo "proxy: $proxyAddr (reachable)"
+  else
+    echo "proxy: $proxyAddr (unreachable)"
   fi
 fi
