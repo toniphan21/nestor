@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+cut -d' ' -f5 /proc/$$/stat > "$1"
+eval "exec $2"

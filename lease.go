@@ -303,11 +303,8 @@ func (l *Lease) ListSessions() []HarnessSession {
 }
 
 func (l *Lease) StageFile(rel string, data []byte, perm os.FileMode) (string, error) {
-	hostDir := l.runDir
-	containerDir := l.runDirInContainer
-
-	hp := filepath.Join(hostDir, rel)
-	cp := filepath.Join(containerDir, rel)
+	hp := filepath.Join(l.runDir, rel)
+	cp := filepath.Join(l.runDirInContainer, rel)
 	if err := fs.WriteFile(hp, data, perm); err != nil {
 		return "", err
 	}
@@ -351,8 +348,11 @@ func (l *Lease) runHeadless(
 
 	// collect harness exec info
 	he := sandbox.harness.Exec(l, req)
-	cmd := []string{
-		"sh", "-c",
+	command := []string{
+		"setsid",
+		"-w",
+		filepath.Join(sandbox.ContainerHomeDir(), "nestor-run"),
+		filepath.Join("/", "tmp", run.ID+".pgid"),
 		strings.Join(he.Command, " "),
 	}
 
@@ -366,7 +366,7 @@ func (l *Lease) runHeadless(
 		slog.String("leaseId", l.ID()),
 		slog.String("runId", run.ID),
 	)
-	code, runErr := sandbox.docker.Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
+	code, runErr := sandbox.docker.Exec(ctx, sandbox.Container(), command, DockerExecOption{
 		Env:     he.Env,
 		WorkDir: run.WorkDir,
 		Stdout:  multiWriter(param.Stdout, &stdout, sessCapturer),
@@ -437,14 +437,21 @@ func (l *Lease) runInteractive(
 		slog.String("leaseId", l.ID()),
 		slog.String("runId", run.ID),
 	)
-	code, runErr := sandbox.docker.ExecInteractive(ctx, sandbox.Container(), he.Command, DockerExecInteractiveOption{
+
+	command := []string{
+		filepath.Join(sandbox.ContainerHomeDir(), "nestor-run"),
+		filepath.Join("/", "tmp", run.ID+".pgid"),
+		strings.Join(he.Command, " "),
+	}
+
+	code, runErr := sandbox.docker.ExecInteractive(ctx, sandbox.Container(), command, DockerExecInteractiveOption{
 		Env:     he.Env,
 		WorkDir: run.WorkDir,
 	})
 
 	// update run and meta
 	run.SessionID = he.SessionID
-	run.Command = he.Command
+	run.Command = command
 	run.ModelUsed = he.Model
 	run.EndAt = time.Now().UTC()
 

@@ -106,8 +106,8 @@ type RunOption struct {
 }
 
 func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Logger) (string, error) {
-	loggedArgs := []string{"run", "--rm", "-d", "--name", name}
 	args := []string{"run", "--rm", "-d", "--name", name}
+	loggedArgs := []string{"run", "--rm", "-d", "--name", name}
 	for k, v := range opt.Env {
 		if k != "" {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
@@ -162,28 +162,32 @@ type ExecOption struct {
 }
 
 func Exec(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
-	args := []string{
-		"exec",
-	}
+	args := []string{"exec"}
+	loggedArgs := []string{"exec"}
 	if opt.WorkDir != "" {
 		args = append(args, "--workdir", opt.WorkDir)
+		loggedArgs = append(loggedArgs, "--workdir", opt.WorkDir)
 	}
 	for k, v := range opt.Env {
 		if k != "" {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
 		}
 	}
 	args = append(args, container)
-	args = append(args, commands...)
+	loggedArgs = append(loggedArgs, container)
 
-	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	args = append(args, commands...)
+	loggedArgs = append(loggedArgs, commands...)
+
+	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
 	w := &logWriter{log, slog.LevelDebug}
 
 	cmd := exec.Command("docker", args...)
 	cmd.Stdout = io.MultiWriter(w, opt.Stdout)
 	cmd.Stderr = opt.Stderr
 
-	log.Info("docker exec", slog.Any("args", args))
+	log.Info("docker exec")
 	if err := cmd.Start(); err != nil {
 		log.Error("docker exec", slog.Any("error", err))
 		return -1, fmt.Errorf("docker exec: %w", err)
@@ -207,24 +211,31 @@ func Exec(ctx context.Context, container string, commands []string, opt ExecOpti
 
 func ExecInteractive(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
 	args := []string{"exec", "-it"}
+	loggedArgs := []string{"exec"}
 	if opt.WorkDir != "" {
 		args = append(args, "--workdir", opt.WorkDir)
+		loggedArgs = append(loggedArgs, "--workdir", opt.WorkDir)
 	}
 	for k, v := range opt.Env {
 		if k != "" {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
 		}
 	}
+
 	args = append(args, container)
+	loggedArgs = append(loggedArgs, container)
+
 	args = append(args, commands...)
+	loggedArgs = append(loggedArgs, commands...)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log := logger.WithGroup("docker").With(slog.Any("args", args))
-	log.Info("docker exec -it", slog.Any("args", args))
+	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
+	log.Info("docker exec -it")
 
 	// Ctrl-C goes to the whole foreground process group, so docker gets its
 	// own copy straight from the tty. Ignore ours so the harness handles it.

@@ -313,24 +313,9 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		})
 	}
 
-	// save nestor-status bash file to share dir and mount to home
-	statusFP := s.ShareDir("nestor-status")
-	bash, err := Embed.ReadFile("assets/nestor-status")
-	if err != nil {
+	if err := s.startCopyScriptsAndMount(&options); err != nil {
 		return err
 	}
-	if err = fs.AtomicWriteFile(statusFP, bash, 0o755); err != nil {
-		return err
-	}
-	containerHomeDir := s.profile.Options[ProfileOptionContainerHomeDir]
-	if containerHomeDir == "" {
-		containerHomeDir = DefaultContainerHomeDir
-	}
-	options.Mounts = append(options.Mounts, DockerMount{
-		Source:   statusFP,
-		Target:   filepath.Join(containerHomeDir, "nestor-status"),
-		ReadOnly: true,
-	})
 
 	// mounts for the sandbox
 	runsPath := s.Dir("runs")
@@ -354,7 +339,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		options.Env = env
 	}
 
-	_, err = s.docker.Run(ctx, image, container, options)
+	_, err := s.docker.Run(ctx, image, container, options)
 
 	return err
 }
@@ -410,6 +395,40 @@ func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) 
 		return s.newLease(ctx, path, workDir, hostWorkDir)
 	}
 	return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
+}
+
+func (s *sandboxImpl) ContainerHomeDir() string {
+	v := s.profile.Options[ProfileOptionContainerHomeDir]
+	if v == "" {
+		v = DefaultContainerHomeDir
+	}
+	return v
+}
+
+func (s *sandboxImpl) startCopyScriptsAndMount(options *DockerRunOption) error {
+	scripts := map[string]string{
+		"nestor-run":    "assets/nestor-run",
+		"nestor-status": "assets/nestor-status",
+	}
+
+	hd := s.ContainerHomeDir()
+	for name, src := range scripts {
+		fp := s.ShareDir(name)
+		bash, err := Embed.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		if err = fs.AtomicWriteFile(fp, bash, 0o755); err != nil {
+			return err
+		}
+
+		options.Mounts = append(options.Mounts, DockerMount{
+			Source:   fp,
+			Target:   filepath.Join(hd, name),
+			ReadOnly: true,
+		})
+	}
+	return nil
 }
 
 func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
