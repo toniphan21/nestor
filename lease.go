@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -161,6 +162,8 @@ func (l *Lease) MCPProxyURL() (string, bool) {
 }
 
 func (l *Lease) ExpiresAt() time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.data.ExpiresAt
 }
 
@@ -169,6 +172,9 @@ func (l *Lease) Extend(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	ld.ExpiresAt = time.Now().Add(l.sandbox.spec.LeaseExtendDuration())
 	l.data.ExpiresAt = ld.ExpiresAt
@@ -183,7 +189,7 @@ func (l *Lease) Extend(ctx context.Context) error {
 
 func (l *Lease) Release(ctx context.Context) error {
 	ld, err := l.findLeaseData()
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrLeaseExpired) {
 		return err
 	}
 
@@ -194,6 +200,8 @@ func (l *Lease) Release(ctx context.Context) error {
 		slog.String("leaseId", l.ID()),
 	)
 
+	l.killAllContainerPGIDs()
+
 	err = l.stopProxies()
 	if err != nil {
 		l.log.Warn("failed to stop proxy", "err", err)
@@ -201,13 +209,56 @@ func (l *Lease) Release(ctx context.Context) error {
 	return l.sandbox.save(ctx)
 }
 
+func (l *Lease) watchExpiration(parent context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(parent)
+	go func() {
+		t := time.NewTimer(time.Until(l.ExpiresAt()))
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if d := time.Until(l.ExpiresAt()); d > 0 {
+					t.Reset(d) // extended, sleep again
+					continue
+				}
+				cancel(ErrLeaseExpired)
+				return
+			}
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled) }
+}
+
 const (
 	RunExitCodeInvalidParam       = -1
 	RunExitCodeCannotStartSandbox = -2
-	RunExitCodeInternalError      = -3
+	RunExitCodeCannotRun          = -3
+	RunExitCodeInternalError      = -4
 )
 
-func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
+func (l *Lease) Run(ctx context.Context, param RunParam) (result RunResult, err error) {
+	if _, err := l.findLeaseData(); err != nil {
+		return RunResult{ExitCode: RunExitCodeCannotRun}, err
+	}
+
+	ctx, stop := l.watchExpiration(ctx)
+	defer stop()
+
+	defer func() {
+		if errors.Is(context.Cause(ctx), ErrLeaseExpired) {
+			err = ErrLeaseExpired
+		}
+	}()
+
+	stopKill := context.AfterFunc(ctx, func() {
+		if errors.Is(context.Cause(ctx), ErrLeaseExpired) {
+			l.killAllContainerPGIDs()
+		}
+	})
+	defer stopKill()
+
 	if param == nil {
 		return RunResult{ExitCode: RunExitCodeInvalidParam}, fmt.Errorf("%w: param is nil", ErrInvalid)
 	}
@@ -269,7 +320,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	switch v := param.(type) {
 	case Headless:
 		l.save(metaFP, meta)
-		code, err := l.runHeadless(ctx, l.sandbox, &v, meta, &run)
+		code, err := l.runHeadless(ctx, &v, meta, &run)
 		l.save(metaFP, meta)
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
@@ -286,7 +337,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			l.save(metaFP, meta)
 			initialRun := run
 			initialRun.ID = run.ID + "-initial"
-			_, _ = l.runHeadless(ctx, l.sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &initialRun)
+			_, _ = l.runHeadless(ctx, &Headless{Prompt: prompt, Title: v.Title}, meta, &initialRun)
 			l.save(metaFP, meta)
 
 			if v.OnSessionEstablished != nil {
@@ -294,7 +345,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 		}
 
-		code, err := l.runInteractive(ctx, l.sandbox, &v, meta, &run)
+		code, err := l.runInteractive(ctx, &v, meta, &run)
 		l.save(metaFP, meta)
 		return RunResult{ExitCode: code}, err
 
@@ -328,20 +379,7 @@ func (l *Lease) hasSession(id string) bool {
 	return seen[id]
 }
 
-func (l *Lease) runHeadless(
-	ctx context.Context,
-	sandbox *sandboxImpl,
-	param *Headless,
-	meta *leaseMeta,
-	run *leaseRun,
-) (int, error) {
-	l.mu.Lock()
-	if l.containerPGIDs == nil {
-		l.containerPGIDs = make(map[string]bool)
-		l.containerPGIDs[run.ID] = true
-	}
-	l.mu.Unlock()
-
+func (l *Lease) runHeadless(ctx context.Context, param *Headless, meta *leaseMeta, run *leaseRun) (int, error) {
 	run.ModelRequested = param.Model
 	run.Stdout = param.Stdout != nil
 	run.Stderr = param.Stderr != nil
@@ -363,26 +401,39 @@ func (l *Lease) runHeadless(
 	}
 
 	// collect harness exec info
-	he := sandbox.harness.Exec(l, req)
+	he := l.sandbox.harness.Exec(l, req)
 	command := []string{
 		"setsid",
 		"-w",
-		filepath.Join(sandbox.ContainerHomeDir(), "nestor-run"),
+		filepath.Join(l.sandbox.ContainerHomeDir(), "nestor-run"),
 		filepath.Join("/", "tmp", run.ID+".pgid"),
 		strings.Join(he.Command, " "),
 	}
 
 	// execute the prompt
-	sessCapturer := newSessionIDCapture(sandbox.harness.CaptureSessionID)
+	sessCapturer := newSessionIDCapture(l.sandbox.harness.CaptureSessionID)
 	stdout := bufferedFile{}
 	stderr := bufferedFile{}
 
+	defer func() {
+		kerr := l.killByPGID(ctx, run.ID)
+		if kerr == nil {
+			l.mu.Lock()
+			delete(l.containerPGIDs, run.ID)
+			l.mu.Unlock()
+		}
+	}()
+
+	l.mu.Lock()
+	l.containerPGIDs[run.ID] = true
+	l.mu.Unlock()
+
 	l.log.Info("run lease headless",
-		slog.String("sandbox", sandbox.ID()),
+		slog.String("sandbox", l.sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 		slog.String("runId", run.ID),
 	)
-	code, runErr := sandbox.docker.Exec(ctx, sandbox.Container(), command, DockerExecOption{
+	code, runErr := l.sandbox.docker.Exec(ctx, l.sandbox.Container(), command, DockerExecOption{
 		Env:     he.Env,
 		WorkDir: run.WorkDir,
 		Stdout:  multiWriter(param.Stdout, &stdout, sessCapturer),
@@ -405,7 +456,7 @@ func (l *Lease) runHeadless(
 	meta.SessionID = sessCapturer.SessionID()
 	l.sessionID = meta.SessionID
 	// save session to sandbox
-	if err := sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+	if err := l.sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
 		l.log.Warn("cannot add session", slog.Any("error", err))
 	}
 
@@ -414,13 +465,7 @@ func (l *Lease) runHeadless(
 	return code, runErr
 }
 
-func (l *Lease) runInteractive(
-	ctx context.Context,
-	sandbox *sandboxImpl,
-	param *Interactive,
-	meta *leaseMeta,
-	run *leaseRun,
-) (int, error) {
+func (l *Lease) runInteractive(ctx context.Context, param *Interactive, meta *leaseMeta, run *leaseRun) (int, error) {
 	run.Interactive = true
 	run.ModelRequested = param.Model
 	run.Stdout = false
@@ -445,22 +490,35 @@ func (l *Lease) runInteractive(
 	}
 
 	// collect harness exec info
-	he := sandbox.harness.Exec(l, req)
+	he := l.sandbox.harness.Exec(l, req)
 
 	// execute the prompt
 	l.log.Info("run lease interactive",
-		slog.String("sandbox", sandbox.ID()),
+		slog.String("sandbox", l.sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 		slog.String("runId", run.ID),
 	)
 
 	command := []string{
-		filepath.Join(sandbox.ContainerHomeDir(), "nestor-run"),
+		filepath.Join(l.sandbox.ContainerHomeDir(), "nestor-run"),
 		filepath.Join("/", "tmp", run.ID+".pgid"),
 		strings.Join(he.Command, " "),
 	}
 
-	code, runErr := sandbox.docker.ExecInteractive(ctx, sandbox.Container(), command, DockerExecInteractiveOption{
+	defer func() {
+		kerr := l.killByPGID(ctx, run.ID)
+		if kerr == nil {
+			l.mu.Lock()
+			delete(l.containerPGIDs, run.ID)
+			l.mu.Unlock()
+		}
+	}()
+
+	l.mu.Lock()
+	l.containerPGIDs[run.ID] = true
+	l.mu.Unlock()
+
+	code, runErr := l.sandbox.docker.ExecInteractive(ctx, l.sandbox.Container(), command, DockerExecInteractiveOption{
 		Env:     he.Env,
 		WorkDir: run.WorkDir,
 	})
@@ -473,13 +531,36 @@ func (l *Lease) runInteractive(
 
 	meta.SessionID = l.sessionID
 	// save session to sandbox
-	if err := sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+	if err := l.sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
 		l.log.Warn("cannot add session", slog.Any("error", err))
 	}
 
 	meta.Run = append(meta.Run, run)
 	meta.Data.ExpiresAt = l.ExpiresAt()
 	return code, runErr
+}
+
+func (l *Lease) killByPGID(ctx context.Context, runID string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 7*time.Second)
+	defer cancel()
+
+	command := []string{
+		filepath.Join(l.sandbox.ContainerHomeDir(), "nestor-kill"),
+		filepath.Join("/", "tmp", runID+".pgid"),
+	}
+	_, err := l.sandbox.docker.Exec(ctx, l.sandbox.Container(), command, DockerExecOption{})
+	return err
+}
+
+func (l *Lease) killAllContainerPGIDs() {
+	l.mu.Lock()
+	ids := maps.Keys(l.containerPGIDs)
+	l.containerPGIDs = map[string]bool{}
+	l.mu.Unlock()
+
+	for id := range ids {
+		_ = l.killByPGID(context.Background(), id)
+	}
 }
 
 func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instructions []string) InstructionFiles {
@@ -534,7 +615,7 @@ func (l *Lease) findLeaseData() (*leaseData, error) {
 	}
 
 	if ld.ExpiresAt.Before(time.Now()) {
-		return nil, ErrLeaseExpired
+		return &ld, ErrLeaseExpired
 	}
 	return &ld, nil
 }
