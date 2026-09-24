@@ -408,6 +408,7 @@ func (s *sandboxImpl) ContainerHomeDir() string {
 func (s *sandboxImpl) startCopyScriptsAndMount(options *DockerRunOption) error {
 	scripts := map[string]string{
 		"nestor-run":    "assets/nestor-run",
+		"nestor-kill":   "assets/nestor-kill",
 		"nestor-status": "assets/nestor-status",
 	}
 
@@ -677,7 +678,7 @@ func (s *sandboxImpl) newLease(ctx context.Context, requestedPath, workDir, host
 	if err := s.save(ctx); err != nil {
 		return nil, err
 	}
-	return &Lease{data: ld, sandbox: s, log: s.leaseLog}, nil
+	return newLease(s, ld), nil
 }
 
 func (s *sandboxImpl) resolveWorkDir(path string) (string, string, bool) {

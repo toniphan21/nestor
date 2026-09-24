@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/xid"
@@ -95,17 +96,28 @@ type leaseAPI interface {
 	ListSessions() []HarnessSession
 }
 
-var errUnknownSandbox = errors.New("unknown sandbox implementation, use default one, don't implement Sandbox")
-
 var _ leaseAPI = (*Lease)(nil)
 
+func newLease(s *sandboxImpl, ld leaseData) *Lease {
+	return &Lease{
+		data:           ld,
+		sandbox:        s,
+		log:            s.leaseLog,
+		containerPGIDs: make(map[string]bool),
+	}
+}
+
 type Lease struct {
+	mu sync.Mutex
+
 	data              leaseData
-	sandbox           Sandbox
+	sandbox           *sandboxImpl
 	log               *slog.Logger
 	sessionID         string
 	runDir            string
 	runDirInContainer string
+
+	containerPGIDs map[string]bool
 
 	authProxyAddr   string
 	authProxyServer *http.Server
@@ -153,32 +165,32 @@ func (l *Lease) ExpiresAt() time.Time {
 }
 
 func (l *Lease) Extend(ctx context.Context) error {
-	sandbox, ld, err := l.findLeaseData()
+	ld, err := l.findLeaseData()
 	if err != nil {
 		return err
 	}
 
-	ld.ExpiresAt = time.Now().Add(sandbox.spec.LeaseExtendDuration())
+	ld.ExpiresAt = time.Now().Add(l.sandbox.spec.LeaseExtendDuration())
 	l.data.ExpiresAt = ld.ExpiresAt
 
-	sandbox.data.Leases[ld.Path] = *ld
+	l.sandbox.data.Leases[ld.Path] = *ld
 	l.log.Info("extend lease",
-		slog.String("sandbox", sandbox.ID()),
+		slog.String("sandbox", l.sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 	)
-	return sandbox.save(ctx)
+	return l.sandbox.save(ctx)
 }
 
 func (l *Lease) Release(ctx context.Context) error {
-	sandbox, ld, err := l.findLeaseData()
+	ld, err := l.findLeaseData()
 	if err != nil {
 		return err
 	}
 
-	delete(sandbox.data.Leases, ld.Path)
+	delete(l.sandbox.data.Leases, ld.Path)
 
 	l.log.Info("release lease",
-		slog.String("sandbox", sandbox.ID()),
+		slog.String("sandbox", l.sandbox.ID()),
 		slog.String("leaseId", l.ID()),
 	)
 
@@ -186,14 +198,13 @@ func (l *Lease) Release(ctx context.Context) error {
 	if err != nil {
 		l.log.Warn("failed to stop proxy", "err", err)
 	}
-	return sandbox.save(ctx)
+	return l.sandbox.save(ctx)
 }
 
 const (
 	RunExitCodeInvalidParam       = -1
-	RunExitCodeUnknownSandbox     = -2
-	RunExitCodeCannotStartSandbox = -3
-	RunExitCodeInternalError      = -4
+	RunExitCodeCannotStartSandbox = -2
+	RunExitCodeInternalError      = -3
 )
 
 func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
@@ -206,12 +217,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	}
 
 	start := time.Now()
-	sandbox, ok := l.sandbox.(*sandboxImpl)
-	if !ok {
-		return RunResult{ExitCode: RunExitCodeUnknownSandbox}, errUnknownSandbox
-	}
-
-	if !sandbox.IsRunning(ctx) {
+	if !l.sandbox.IsRunning(ctx) {
 		if err := l.sandbox.Start(ctx); err != nil {
 			return RunResult{ExitCode: RunExitCodeCannotStartSandbox}, err
 		}
@@ -229,7 +235,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 
 	// update lease metadata
 	date := l.data.CreatedAt.UTC().Format("2006-01-02")
-	dir := sandbox.Dir("runs", date, l.ID())
+	dir := l.sandbox.Dir("runs", date, l.ID())
 	if err := fs.MkdirAll(dir); err != nil {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot make lease dir: %w", err)
 	}
@@ -249,21 +255,21 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 	l.sessionID = meta.SessionID
 
 	// create auth proxy
-	if proxyRoute := sandbox.harness.ProxyRoute(l); proxyRoute != nil {
+	if proxyRoute := l.sandbox.harness.ProxyRoute(l); proxyRoute != nil {
 		if err = l.runAuthProxy(proxyRoute); err != nil {
 			return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot start auth proxy: %w", err)
 		}
 	}
 
 	// create mcp proxy
-	if err = l.runProxy(ctx, sandbox.spec.MCPs); err != nil {
+	if err = l.runProxy(ctx, l.sandbox.spec.MCPs); err != nil {
 		return RunResult{ExitCode: RunExitCodeInternalError}, fmt.Errorf("nestor: cannot start mcp proxy: %w", err)
 	}
 
 	switch v := param.(type) {
 	case Headless:
 		l.save(metaFP, meta)
-		code, err := l.runHeadless(ctx, sandbox, &v, meta, &run)
+		code, err := l.runHeadless(ctx, l.sandbox, &v, meta, &run)
 		l.save(metaFP, meta)
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
@@ -276,9 +282,11 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			if v.OnInit != nil {
 				v.OnInit(l.authProxyAddr, l.proxyAddr)
 			}
-			prompt := sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.authProxyAddr, l.proxyAddr)
+			prompt := l.sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.authProxyAddr, l.proxyAddr)
 			l.save(metaFP, meta)
-			_, _ = l.runHeadless(ctx, sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &run)
+			initialRun := run
+			initialRun.ID = run.ID + "-initial"
+			_, _ = l.runHeadless(ctx, l.sandbox, &Headless{Prompt: prompt, Title: v.Title}, meta, &initialRun)
 			l.save(metaFP, meta)
 
 			if v.OnSessionEstablished != nil {
@@ -286,7 +294,8 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (RunResult, error) {
 			}
 		}
 
-		code, err := l.runInteractive(ctx, sandbox, &v, meta, &run)
+		code, err := l.runInteractive(ctx, l.sandbox, &v, meta, &run)
+		l.save(metaFP, meta)
 		return RunResult{ExitCode: code}, err
 
 	default:
@@ -326,6 +335,13 @@ func (l *Lease) runHeadless(
 	meta *leaseMeta,
 	run *leaseRun,
 ) (int, error) {
+	l.mu.Lock()
+	if l.containerPGIDs == nil {
+		l.containerPGIDs = make(map[string]bool)
+		l.containerPGIDs[run.ID] = true
+	}
+	l.mu.Unlock()
+
 	run.ModelRequested = param.Model
 	run.Stdout = param.Stdout != nil
 	run.Stderr = param.Stderr != nil
@@ -382,7 +398,7 @@ func (l *Lease) runHeadless(
 
 	// update run and meta
 	run.SessionID = he.SessionID
-	run.Command = he.Command
+	run.Command = command
 	run.ModelUsed = he.Model
 	run.EndAt = time.Now().UTC()
 
@@ -503,29 +519,24 @@ func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instru
 	return out
 }
 
-func (l *Lease) findLeaseData() (*sandboxImpl, *leaseData, error) {
-	sandbox, ok := l.sandbox.(*sandboxImpl)
-	if !ok {
-		return nil, nil, errUnknownSandbox
+func (l *Lease) findLeaseData() (*leaseData, error) {
+	if l.sandbox.data.Leases == nil {
+		return nil, fmt.Errorf("%w: lease does not exist", ErrNotFound)
 	}
 
-	if sandbox.data.Leases == nil {
-		return nil, nil, fmt.Errorf("%w: lease does not exist", ErrNotFound)
-	}
-
-	ld, ok := sandbox.data.Leases[l.data.Path]
+	ld, ok := l.sandbox.data.Leases[l.data.Path]
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: lease does not exist", ErrNotFound)
+		return nil, fmt.Errorf("%w: lease does not exist", ErrNotFound)
 	}
 
 	if ld.ID != l.data.ID {
-		return nil, nil, fmt.Errorf("%w: lease id does not match host path", ErrNotFound)
+		return nil, fmt.Errorf("%w: lease id does not match host path", ErrNotFound)
 	}
 
 	if ld.ExpiresAt.Before(time.Now()) {
-		return nil, nil, ErrLeaseExpired
+		return nil, ErrLeaseExpired
 	}
-	return sandbox, &ld, nil
+	return &ld, nil
 }
 
 func (l *Lease) load(fp string, param RunParam) (*leaseMeta, error) {

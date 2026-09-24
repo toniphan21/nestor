@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# usage: nestor-kill <pgid-path> [grace-seconds]
+
+f=$1; grace=${2:-5}
+[ -f "$f" ] || exit 0
+pgid=$(cat "$f")
+
+kill -s TERM -- "-$pgid" 2>/dev/null || { rm -f "$f"; exit 0; }
+
+i=0
+while kill -s 0 -- "-$pgid" 2>/dev/null; do
+	if [ "$i" -ge "$grace" ]; then
+		kill -s KILL -- "-$pgid" 2>/dev/null
+		break
+	fi
+	sleep 1; i=$((i+1))
+done
+rm -f "$f"
