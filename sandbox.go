@@ -355,10 +355,10 @@ func (s *sandboxImpl) Sync(ctx context.Context) error {
 		}
 	}
 
-	if err := s.collectMounts(ctx); err != nil {
+	if err := s.collectMounts(); err != nil {
 		return err
 	}
-	return nil
+	return s.save(ctx)
 }
 
 func (s *sandboxImpl) Delete(ctx context.Context) error {
@@ -434,7 +434,7 @@ func (s *sandboxImpl) startCopyScriptsAndMount(options *DockerRunOption) error {
 
 func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
 	if s.IsRunning(ctx) {
-		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, newName)
+		return fmt.Errorf("%w: sandbox %q is running", ErrNotAllowed, s.ID())
 	}
 	if err := s.Stop(ctx); err != nil {
 		return err
@@ -457,6 +457,8 @@ func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
 	}
 
 	// move worktree
+	worktrees := make(map[string]SandboxWorktree)
+
 	for _, m := range s.spec.Mounts {
 		if m.Type == MountTypeGitWorktree {
 			id := s.runtime.Template.MakeWorktreeID(m.Path)
@@ -469,14 +471,22 @@ func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
 			}
 
 			// rename initial branch
+			newBranch := s.runtime.Template.MakeInitialBranch(newName, dst)
 			oldBranch := s.runtime.Template.MakeInitialBranch(s.ID(), src)
 			if s.git.HasBranch(ctx, m.Path, oldBranch) {
-				newBranch := s.runtime.Template.MakeInitialBranch(newName, dst)
 				if !s.git.HasBranch(ctx, m.Path, newBranch) {
 					if err = s.git.RenameBranch(ctx, m.Path, oldBranch, newBranch); err != nil {
 						return fmt.Errorf("cannot rename initial branch: %w", err)
 					}
 				}
+			}
+
+			// update worktree record in sandbox.yml
+			worktrees[id] = SandboxWorktree{
+				ID:            id,
+				Dir:           dst,
+				Repository:    m.Path,
+				InitialBranch: newBranch,
 			}
 		}
 	}
@@ -502,6 +512,12 @@ func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
 
 	oldDir := s.Dir()
 
+	// update worktree in sandbox.yml
+	s.data.Worktree = worktrees
+	if err = s.collectMounts(); err != nil {
+		return fmt.Errorf("cannot collect mounts: %w", err)
+	}
+
 	// save with new ID
 	s.data.ID = newName
 	if err = s.data.save(ctx, target); err != nil {
@@ -522,7 +538,7 @@ func (s *sandboxImpl) clear(ctx context.Context) error {
 	if err := fs.RemoveDir(s.Dir()); err != nil {
 		return fmt.Errorf("nestor: cannot remove sandbox dir: %w", err)
 	}
-	return nil
+	return s.save(ctx)
 }
 
 func (s *sandboxImpl) save(ctx context.Context) error {
@@ -612,25 +628,15 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 	return s.save(ctx)
 }
 
-func (s *sandboxImpl) removeWorktree(ctx context.Context) error {
-	v, ok := s.data.Worktree[s.ID()]
-	if !ok {
-		return nil
-	}
-	_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
-	delete(s.data.Worktree, s.ID())
-	return s.save(ctx)
-}
-
 func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
 	for _, v := range s.data.Worktree {
 		_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 	}
 	s.data.Worktree = nil
-	return s.save(ctx)
+	return nil
 }
 
-func (s *sandboxImpl) collectMounts(ctx context.Context) error {
+func (s *sandboxImpl) collectMounts() error {
 	hm, err := s.harness.Mounts(s)
 	if err != nil {
 		return err
@@ -657,7 +663,7 @@ func (s *sandboxImpl) collectMounts(ctx context.Context) error {
 
 	s.data.Mounts = mounts
 	s.data.HarnessMounts = hm
-	return s.save(ctx)
+	return nil
 }
 
 func (s *sandboxImpl) newLease(ctx context.Context, requestedPath, workDir, hostWorkDir string) (*Lease, error) {
