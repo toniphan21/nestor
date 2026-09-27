@@ -262,7 +262,7 @@ func (h *harnessOpenCode) CaptureSessionID(line []byte) (string, bool) {
 func (h *harnessOpenCode) ListSessions(lease *Lease) []HarnessSession {
 	sandbox := lease.Sandbox()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	cmd := []string{"opencode", "session", "list", "--format", "json"}

@@ -456,7 +456,7 @@ func (l *Lease) runHeadless(ctx context.Context, param *Headless, meta *leaseMet
 	meta.SessionID = sessCapturer.SessionID()
 	l.sessionID = meta.SessionID
 	// save session to sandbox
-	if err := l.sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+	if err := l.sandbox.addSession(ctx, l.RequestedPath(), l.sessionID); err != nil {
 		l.log.Warn("cannot add session", slog.Any("error", err))
 	}
 
@@ -531,7 +531,7 @@ func (l *Lease) runInteractive(ctx context.Context, param *Interactive, meta *le
 
 	meta.SessionID = l.sessionID
 	// save session to sandbox
-	if err := l.sandbox.addSession(ctx, l.WorkDir(), l.sessionID); err != nil {
+	if err := l.sandbox.addSession(ctx, l.RequestedPath(), l.sessionID); err != nil {
 		l.log.Warn("cannot add session", slog.Any("error", err))
 	}
 

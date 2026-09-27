@@ -14,15 +14,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"nhatp.com/go/nestor/internal/nx"
 )
 
 func IsRunning(ctx context.Context, container string, logger *slog.Logger) bool {
-	args := []string{
-		"ps", "-q", "-f", "name=^" + container + "$",
-	}
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	var args nx.ArgsBuilder
+	args.Add("ps", "-q", "-f", "name=^"+container+"$")
 
-	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	cmd := args.ToCommandContext(ctx, "docker")
+
+	log := args.Log(logger, "docker")
 	w := &logWriter{log, slog.LevelDebug}
 
 	var buf bytes.Buffer
@@ -59,16 +61,15 @@ func Kill(ctx context.Context, container string, logger *slog.Logger) error {
 }
 
 func Stop(ctx context.Context, container string, timeout time.Duration, logger *slog.Logger) error {
-	secs := int(timeout.Round(time.Second).Seconds())
-	if secs < 0 {
-		secs = 0
-	}
+	var args nx.ArgsBuilder
+	secs := max(int(timeout.Round(time.Second).Seconds()), 0)
 
-	args := []string{"stop", "-t", strconv.Itoa(secs), container}
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	args.Add("stop", "-t", strconv.Itoa(secs), container)
+	cmd := args.ToCommandContext(ctx, "docker")
 
 	var stderr bytes.Buffer
-	log := logger.WithGroup("docker").With(slog.Any("args", args))
+
+	log := args.Log(logger, "docker")
 	w := &logWriter{log, slog.LevelDebug}
 	cmd.Stdout = w
 	cmd.Stderr = io.MultiWriter(&stderr, w)
@@ -106,31 +107,29 @@ type RunOption struct {
 }
 
 func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Logger) (string, error) {
-	args := []string{"run", "--rm", "-d", "--name", name}
-	loggedArgs := []string{"run", "--rm", "-d", "--name", name}
+	var args nx.ArgsBuilder
+	args.Add("run", "--rm", "-d", "--name", name)
 	for k, v := range opt.Env {
-		if k != "" {
-			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
-			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
+		if k == "" {
+			continue
 		}
+		args.Add("-e").AddPair(fmt.Sprintf("%s=%s", k, v), fmt.Sprintf("%s=redacted", k))
 	}
 
 	for _, m := range opt.Mounts {
-		args = append(args, "-v", m.arg())
-		loggedArgs = append(args, "-v", m.arg())
+		args.Add("-v", m.arg())
 	}
 
 	if opt.HostAlias != "" {
-		args = append(args, "--add-host", fmt.Sprintf("%s:host-gateway", opt.HostAlias))
-		loggedArgs = append(args, "--add-host", fmt.Sprintf("%s:host-gateway", opt.HostAlias))
+		args.Add("--add-host", fmt.Sprintf("%s:host-gateway", opt.HostAlias))
 	}
-	args = append(args, image)
+	args.Add(image)
 
 	var stdout, stderr bytes.Buffer
-	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
+	log := args.Log(logger, "docker")
 	w := &logWriter{log, slog.LevelDebug}
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := args.ToCommandContext(ctx, "docker")
 	cmd.Stdout = io.MultiWriter(w, &stdout)
 	cmd.Stderr = io.MultiWriter(w, &stderr)
 
@@ -161,29 +160,31 @@ type ExecOption struct {
 	Stderr  io.Writer
 }
 
-func Exec(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
-	args := []string{"exec"}
-	loggedArgs := []string{"exec"}
-	if opt.WorkDir != "" {
-		args = append(args, "--workdir", opt.WorkDir)
-		loggedArgs = append(loggedArgs, "--workdir", opt.WorkDir)
+func (o *ExecOption) fillArgs(args *nx.ArgsBuilder) {
+	if o.WorkDir != "" {
+		args.Add("--workdir", o.WorkDir)
 	}
-	for k, v := range opt.Env {
-		if k != "" {
-			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
-			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
+	for k, v := range o.Env {
+		if k == "" {
+			continue
 		}
+		args.Add("-e").AddPair(fmt.Sprintf("%s=%s", k, v), fmt.Sprintf("%s=redacted", k))
 	}
-	args = append(args, container)
-	loggedArgs = append(loggedArgs, container)
+}
 
-	args = append(args, commands...)
-	loggedArgs = append(loggedArgs, commands...)
+func Exec(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
+	var args nx.ArgsBuilder
+	args.Add("exec")
 
-	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
+	opt.fillArgs(&args)
+
+	args.Add(container)
+	args.Add(commands...)
+
+	log := args.Log(logger, "docker")
 	w := &logWriter{log, slog.LevelDebug}
 
-	cmd := exec.Command("docker", args...)
+	cmd := args.ToCommandContext(ctx, "docker")
 	cmd.Stdout = io.MultiWriter(w, opt.Stdout)
 	cmd.Stderr = opt.Stderr
 
@@ -210,31 +211,20 @@ func Exec(ctx context.Context, container string, commands []string, opt ExecOpti
 }
 
 func ExecInteractive(ctx context.Context, container string, commands []string, opt ExecOption, logger *slog.Logger) (int, error) {
-	args := []string{"exec", "-it"}
-	loggedArgs := []string{"exec"}
-	if opt.WorkDir != "" {
-		args = append(args, "--workdir", opt.WorkDir)
-		loggedArgs = append(loggedArgs, "--workdir", opt.WorkDir)
-	}
-	for k, v := range opt.Env {
-		if k != "" {
-			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
-			loggedArgs = append(loggedArgs, "-e", fmt.Sprintf("%s=redacted", k))
-		}
-	}
+	var args nx.ArgsBuilder
+	args.Add("exec", "-it")
 
-	args = append(args, container)
-	loggedArgs = append(loggedArgs, container)
+	opt.fillArgs(&args)
 
-	args = append(args, commands...)
-	loggedArgs = append(loggedArgs, commands...)
+	args.Add(container)
+	args.Add(commands...)
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := args.ToCommandContext(ctx, "docker")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log := logger.WithGroup("docker").With(slog.Any("args", loggedArgs))
+	log := args.Log(logger, "docker")
 	log.Info("docker exec -it")
 
 	// Ctrl-C goes to the whole foreground process group, so docker gets its

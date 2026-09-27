@@ -30,7 +30,7 @@ type BuildOption struct {
 func Build(ctx context.Context, path string, options BuildOption, logger *slog.Logger) (string, error) {
 	iidPath := filepath.Join(path, ".iid")
 
-	args := []string{"build", "--progress=plain", "--iidfile", iidPath}
+	args := []string{"build", "--iidfile", iidPath}
 	if options.Target != "" {
 		args = append(args, "--target", options.Target)
 	}
