@@ -23,16 +23,20 @@ func newHarnessOpenCode() Harness {
 	}
 }
 
-const OpenCodeConfigDir = "config-dir"
-const OpenCodeSandboxConfigDirName = "config"
-const OpenCodeSandboxDotLocalDirName = ".local"
-const OpenCodeConfigFileName = "nestor.json"
+const (
+	OpenCodeConfigDir              = "config-dir"
+	OpenCodeSandboxConfigDirName   = "config"
+	OpenCodeSandboxDotLocalDirName = ".local"
+	OpenCodeConfigFileName         = "nestor.json"
+)
 
-const OpenCodeSettingProvider = "provider"
-const OpenCodeSettingUpstream = "upstream"
-const OpenCodeSettingProxyAuthorizationBearer = "proxy_authorization_bearer"
-const OpenCodeSettingProxyXAPIKey = "proxy_x_api_key"
-const OpenCodeSettingProxyXGoogAPIKey = "proxy_x_goog_api_key"
+const (
+	OpenCodeSettingProvider                 = "provider"
+	OpenCodeSettingUpstream                 = "upstream"
+	OpenCodeSettingProxyAuthorizationBearer = "proxy_authorization_bearer"
+	OpenCodeSettingProxyXAPIKey             = "proxy_x_api_key"
+	OpenCodeSettingProxyXGoogAPIKey         = "proxy_x_goog_api_key"
+)
 
 type harnessOpenCode struct {
 	assets embedAssets
@@ -59,12 +63,12 @@ func (h *harnessOpenCode) DefaultOptions(runtime Runtime) map[string]string {
 }
 
 func (h *harnessOpenCode) DefaultDockerfile(runtime Runtime) string {
-	return runtime.Platform.NestorDir("opencode", "Dockerfile")
+	return runtime.Platform.ConfigDir("opencode", "Dockerfile")
 }
 
 func (h *harnessOpenCode) Init(runtime Runtime) error {
 	log := runtime.Logger
-	cp := filepath.Join(runtime.Platform.NestorDir(), "opencode")
+	cp := runtime.Platform.ConfigDir("opencode")
 	have, err := h.assets.save(cp)
 	if err != nil {
 		return err
@@ -98,7 +102,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 
 	dlp := sandbox.StateDir(OpenCodeSandboxDotLocalDirName)
 	if !fs.HasDir(dlp) {
-		if err := os.MkdirAll(dlp, 0755); err != nil {
+		if err := os.MkdirAll(dlp, 0o755); err != nil {
 			return nil, err
 		}
 	}
@@ -120,7 +124,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		return nil, nil
 	}
 	configFilePath := sandbox.StateDir(OpenCodeConfigFileName)
-	if err = fs.AtomicWriteFile(configFilePath, b, 0644); err != nil {
+	if err = fs.AtomicWriteFile(configFilePath, b, 0o644); err != nil {
 		return nil, nil
 	}
 

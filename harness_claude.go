@@ -25,13 +25,15 @@ func newHarnessClaude() Harness {
 	}
 }
 
-const ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
-const AnthropicAPIKeyName = "ANTHROPIC_API_KEY"
-const AnthropicAuthTokenName = "ANTHROPIC_AUTH_TOKEN"
-const AnthropicBaseURLName = "ANTHROPIC_BASE_URL"
-const ClaudeDir = ".claude"
-const ClaudeConfigFile = ".claude.json"
-const ClaudeCredentialsFile = ".credentials.json"
+const (
+	ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
+	AnthropicAPIKeyName      = "ANTHROPIC_API_KEY"
+	AnthropicAuthTokenName   = "ANTHROPIC_AUTH_TOKEN"
+	AnthropicBaseURLName     = "ANTHROPIC_BASE_URL"
+	ClaudeDir                = ".claude"
+	ClaudeConfigFile         = ".claude.json"
+	ClaudeCredentialsFile    = ".credentials.json"
+)
 
 type harnessClaude struct {
 	assets embedAssets
@@ -50,7 +52,7 @@ func (h *harnessClaude) defaultContainerHomeDir() string {
 }
 
 func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
-	return runtime.Platform.NestorDir("claude", "Dockerfile")
+	return runtime.Platform.ConfigDir("claude", "Dockerfile")
 }
 
 func (h *harnessClaude) DefaultOptions(runtime Runtime) map[string]string {
@@ -64,7 +66,7 @@ func (h *harnessClaude) DefaultOptions(runtime Runtime) map[string]string {
 
 func (h *harnessClaude) Init(runtime Runtime) error {
 	log := runtime.Logger
-	cp := filepath.Join(runtime.Platform.NestorDir(), "claude")
+	cp := runtime.Platform.ConfigDir("claude")
 	have, err := h.assets.save(cp)
 	if err != nil {
 		return err
@@ -107,7 +109,7 @@ func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error)
 }
 
 func (h *harnessClaude) StartEnv(sandbox Sandbox) map[string]string {
-	var env = make(map[string]string)
+	env := make(map[string]string)
 	profile := sandbox.Profile()
 	switch profile.Auth {
 	case AuthCredentials:
@@ -162,7 +164,7 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		}
 
 		if b, err := json.MarshalIndent(config, "", "  "); err == nil {
-			if fp, err := lease.StageFile("mcp.json", b, 0644); err == nil {
+			if fp, err := lease.StageFile("mcp.json", b, 0o644); err == nil {
 				out.Command = append(out.Command, "--mcp-config", fp)
 			}
 		}
@@ -352,7 +354,7 @@ func (c *harnessClaudeCredentials) Save(path string) (err error) {
 		return fmt.Errorf("marshal credentials: %w", err)
 	}
 
-	err = fs.WriteFile(path, data, 0644)
+	err = fs.WriteFile(path, data, 0o644)
 	if err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}
@@ -425,7 +427,7 @@ func readSessionFile(dir, file string) (*claudeSession, error) {
 	defer fh.Close()
 
 	var timestamp *time.Time
-	var hasCustomTitle = false
+	hasCustomTitle := false
 
 	err = scanLines(fh, func(line []byte) {
 		var event map[string]any

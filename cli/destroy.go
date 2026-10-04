@@ -10,8 +10,8 @@ import (
 
 func Destroy(api nestor.API) error {
 	text := fmt.Sprintf(
-		"Do you want to stop all containers, and delete all sandbox directories in %s?",
-		api.Runtime().Platform.NestorDir(),
+		"Do you want to stop all containers, and delete all sandbox state directories in %s?",
+		api.Runtime().Platform.StateDir(),
 	)
 	result, err := pterm.DefaultInteractiveConfirm.WithDefaultText(text).Show()
 	if err != nil {

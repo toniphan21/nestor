@@ -40,10 +40,12 @@ func (m *SandboxSpecMount) Target() (string, error) {
 
 type mountType string
 
-const MountTypeDirect = mountType("direct")
-const MountTypeGitWorktree = mountType("git_worktree")
-const DefaultLeaseInitDuration = time.Minute
-const DefaultLeaseExtendDuration = 15 * time.Minute
+const (
+	MountTypeDirect            = mountType("direct")
+	MountTypeGitWorktree       = mountType("git_worktree")
+	DefaultLeaseInitDuration   = time.Minute
+	DefaultLeaseExtendDuration = 15 * time.Minute
+)
 
 type SandboxSpecLease struct {
 	InitDuration        *time.Duration `yaml:"init_duration,omitempty"`
@@ -53,8 +55,10 @@ type SandboxSpecLease struct {
 
 type stateScope string
 
-const StateScopeInstance stateScope = "instance"
-const StateScopeShared stateScope = "shared"
+const (
+	StateScopeInstance stateScope = "instance"
+	StateScopeShared   stateScope = "shared"
+)
 
 type SandboxSpec struct {
 	Name         string             `yaml:"-"`

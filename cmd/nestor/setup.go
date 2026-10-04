@@ -35,11 +35,17 @@ nestor is already set up at %s. Common tasks:
 
 `
 
-const profileClaudeOAuth = "claude-subscription"
-const profileClaudeAPI = "claude-api"
-const profileOpencode = "opencode"
+const (
+	profileClaudeOAuth = "claude-subscription"
+	profileClaudeAPI   = "claude-api"
+	profileOpencode    = "opencode"
+)
 
 func setup(cmd *cobra.Command, args []string) error {
+	return setupLocal(cmd, args)
+}
+
+func setupLocal(cmd *cobra.Command, args []string) error {
 	colors := map[string]string{
 		"<nestor>":               pterm.Green("nestor"),
 		"<Claude Code>":          pterm.Red("Claude Code"),
@@ -147,9 +153,12 @@ func setup(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	if err = fs.MkdirAll(dir); err != nil {
-		return nil
+	for _, v := range []string{"config", "data", "state"} {
+		if err = fs.MkdirAll(filepath.Join(dir, v)); err != nil {
+			return nil
+		}
 	}
+
 	fmt.Printf("created %s directory\n", dir)
 
 	specs := scf.ToSandboxSpecs(h.Value)
@@ -159,10 +168,18 @@ func setup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err = fs.WriteFile(filepath.Join(dir, "sandbox.yml"), b, 0644); err != nil {
+
+	options := []nestor.Option{
+		nestor.WithConfigDir(filepath.Join(dir, "config")),
+		nestor.WithDataDir(filepath.Join(dir, "data")),
+		nestor.WithStateDir(filepath.Join(dir, "state")),
+	}
+
+	cfDir := filepath.Join(dir, "config", "sandbox.yml")
+	if err = fs.WriteFile(cfDir, b, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("saved %s\n", filepath.Join(dir, "sandbox.yml"))
+	fmt.Printf("saved %s\n", cfDir)
 
 	config = cli.DefaultConfig(wd)
 	switch h.Value {
@@ -177,12 +194,12 @@ func setup(cmd *cobra.Command, args []string) error {
 		config.Hidden.Harnesses = []string{string(nestor.HarnessClaudeCode)}
 	}
 	b, err = yaml.Marshal(config)
-	if err = fs.WriteFile(filepath.Join(wd, ".nestor.yml"), b, 0644); err != nil {
+	if err = fs.WriteFile(filepath.Join(wd, ".nestor.yml"), b, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("saved %s\n", filepath.Join(wd, ".nestor.yml"))
 
-	if _, err = nestor.New(nestor.WithDir(dir)); err != nil {
+	if _, err = nestor.New(options...); err != nil {
 		return err
 	}
 	fmt.Println("initialized nestor")

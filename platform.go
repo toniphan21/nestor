@@ -6,20 +6,27 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const EnvVarNestorDir = "NESTOR_DIR"
 
 type OSKind string
 
-const OSMacOS OSKind = "macos"
-const OSLinux OSKind = "linux"
-const OSWindows OSKind = "windows"
+const (
+	OSMacOS   OSKind = "macos"
+	OSLinux   OSKind = "linux"
+	OSWindows OSKind = "windows"
+)
 
 type Platform interface {
 	UserHomeDir() string
 
-	NestorDir(elem ...string) string
+	ConfigDir(elem ...string) string
+
+	DataDir(elem ...string) string
+
+	StateDir(elem ...string) string
 
 	SandboxDir(elem ...string) string
 
@@ -37,7 +44,7 @@ type Platform interface {
 
 	HarnessDefaultOption(harness string, name string) string
 
-	Clone(dir string) Platform
+	Clone(configDir, dataDir, stateDir string) Platform
 }
 
 func DefaultPlatform() (Platform, error) {
@@ -57,72 +64,69 @@ func newUnixPlatform(kind OSKind) (Platform, error) {
 		return nil, fmt.Errorf("nestor: resolve home dir: %w", err)
 	}
 
-	dir := os.Getenv(EnvVarNestorDir)
-	if dir == "" {
-		dir = filepath.Join(home, ".nestor")
+	xdgDir := func(name string, defaultValue string) string {
+		dir := strings.TrimSpace(os.Getenv(name))
+		if dir == "" {
+			return defaultValue
+		}
+		return dir
 	}
-	if !filepath.IsAbs(dir) {
-		return nil, fmt.Errorf("nestor: %s must be absolute, got %q", EnvVarNestorDir, dir)
-	}
-	return &platform{os: kind, home: home, nestorDir: dir}, nil
+
+	return &platform{
+		os:        kind,
+		home:      home,
+		configDir: xdgDir("XDG_CONFIG_HOME", filepath.Join(home, ".config", "nestor")),
+		dataDir:   xdgDir("XDG_DATA_HOME", filepath.Join(home, ".local", "share", "nestor")),
+		stateDir:  xdgDir("XDG_STATE_HOME", filepath.Join(home, ".local", "state", "nestor")),
+	}, nil
 }
 
 type platform struct {
 	os        OSKind
 	home      string
-	nestorDir string
+	configDir string
+	dataDir   string
+	stateDir  string
 }
 
 func (p *platform) UserHomeDir() string {
 	return p.home
 }
 
-func (p *platform) NestorDir(path ...string) string {
-	if len(path) == 0 {
-		return p.nestorDir
-	}
+func (p *platform) ConfigDir(elem ...string) string {
+	return filepath.Join(append([]string{p.configDir}, elem...)...)
+}
 
-	args := []string{p.nestorDir}
-	args = append(args, path...)
-	return filepath.Join(args...)
+func (p *platform) DataDir(elem ...string) string {
+	return filepath.Join(append([]string{p.dataDir}, elem...)...)
+}
+
+func (p *platform) StateDir(elem ...string) string {
+	return filepath.Join(append([]string{p.stateDir}, elem...)...)
 }
 
 func (p *platform) SandboxDir(elem ...string) string {
-	sbd := filepath.Join(p.nestorDir, "sandbox")
-	if len(elem) == 0 {
-		return sbd
-	}
-
-	args := []string{sbd}
-	args = append(args, elem...)
-	return filepath.Join(args...)
+	return p.StateDir(append([]string{"sandbox"}, elem...)...)
 }
 
 func (p *platform) ShareSandboxSpecDir(elem ...string) string {
-	base := filepath.Join(p.nestorDir, "share", "sandbox-spec")
-	if len(elem) == 0 {
-		return base
-	}
-
-	args := []string{base}
-	args = append(args, elem...)
-	return filepath.Join(args...)
+	return p.DataDir(append([]string{"sandbox-spec"}, elem...)...)
 }
 
 func (p *platform) ProfileYmlFile() string {
-	return p.NestorDir("profile.yml")
+	return p.ConfigDir("profile.yml")
 }
 
 func (p *platform) MCPYmlFile() string {
-	return p.NestorDir("mcp.yml")
+	return p.ConfigDir("mcp.yml")
 }
 
 func (p *platform) SandboxYmlFile() string {
-	return p.NestorDir("sandbox.yml")
+	return p.ConfigDir("sandbox.yml")
 }
 
 func (p *platform) SandboxSlugsFile() string {
-	return p.NestorDir("sandbox-slugs.txt")
+	return p.ConfigDir("sandbox-slugs.txt")
 }
 
 func (p *platform) HarnessDefaultOption(harness string, name string) string {
@@ -158,8 +162,8 @@ func (p *platform) OS() OSKind {
 	return p.os
 }
 
-func (p *platform) Clone(dir string) Platform {
-	return &platform{os: p.os, home: p.home, nestorDir: dir}
+func (p *platform) Clone(configDir, dataDir, stateDir string) Platform {
+	return &platform{os: p.os, home: p.home, configDir: configDir, dataDir: dataDir, stateDir: stateDir}
 }
 
 var _ Platform = (*platform)(nil)

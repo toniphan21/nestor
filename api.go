@@ -28,8 +28,10 @@ type API interface {
 	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
 }
 
-const DefaultLogFile = "nestor.log"
-const DefaultHostAlias = "nestor-proxy.internal"
+const (
+	DefaultLogFile   = "nestor.log"
+	DefaultHostAlias = "nestor-proxy.internal"
+)
 
 func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer, error) {
 	o := &opts{
@@ -47,10 +49,16 @@ func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer
 		o.platform = defaultPlatform
 	}
 
-	if strings.TrimSpace(o.dir) == "" {
-		o.dir = o.platform.NestorDir()
+	if strings.TrimSpace(o.configDir) == "" {
+		o.configDir = o.platform.ConfigDir()
 	}
-	fp := filepath.Join(o.dir, DefaultLogFile)
+	if strings.TrimSpace(o.dataDir) == "" {
+		o.dataDir = o.platform.DataDir()
+	}
+	if strings.TrimSpace(o.stateDir) == "" {
+		o.stateDir = o.platform.StateDir()
+	}
+	fp := filepath.Join(o.stateDir, DefaultLogFile)
 
 	return NewLogger(fp, io.Discard, level)
 }
@@ -74,8 +82,14 @@ func New(options ...Option) (API, error) {
 		o.platform = defaultPlatform
 	}
 
-	if strings.TrimSpace(o.dir) == "" {
-		o.dir = o.platform.NestorDir()
+	if strings.TrimSpace(o.configDir) == "" {
+		o.configDir = o.platform.ConfigDir()
+	}
+	if strings.TrimSpace(o.dataDir) == "" {
+		o.dataDir = o.platform.DataDir()
+	}
+	if strings.TrimSpace(o.stateDir) == "" {
+		o.stateDir = o.platform.StateDir()
 	}
 
 	if o.logger == nil {
@@ -90,13 +104,18 @@ func New(options ...Option) (API, error) {
 		o.newDockerFunc = newDockerCLI
 	}
 
-	if err := fs.MkdirAll(o.dir); err != nil {
+	if err := fs.MkdirAll(o.configDir); err != nil {
+		return nil, err
+	}
+	if err := fs.MkdirAll(o.dataDir); err != nil {
 		return nil, err
 	}
 
 	a := &api{
-		dir:           o.dir,
-		platform:      o.platform.Clone(o.dir),
+		configDir:     o.configDir,
+		dataDir:       o.dataDir,
+		stateDir:      o.stateDir,
+		platform:      o.platform.Clone(o.configDir, o.dataDir, o.stateDir),
 		registry:      o.registry,
 		template:      o.template,
 		newGitFunc:    o.newGitFunc,
@@ -128,7 +147,9 @@ func New(options ...Option) (API, error) {
 
 type api struct {
 	mu            sync.Mutex
-	dir           string
+	configDir     string
+	dataDir       string
+	stateDir      string
 	platform      Platform
 	registry      Registry
 	template      Template
@@ -139,8 +160,18 @@ type api struct {
 	log           *slog.Logger
 }
 
+func (a *api) logDebug(msg string, args ...any) {
+	p := append([]any{
+		slog.String("configDir", a.configDir),
+		slog.String("dataDir", a.dataDir),
+		slog.String("stateDir", a.stateDir),
+	}, args...)
+
+	a.log.Debug(msg, p...)
+}
+
 func (a *api) init() error {
-	a.log.Debug("Init start", slog.String("dir", a.dir))
+	a.logDebug("Init start")
 	steps := []func() error{
 		a.initProfilesFromYmlIfRuntimeHasNoProfiles,
 		a.initMCPFromYmlIfRuntimeHasNoMCPs,
@@ -153,7 +184,7 @@ func (a *api) init() error {
 			return err
 		}
 	}
-	a.log.Debug("Init done", slog.String("dir", a.dir))
+	a.logDebug("Init done")
 	return nil
 }
 
@@ -200,7 +231,7 @@ func (a *api) initBuiltinHarnesses() error {
 			return err
 		}
 	}
-	a.log.Debug("builtin harnesses initialized")
+	a.logDebug("builtin harnesses initialized")
 	return nil
 }
 
@@ -306,10 +337,10 @@ func (a *api) Runtime() Runtime {
 }
 
 func (a *api) Build(ctx context.Context, specs ...string) error {
-	a.log.Debug("Build start", slog.String("dir", a.dir))
+	a.logDebug("Build start")
 	runtime := a.Runtime()
 
-	var selected = make(map[string]bool)
+	selected := make(map[string]bool)
 	if len(specs) == 0 {
 		for _, v := range a.registry.SandboxSpecs() {
 			selected[v.Name] = true
@@ -343,7 +374,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 		}
 	}
 
-	a.log.Debug("Build done", slog.String("dir", a.dir))
+	a.logDebug("Build done")
 	return nil
 }
 
@@ -351,12 +382,7 @@ func (a *api) ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, er
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.log.Debug("ListSandboxes start", slog.String("dir", a.dir))
-
-	result, err := a.listSandboxesLocked(ctx, specs...)
-
-	a.log.Debug("ListSandboxes done", slog.String("dir", a.dir))
-	return result, err
+	return a.listSandboxesLocked(ctx, specs...)
 }
 
 func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandbox, error) {
@@ -364,7 +390,7 @@ func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandb
 		return nil, nil
 	}
 
-	var selected = make(map[string]bool)
+	selected := make(map[string]bool)
 	if len(specs) == 0 {
 		for _, v := range a.registry.SandboxSpecs() {
 			selected[v.Name] = true
@@ -406,11 +432,11 @@ func (a *api) CreateSandbox(ctx context.Context, spec string) (Sandbox, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.log.Debug("CreateSandbox start", slog.String("dir", a.dir))
+	a.logDebug("CreateSandbox start")
 
 	sandbox, err := a.createSandboxLocked(ctx, spec)
 
-	a.log.Debug("CreateSandbox end", slog.String("dir", a.dir))
+	a.logDebug("CreateSandbox end")
 	return sandbox, err
 }
 
@@ -446,7 +472,7 @@ func (a *api) RenameSandbox(ctx context.Context, sandbox Sandbox, newName string
 func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.log.Debug("Acquire start", slog.String("dir", a.dir), slog.String("spec", spec), slog.String("path", path))
+	a.logDebug("Acquire start", slog.String("spec", spec), slog.String("path", path))
 
 	ss, ok := a.registry.SandboxSpec(spec)
 	if !ok {
@@ -459,12 +485,12 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 	}
 
 	if !a.docker.HasImage(ctx, a.template.MakeSandboxTag(ss.Name)) {
-		a.log.Debug("no image, build fresh one", slog.String("dir", a.dir))
+		a.logDebug("no image, build fresh one")
 		if err := a.Build(ctx, spec); err != nil {
 			return nil, err
 		}
 	}
-	a.log.Debug("Acquire end", slog.String("dir", a.dir))
+	a.logDebug("Acquire end")
 	return lease, nil
 }
 

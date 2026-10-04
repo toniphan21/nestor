@@ -117,7 +117,7 @@ func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cob
 			dir = abs
 		}
 
-		options := []nestor.Option{nestor.WithDir(dir)}
+		options := localDirOptions(dir)
 		if err = fs.MkdirAll(dir); err != nil {
 			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create work dir %q", err.Error(), dir)))
 			return nil
@@ -212,4 +212,12 @@ func view(api nestor.API, cf *cli.Config, args ...string) error {
 
 func explain(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Explain(api, cf)
+}
+
+func localDirOptions(dir string) []nestor.Option {
+	return []nestor.Option{
+		nestor.WithConfigDir(filepath.Join(dir, "config")),
+		nestor.WithDataDir(filepath.Join(dir, "data")),
+		nestor.WithStateDir(filepath.Join(dir, "state")),
+	}
 }

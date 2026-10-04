@@ -13,7 +13,9 @@ type optionFunc func(*opts)
 func (f optionFunc) apply(opts *opts) { f(opts) }
 
 type opts struct {
-	dir           string
+	configDir     string
+	dataDir       string
+	stateDir      string
 	logger        *slog.Logger
 	platform      Platform
 	registry      Registry
@@ -26,8 +28,16 @@ type opts struct {
 	newDockerFunc NewDockerFunc
 }
 
-func WithDir(dir string) Option {
-	return optionFunc(func(opts *opts) { opts.dir = dir })
+func WithConfigDir(dir string) Option {
+	return optionFunc(func(opts *opts) { opts.configDir = dir })
+}
+
+func WithDataDir(dir string) Option {
+	return optionFunc(func(opts *opts) { opts.dataDir = dir })
+}
+
+func WithStateDir(dir string) Option {
+	return optionFunc(func(opts *opts) { opts.stateDir = dir })
 }
 
 func WithLogger(logger *slog.Logger) Option {
@@ -50,8 +60,8 @@ func WithMCPs(mcps []MCP) Option {
 	return optionFunc(func(o *opts) { o.mcps = mcps })
 }
 
-func WithHarnesses(harnesses Harness) Option {
-	return optionFunc(func(o *opts) { o.harnesses = o.harnesses })
+func WithHarnesses(harnesses []Harness) Option {
+	return optionFunc(func(o *opts) { o.harnesses = harnesses })
 }
 
 func WithTemplate(template Template) Option {

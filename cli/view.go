@@ -38,7 +38,7 @@ func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	ctx := context.Background()
 	runtime := api.Runtime()
 
-	result.NestorDir = runtime.Platform.NestorDir()
+	result.ConfigDir = runtime.Platform.ConfigDir()
 	result.SpecFilePath = runtime.Platform.SandboxYmlFile()
 	result.ProfileFilePath = runtime.Platform.ProfileYmlFile()
 	result.Runtime = runtime
@@ -80,7 +80,7 @@ func collectViewData(api nestor.API, config *Config) (viewData, error) {
 const leftSize = 32
 
 type viewData struct {
-	NestorDir       string
+	ConfigDir       string
 	SpecFilePath    string
 	ProfileFilePath string
 	Runtime         nestor.Runtime
@@ -120,7 +120,7 @@ func (d *viewData) PrintArch(drawPadding int, textPadding int) {
 		"sandbox.yml":                      pterm.LightCyan,
 	}
 
-	var pad = strings.Repeat(" ", drawPadding)
+	pad := strings.Repeat(" ", drawPadding)
 	var out []string
 	lines := strings.Split(string(f), "\n")
 	for _, line := range lines {
@@ -176,7 +176,7 @@ func (d *viewData) Print() {
 	ctx := context.Background()
 
 	w := leftSize
-	nd := d.ReplacePath(d.NestorDir) + "/"
+	nd := d.ReplacePath(d.ConfigDir) + "/"
 	fmt.Println()
 
 	if d.Stat != nil {
@@ -188,7 +188,7 @@ func (d *viewData) Print() {
 		}
 	}
 	if d.show(partDir) {
-		fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.ReplacePath(d.NestorDir))
+		fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.ReplacePath(d.ConfigDir))
 	}
 	if d.show(partSpecPath) {
 		fmt.Printf("%*s: %s%s\n", w, pterm.Blue("spec file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.SpecFilePath), nd))
@@ -240,7 +240,7 @@ func (d *viewData) Print() {
 		d.printKeyValues(w, profile.Settings, "setting", pterm.Red("settings"), pterm.Red(""))
 		d.printKeyValues(w, profile.Options, "option", pterm.Red("options"), pterm.Red(""))
 
-		var models = slices.Collect(maps.Keys(profile.Models))
+		models := slices.Collect(maps.Keys(profile.Models))
 		sort.Strings(models)
 		for i, v := range models {
 			if v == profile.DefaultModel {
@@ -281,7 +281,7 @@ func (d *viewData) Print() {
 
 		fmt.Printf("%*s: %s\n", w, pterm.Cyan("harness"), spec.Harness)
 
-		var profile = ""
+		profile := ""
 		piy := spec.ProfileInYaml()
 		if piy != nil && *piy != spec.Profile {
 			profile = "<not-set> " + pterm.Gray("(defaults to harness name: "+spec.Profile+")")
@@ -290,7 +290,7 @@ func (d *viewData) Print() {
 		}
 		fmt.Printf("%*s: %s\n", w, pterm.Cyan("profile"), profile)
 
-		var target = ""
+		target := ""
 		tiy := spec.TargetInYaml()
 		if tiy != nil && *tiy != spec.Target {
 			target = "<not-set> " + pterm.Gray("(defaults to harness default target: "+spec.Target+")")
@@ -314,7 +314,7 @@ func (d *viewData) Print() {
 			fmt.Printf("%*s: %s\n", w, pterm.Cyan("mounts"), pterm.Red("<not-set> (required — no lease can be acquired until you set this)"))
 		} else {
 			for i, v := range spec.Mounts {
-				var keys = []string{"type", "path"}
+				keys := []string{"type", "path"}
 
 				mounts := make(map[string]string)
 				mounts["type"] = string(v.Type)

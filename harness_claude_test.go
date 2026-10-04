@@ -1,6 +1,8 @@
 package nestor
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestHarnessClaudeCaptureSessionID(t *testing.T) {
 	const initLine = `{"type":"system","subtype":"init","cwd":"/chats","session_id":"60365672-05cf-4733-b167-fbc5430fcd85","model":"claude-sonnet-5","uuid":"db14fc74-f774-4ec0-ac2b-ee4878695c0c"}`
