@@ -148,6 +148,9 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 					Stdout:    stdout,
 					Model:     model,
 				})
+				if err != nil {
+					return err
+				}
 				fmt.Println("")
 			}
 		}

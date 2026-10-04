@@ -25,7 +25,7 @@ func Build(api nestor.API, specs []string) error {
 			runs[v] = true
 		}
 	} else {
-		for k, _ := range exists {
+		for k := range exists {
 			runs[k] = true
 		}
 	}
@@ -38,7 +38,7 @@ func Build(api nestor.API, specs []string) error {
 
 	ctx := context.Background()
 	template := api.Runtime().Template
-	for spec, _ := range runs {
+	for spec := range runs {
 		tag := template.MakeSandboxTag(spec)
 		fmt.Printf("building docker image for spec %s with tag %s...\n", pterm.Blue(spec), pterm.Cyan(tag))
 		err := api.Build(ctx, spec)
@@ -48,5 +48,4 @@ func Build(api nestor.API, specs []string) error {
 	}
 	fmt.Println(pterm.Green("done"))
 	return nil
-
 }

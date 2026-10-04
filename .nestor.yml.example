@@ -1,5 +1,4 @@
 dir: .nestor
-root: ""
 log_level: info
 redacted:
     options:
@@ -20,19 +19,6 @@ redacted:
         - proxy_authorization_bearer
         - proxy_x_api_key
         - proxy_x_goog_api_key
-power_overhead: 1
-sector_size: 512
-total_bytes_written:
-    overhead: 0
-    format: TBW=%.3f
-    thresholds:
-        1000: gray
-        5000: none
-        10000: yellow
-        15000: red
 hidden:
     parts:
-        - time
-        - system
-        - os
         - templates

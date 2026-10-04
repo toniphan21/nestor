@@ -67,11 +67,6 @@ func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	}
 	result.Sandboxes = sbs
 
-	stat, err := CollectStat(ctx, "/", 100*time.Millisecond)
-	if err != nil {
-		return result, err
-	}
-	result.Stat = stat
 	result.Config = *config
 
 	return result, nil
@@ -90,7 +85,6 @@ type viewData struct {
 	Profiles        []nestor.Profile
 	Sandboxes       []nestor.Sandbox
 	Harnesses       []nestor.Harness
-	Stat            *Stat
 	Config          Config
 }
 
@@ -179,14 +173,6 @@ func (d *viewData) Print() {
 	nd := d.ReplacePath(d.ConfigDir) + "/"
 	fmt.Println()
 
-	if d.Stat != nil {
-		if d.show(partTime) {
-			fmt.Printf("%*s: %s\n", w, pterm.Blue("time"), d.Stat.Time.Format("02.01.2006 15:04:05 MST"))
-		}
-		if d.show(partSystem) {
-			fmt.Printf("%*s: %s\n", w, pterm.Blue("system"), d.statLine())
-		}
-	}
 	if d.show(partDir) {
 		fmt.Printf("%*s: %s\n", w, pterm.Blue("nestor dir"), d.ReplacePath(d.ConfigDir))
 	}
@@ -196,10 +182,6 @@ func (d *viewData) Print() {
 	if d.show(partProfilePath) {
 		fmt.Printf("%*s: %s%s\n", w, pterm.Blue("profile file"), pterm.Gray(nd), strings.TrimPrefix(d.ReplacePath(d.ProfileFilePath), nd))
 	}
-	if d.show(partOS) {
-		fmt.Printf("%*s: %s\n", w, pterm.Blue("platform os"), d.Platform.OS())
-	}
-
 	if d.show(partTemplates) {
 		fmt.Printf("%*s: %s = %q\n", w, pterm.Blue("templates"), "SandboxID       ", d.Template.SandboxID)
 		fmt.Printf("%*s  %s = %q\n", w, pterm.Blue(""), "SandboxTag      ", d.Template.SandboxTag)
@@ -424,8 +406,8 @@ func (d *viewData) ReplacePath(path string) string {
 		return strings.Compare(b, a)
 	})
 	for _, k := range keys {
-		if strings.HasPrefix(path, k) {
-			return d.Config.PathReplacements[k] + strings.TrimPrefix(path, k)
+		if after, ok := strings.CutPrefix(path, k); ok {
+			return d.Config.PathReplacements[k] + after
 		}
 	}
 	return path
@@ -455,69 +437,6 @@ func (d *viewData) Redact(typ, key, value string) (string, bool) {
 	return "----- redacted -----", true
 }
 
-func (d *viewData) statLine() string {
-	if d.Stat == nil {
-		return ""
-	}
-
-	var values []string
-
-	switch {
-	case d.Stat.Power != nil && d.Stat.TempC != nil:
-		pt := fmt.Sprintf(
-			"power: %s - %s",
-			pterm.Red(fmt.Sprintf("~%.1fW", *d.Stat.Power*d.Config.PowerOverhead)),
-			pterm.Red(fmt.Sprintf("%.1f°C", *d.Stat.TempC)),
-		)
-		values = append(values, pt)
-
-	case d.Stat.Power != nil:
-		pt := fmt.Sprintf(
-			"power: %s",
-			pterm.Red(fmt.Sprintf("~%.1fW", *d.Stat.Power*d.Config.PowerOverhead)),
-		)
-		values = append(values, pt)
-
-	case d.Stat.TempC != nil:
-		pt := fmt.Sprintf(
-			"temp: %s",
-			pterm.Cyan(fmt.Sprintf("%.1f°C", *d.Stat.TempC)),
-		)
-		values = append(values, pt)
-	}
-
-	cpu := fmt.Sprintf("cpu: %s", pterm.Cyan(fmt.Sprintf("%.2f%%", d.Stat.CPUPercent)))
-	mem := fmt.Sprintf(
-		"mem: %s - %s",
-		pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.MemPercent)),
-		bytePairAuto(d.Stat.MemUsed, d.Stat.MemTotal),
-	)
-
-	disk := fmt.Sprintf(
-		"disk: %s - %s",
-		pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.DiskPercent)),
-		bytePairAuto(d.Stat.DiskUsed, d.Stat.DiskTotal),
-	)
-
-	if d.Stat.DiskTotalBytesWritten != nil {
-		tbw := *d.Stat.DiskTotalBytesWritten
-		tbw *= d.Config.SectorSize
-		tbw += d.Config.TotalBytesWritten.Overhead * gigabyte
-		value := float64(tbw) / float64(gigabyte)
-
-		disk = fmt.Sprintf(
-			"disk: %s - %s %s",
-			pterm.Cyan(fmt.Sprintf("%.0f%%", d.Stat.DiskPercent)),
-			bytePairAuto(d.Stat.DiskUsed, d.Stat.DiskTotal),
-			formatTBW(d.Config.TotalBytesWritten.Format, value, d.Config.TotalBytesWritten.Thresholds),
-		)
-	}
-
-	values = append(values, cpu, mem, disk)
-
-	return strings.Join(values, pterm.Gray(" · "))
-}
-
 func (d *viewData) sandboxes(spec nestor.SandboxSpec) []nestor.Sandbox {
 	var out []nestor.Sandbox
 	for _, v := range d.Sandboxes {
@@ -527,74 +446,4 @@ func (d *viewData) sandboxes(spec nestor.SandboxSpec) []nestor.Sandbox {
 		out = append(out, v)
 	}
 	return out
-}
-
-type byteUnit struct {
-	Name string
-	Div  float64
-}
-
-const gigabyte = 1024 * 1024 * 1024
-
-var (
-	miB = byteUnit{"MB", 1 << 20}
-	giB = byteUnit{"GB", 1 << 30}
-)
-
-// Pair formats used and total in a shared unit.
-func bytePair(used, total uint64, u byteUnit) string {
-	return fmt.Sprintf("%.1f/%.1f %s", float64(used)/u.Div, float64(total)/u.Div, u.Name)
-}
-
-func bytePairAuto(used, total uint64) string {
-	u := miB
-	if total >= 1<<30 {
-		u = giB
-	}
-	return bytePair(used, total, u)
-}
-
-func formatTBW(format string, value float64, thresholds map[uint64]string) string {
-	if format == "" {
-		format = defaultTotalBytesWrittenFormat
-	}
-	color := findTBWThresholdColor(value, thresholds)
-	text := fmt.Sprintf(format, value/1024)
-	switch color {
-	case "gray":
-		return pterm.Gray(text)
-	case "cyan":
-		return pterm.Cyan(text)
-	case "red":
-		return pterm.Red(text)
-	case "green":
-		return pterm.Green(text)
-	case "blue":
-		return pterm.Blue(text)
-	case "yellow":
-		return pterm.Yellow(text)
-	default:
-		return text
-	}
-}
-
-type tbwThreshold struct {
-	value float64
-	color string
-}
-
-func findTBWThresholdColor(value float64, thresholds map[uint64]string) string {
-	var points []tbwThreshold
-	for k, v := range thresholds {
-		points = append(points, tbwThreshold{float64(k), v})
-	}
-	slices.SortFunc(points, func(a, b tbwThreshold) int {
-		return int(a.value - b.value)
-	})
-	for _, v := range points {
-		if value < v.value {
-			return v.color
-		}
-	}
-	return points[len(points)-1].color
 }

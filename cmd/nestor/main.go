@@ -35,20 +35,7 @@ func main() {
 	root := &cobra.Command{
 		Use: "nestor", Short: shortDesc["root"],
 		RunE: func(cmd *cobra.Command, args []string) error {
-			config := readConfig()
-			switch config.Root {
-			case "view":
-				fn := runWithAPI(view)
-				return fn(cmd, args)
-			case "explain":
-				fn := runWithAPI(explain)
-				return fn(cmd, args)
-			case "launch":
-				fn := runWithAPI(launch)
-				return fn(cmd, args)
-			default:
-				return cmd.Usage()
-			}
+			return cmd.Usage()
 		},
 	}
 

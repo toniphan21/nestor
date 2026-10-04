@@ -14,13 +14,12 @@ import (
 )
 
 type launchInfo struct {
-	spec    string
-	path    string
-	sandbox string
-	run     bool
+	spec string
+	path string
+	run  bool
 }
 
-func collectLaunchInfo(api nestor.API, args []string) (*launchInfo, error) {
+func collectLaunchInfo(api nestor.API, _ []string) (*launchInfo, error) {
 	var spec nestor.SandboxSpec
 	if v, err := collectSpec(api); err != nil || v == nil {
 		return &launchInfo{run: false}, err
@@ -119,7 +118,7 @@ func Launch(api nestor.API, args []string) error {
 
 func selectSession(lease *nestor.Lease) (string, string) {
 	sessions := lease.ListSessions()
-	var selectedId, title string
+	var selectedID, title string
 	if len(sessions) > 0 {
 		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
 			Title: "New session",
@@ -132,13 +131,13 @@ func selectSession(lease *nestor.Lease) (string, string) {
 			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
 		})
 		if err != nil {
-			return selectedId, title
+			return selectedID, title
 		}
 
-		selectedId = r.Value.ID
+		selectedID = r.Value.ID
 	}
 
-	if selectedId == "" {
+	if selectedID == "" {
 		t := "Session title (optional — leave blank for an auto-generated name)"
 		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
 		if err != nil {
@@ -146,5 +145,5 @@ func selectSession(lease *nestor.Lease) (string, string) {
 		}
 		title = v
 	}
-	return selectedId, title
+	return selectedID, title
 }
