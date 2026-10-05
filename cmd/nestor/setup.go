@@ -41,11 +41,20 @@ const (
 	profileOpencode    = "opencode"
 )
 
+func cmdSetup() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: shortDesc["setup"],
+		RunE:  setup,
+	}
+	return cmd
+}
+
 func setup(cmd *cobra.Command, args []string) error {
 	return setupLocal(cmd, args)
 }
 
-func setupLocal(cmd *cobra.Command, args []string) error {
+func setupLocal(_ *cobra.Command, _ []string) error {
 	colors := map[string]string{
 		"<nestor>":               pterm.Green("nestor"),
 		"<Claude Code>":          pterm.Red("Claude Code"),

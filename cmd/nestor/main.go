@@ -18,7 +18,7 @@ import (
 var shortDesc = map[string]string{
 	"root":    "Run coding agents in sandboxed containers",
 	"setup":   "Initialize the nestor directory",
-	"delete":  "Remove a single sandbox",
+	"delete":  "Remove a single sandbox", // migrated
 	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
 	"launch":  "Start an interactive harness session in a sandbox",
@@ -27,7 +27,6 @@ var shortDesc = map[string]string{
 	"release": "Release the lease held on a sandbox",
 	"rename":  "Give a sandbox a memorable name",
 	"view":    "Show the current nestor state",
-	"explain": "Show the nestor architecture and how it works",
 	"version": "Print the nestor version",
 }
 
@@ -42,8 +41,9 @@ func main() {
 	root.AddCommand(
 		&cobra.Command{Use: "version", Short: shortDesc["version"], Run: printVersion},
 
-		&cobra.Command{Use: "setup", Short: shortDesc["setup"], RunE: setup},
-		command("delete", delete),
+		cmdSetup(),
+		delete(),
+
 		command("destroy", destroy),
 		command("build", build),
 		commandWithAlias("launch", []string{"open", "start"}, launch),
@@ -52,7 +52,6 @@ func main() {
 		command("release", release),
 		command("rename", rename),
 		command("view", view),
-		command("explain", explain),
 	)
 
 	if err := withDirFlag(root).Execute(); err != nil {
@@ -60,8 +59,50 @@ func main() {
 	}
 }
 
+func run(fn func(nestor.API, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, argv []string) error {
+		var verbose bool
+		if v, err := cmd.Flags().GetBool("verbose"); err == nil {
+			verbose = v
+		}
+
+		ll := slog.LevelInfo
+		if verbose {
+			ll = slog.LevelDebug
+		}
+
+		logger, closer, err := nestor.DefaultLogger(ll)
+		if err != nil {
+			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger", err.Error())))
+			return nil
+		}
+		defer func() {
+			if cErr := closer.Close(); cErr != nil {
+				fmt.Println(pterm.Red(cErr.Error()))
+			}
+		}()
+
+		api, err := nestor.New(nestor.WithLogger(logger))
+		if err != nil {
+			fmt.Println(pterm.Red("cannot create nestor API: ", err.Error()))
+			return nil
+		}
+
+		err = fn(api, cmd, argv)
+		if err != nil {
+			fmt.Println(pterm.Red("Error: ", err.Error()))
+		}
+		return nil
+	}
+}
+
+func withGlobalFlags(cmd *cobra.Command) *cobra.Command {
+	cmd.Flags().BoolP("verbose", "v", false, "set log level to debug")
+	return cmd
+}
+
 func withDirFlag(cmd *cobra.Command) *cobra.Command {
-	cmd.Flags().StringP("dir", "d", "", "nestor directory; use NESTOR_DIR if not specified")
+	cmd.Flags().StringP("dir", "d", "", "nestor directory")
 	return cmd
 }
 
@@ -110,7 +151,7 @@ func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cob
 			return nil
 		}
 
-		ll := slog.LevelInfo
+		var ll slog.Level
 		switch config.LogLevel {
 		case "debug":
 			ll = slog.LevelDebug
@@ -126,7 +167,11 @@ func runWithAPI(fn func(nestor.API, *cli.Config, ...string) error) func(cmd *cob
 			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger %q", err.Error(), dir)))
 			return nil
 		}
-		defer closer.Close()
+		defer func() {
+			if cErr := closer.Close(); cErr != nil {
+				fmt.Println(pterm.Red(cErr.Error()))
+			}
+		}()
 
 		api, err := nestor.New(append(options, nestor.WithLogger(logger))...)
 		if err != nil {
@@ -161,10 +206,6 @@ func printVersion(cmd *cobra.Command, args []string) {
 	fmt.Println(nestor.Version)
 }
 
-func delete(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.Delete(api)
-}
-
 func destroy(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Destroy(api)
 }
@@ -195,10 +236,6 @@ func rename(api nestor.API, cf *cli.Config, args ...string) error {
 
 func view(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.View(api, cf)
-}
-
-func explain(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.Explain(api, cf)
 }
 
 func localDirOptions(dir string) []nestor.Option {

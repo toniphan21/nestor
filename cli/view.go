@@ -21,14 +21,6 @@ func View(api nestor.API, cf *Config) error {
 	return err
 }
 
-func Explain(api nestor.API, cf *Config) error {
-	result, err := collectViewData(api, cf)
-	if err == nil {
-		result.PrintArch(10, 2)
-	}
-	return err
-}
-
 func collectViewData(api nestor.API, config *Config) (viewData, error) {
 	if config == nil {
 		config = DefaultConfig("")

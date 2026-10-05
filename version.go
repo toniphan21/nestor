@@ -1,4 +1,6 @@
 package nestor
 
-const BinaryName = "nestor"
-const Version = "0.4.0"
+var (
+	BinaryName = "nestor"
+	Version    = "0.4.0"
+)

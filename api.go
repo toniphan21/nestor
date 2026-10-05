@@ -58,6 +58,10 @@ func DefaultLogger(level slog.Level, options ...Option) (*slog.Logger, io.Closer
 	if strings.TrimSpace(o.stateDir) == "" {
 		o.stateDir = o.platform.StateDir()
 	}
+
+	if err := fs.MkdirAll(o.stateDir); err != nil {
+		return nil, nil, err
+	}
 	fp := filepath.Join(o.stateDir, DefaultLogFile)
 
 	return NewLogger(fp, io.Discard, level)
