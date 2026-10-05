@@ -23,7 +23,7 @@ var shortDesc = map[string]string{
 	"build":   "Build a sandbox image from a spec",
 	"launch":  "Start an interactive harness session in a sandbox", // migrated
 	"prompt":  "Run a headless prompt in a sandbox (demo of library usage)",
-	"down":    "Stop all running sandboxes so the next run picks up config changes",
+	"down":    "Stop running sandboxes (all if none given)", // migrated
 	"release": "Release the lease held on a sandbox",
 	"rename":  "Give a sandbox a memorable name",
 	"view":    "Show the current nestor state",
@@ -48,7 +48,7 @@ func main() {
 		command("build", build),
 		launch(),
 		command("prompt", prompt),
-		command("down", down),
+		down(),
 		command("release", release),
 		command("rename", rename),
 		command("view", view),
@@ -208,10 +208,6 @@ func build(api nestor.API, cf *cli.Config, args ...string) error {
 
 func prompt(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Prompt(api, args)
-}
-
-func down(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.Down(api)
 }
 
 func release(api nestor.API, cf *cli.Config, args ...string) error {

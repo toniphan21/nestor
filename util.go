@@ -34,7 +34,7 @@ func (b *bufferedFile) Save(path string) (bool, error) {
 	if b.buf.Len() == 0 {
 		return false, nil
 	}
-	if err := fs.WriteFile(path, b.buf.Bytes(), 0644); err != nil {
+	if err := fs.WriteFile(path, b.buf.Bytes(), 0o644); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -48,19 +48,6 @@ func multiWriter(w ...io.Writer) io.Writer {
 		}
 	}
 	return io.MultiWriter(args...)
-}
-
-func dedup[T comparable](list []T) []T {
-	seen := make(map[T]bool)
-	var out []T
-	for _, v := range list {
-		if _, have := seen[v]; have {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return out
 }
 
 // scanLines calls fn for each line. Lines grow unbounded; no size limit.

@@ -8,7 +8,11 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-func Down(api nestor.API) error {
+type DownArgs struct {
+	Sandboxes []string
+}
+
+func Down(api nestor.API, args DownArgs) error {
 	ctx := context.Background()
 
 	sandboxes, err := api.ListSandboxes(ctx)
@@ -22,7 +26,19 @@ func Down(api nestor.API) error {
 		return nil
 	}
 
+	allows := make(map[string]bool)
+	if len(args.Sandboxes) > 0 {
+		for _, v := range args.Sandboxes {
+			allows[v] = true
+		}
+	}
+
 	for _, sandbox := range sandboxes {
+		if len(allows) > 0 && !allows[sandbox.ID()] {
+			fmt.Printf("sandbox %s is not in the list, skip\n", pterm.Blue(sandbox.ID()))
+			continue
+		}
+
 		if sandbox.IsRunning(ctx) {
 			fmt.Printf("stopping sandbox %s (container: %s)", pterm.Blue(sandbox.ID()), pterm.Cyan(sandbox.Container()))
 			err = sandbox.Stop(ctx)

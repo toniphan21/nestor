@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/xid"
 	"nhatp.com/go/nestor/infra/fs"
+	"nhatp.com/go/nestor/internal/nx"
 )
 
 const (
@@ -565,7 +566,7 @@ func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) er
 		return s.save(ctx)
 	}
 	session = append(session, sessionId)
-	s.data.Sessions[path] = dedup(session)
+	s.data.Sessions[path] = nx.Dedup(session)
 
 	if err := s.addSessionToSharedScope(ctx, path, sessionId); err != nil {
 		return err
@@ -592,7 +593,7 @@ func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, session
 		return sd.save(ctx, s.ShareDir())
 	}
 	session = append(session, sessionId)
-	sd.Sessions[path] = dedup(session)
+	sd.Sessions[path] = nx.Dedup(session)
 
 	return sd.save(ctx, s.ShareDir())
 }
