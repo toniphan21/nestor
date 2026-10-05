@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,8 +24,10 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
-const EnvVarAuthProxyAddress = "NESTOR_AUTH_PROXY_ADDR"
-const EnvVarProxyAddress = "NESTOR_PROXY_ADDR"
+const (
+	EnvVarAuthProxyAddress = "NESTOR_AUTH_PROXY_ADDR"
+	EnvVarProxyAddress     = "NESTOR_PROXY_ADDR"
+)
 
 type RunParam interface {
 	validate() error
@@ -64,7 +67,7 @@ type Interactive struct {
 	SessionID            string
 	Title                string
 	Instructions         []string
-	OnInit               func(authProxy string, proxy string)
+	OnInit               func()
 	OnSessionEstablished func(sessionID string)
 }
 
@@ -95,21 +98,71 @@ type leaseAPI interface {
 	Run(ctx context.Context, param RunParam) (RunResult, error)
 	SessionID() string
 	ListSessions() []HarnessSession
+
+	OnProxyStarted(callback func(addr string))
+	OnProxyStopped(callback func(addr string))
+
+	OnAuthProxyStarted(callback func(addr string))
+	OnAuthProxyStopped(callback func(addr string))
 }
 
 var _ leaseAPI = (*Lease)(nil)
 
 func newLease(s *sandboxImpl, ld leaseData) *Lease {
 	return &Lease{
-		data:           ld,
-		sandbox:        s,
-		log:            s.leaseLog,
-		containerPGIDs: make(map[string]bool),
+		sync:    &leaseSyncedData{},
+		data:    ld,
+		sandbox: s,
+		log:     s.leaseLog,
 	}
 }
 
+type leaseSyncedData struct {
+	mu             sync.Mutex
+	containerPGIDs map[string]bool
+	expiresAt      time.Time
+}
+
+func (s *leaseSyncedData) AddRun(runID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.containerPGIDs == nil {
+		s.containerPGIDs = make(map[string]bool)
+	}
+	s.containerPGIDs[runID] = true
+}
+
+func (s *leaseSyncedData) RemoveRun(runID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.containerPGIDs, runID)
+}
+
+func (s *leaseSyncedData) ClearRunIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := slices.Collect(maps.Keys(s.containerPGIDs))
+	s.containerPGIDs = nil
+	return out
+}
+
+func (s *leaseSyncedData) SetExpiredAt(time time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expiresAt = time
+}
+
+func (s *leaseSyncedData) GetExpiredAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.expiresAt
+}
+
 type Lease struct {
-	mu sync.Mutex
+	sync *leaseSyncedData
 
 	data              leaseData
 	sandbox           *sandboxImpl
@@ -118,12 +171,15 @@ type Lease struct {
 	runDir            string
 	runDirInContainer string
 
-	containerPGIDs map[string]bool
+	authProxyAddr      string
+	authProxyServer    *http.Server
+	onAuthProxyStarted func(string)
+	onAuthProxyStopped func(string)
 
-	authProxyAddr   string
-	authProxyServer *http.Server
-	proxyAddr       string
-	proxyServer     *http.Server
+	proxyAddr      string
+	proxyServer    *http.Server
+	onProxyStarted func(string)
+	onProxyStopped func(string)
 }
 
 func (l *Lease) ID() string {
@@ -162,9 +218,7 @@ func (l *Lease) MCPProxyURL() (string, bool) {
 }
 
 func (l *Lease) ExpiresAt() time.Time {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.data.ExpiresAt
+	return l.sync.GetExpiredAt()
 }
 
 func (l *Lease) Extend(ctx context.Context) error {
@@ -173,11 +227,9 @@ func (l *Lease) Extend(ctx context.Context) error {
 		return err
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	ld.ExpiresAt = time.Now().Add(l.sandbox.spec.LeaseExtendDuration())
 	l.data.ExpiresAt = ld.ExpiresAt
+	l.sync.SetExpiredAt(ld.ExpiresAt)
 
 	l.sandbox.data.Leases[ld.Path] = *ld
 	l.log.Info("extend lease",
@@ -331,7 +383,7 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (result RunResult, err 
 			// before the TUI opens. As a side effect, the headless run gives us the
 			// session ID to resume with.
 			if v.OnInit != nil {
-				v.OnInit(l.authProxyAddr, l.proxyAddr)
+				v.OnInit()
 			}
 			prompt := l.sandbox.runtime.Template.MakeInteractiveConfirmPrompt(l.authProxyAddr, l.proxyAddr)
 			l.save(metaFP, meta)
@@ -362,6 +414,22 @@ func (l *Lease) ListSessions() []HarnessSession {
 	return l.sandbox.Harness().ListSessions(l)
 }
 
+func (l *Lease) OnAuthProxyStarted(callback func(addr string)) {
+	l.onAuthProxyStarted = callback
+}
+
+func (l *Lease) OnAuthProxyStopped(callback func(addr string)) {
+	l.onAuthProxyStopped = callback
+}
+
+func (l *Lease) OnProxyStarted(callback func(addr string)) {
+	l.onProxyStarted = callback
+}
+
+func (l *Lease) OnProxyStopped(callback func(addr string)) {
+	l.onProxyStopped = callback
+}
+
 func (l *Lease) StageFile(rel string, data []byte, perm os.FileMode) (string, error) {
 	hp := filepath.Join(l.runDir, rel)
 	cp := filepath.Join(l.runDirInContainer, rel)
@@ -384,7 +452,7 @@ func (l *Lease) runHeadless(ctx context.Context, param *Headless, meta *leaseMet
 	run.Stdout = param.Stdout != nil
 	run.Stderr = param.Stderr != nil
 
-	if err := fs.AtomicWriteFile(filepath.Join(l.runDir, "prompt"), []byte(param.Prompt), 0644); err != nil {
+	if err := fs.AtomicWriteFile(filepath.Join(l.runDir, "prompt"), []byte(param.Prompt), 0o644); err != nil {
 		return -1, fmt.Errorf("nestor: cannot write run prompt file: %w", err)
 	}
 
@@ -418,15 +486,11 @@ func (l *Lease) runHeadless(ctx context.Context, param *Headless, meta *leaseMet
 	defer func() {
 		kerr := l.killByPGID(ctx, run.ID)
 		if kerr == nil {
-			l.mu.Lock()
-			delete(l.containerPGIDs, run.ID)
-			l.mu.Unlock()
+			l.sync.RemoveRun(run.ID)
 		}
 	}()
 
-	l.mu.Lock()
-	l.containerPGIDs[run.ID] = true
-	l.mu.Unlock()
+	l.sync.AddRun(run.ID)
 
 	l.log.Info("run lease headless",
 		slog.String("sandbox", l.sandbox.ID()),
@@ -508,15 +572,11 @@ func (l *Lease) runInteractive(ctx context.Context, param *Interactive, meta *le
 	defer func() {
 		kerr := l.killByPGID(ctx, run.ID)
 		if kerr == nil {
-			l.mu.Lock()
-			delete(l.containerPGIDs, run.ID)
-			l.mu.Unlock()
+			l.sync.RemoveRun(run.ID)
 		}
 	}()
 
-	l.mu.Lock()
-	l.containerPGIDs[run.ID] = true
-	l.mu.Unlock()
+	l.sync.AddRun(run.ID)
 
 	code, runErr := l.sandbox.docker.ExecInteractive(ctx, l.sandbox.Container(), command, DockerExecInteractiveOption{
 		Env:     he.Env,
@@ -553,12 +613,8 @@ func (l *Lease) killByPGID(ctx context.Context, runID string) error {
 }
 
 func (l *Lease) killAllContainerPGIDs() {
-	l.mu.Lock()
-	ids := maps.Keys(l.containerPGIDs)
-	l.containerPGIDs = map[string]bool{}
-	l.mu.Unlock()
-
-	for id := range ids {
+	ids := l.sync.ClearRunIDs()
+	for _, id := range ids {
 		_ = l.killByPGID(context.Background(), id)
 	}
 }
@@ -593,7 +649,7 @@ func (l *Lease) makeInstructionFiles(hostDir string, containerDir string, instru
 		hp := filepath.Join(hostDir, "instruction")
 		cp := filepath.Join(containerDir, "instruction")
 
-		if err := fs.WriteFile(hp, []byte(sb.String()), 0644); err == nil {
+		if err := fs.WriteFile(hp, []byte(sb.String()), 0o644); err == nil {
 			out.CombinedPath = cp
 		}
 	}
@@ -644,7 +700,7 @@ func (l *Lease) save(fp string, meta *leaseMeta) {
 		return
 	}
 
-	err = fs.AtomicWriteFile(fp, b, 0644)
+	err = fs.AtomicWriteFile(fp, b, 0o644)
 	if err != nil {
 		l.log.Warn("cannot save lease meta file", slog.Any("error", err))
 	}
@@ -684,7 +740,13 @@ func (l *Lease) runAuthProxy(route *ProxyRoute) error {
 		Handler:           proxy,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	l.authProxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
 	l.authProxyServer = srv
+	if l.onAuthProxyStarted != nil {
+		l.onAuthProxyStarted(l.authProxyAddr)
+	}
 
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
@@ -692,8 +754,6 @@ func (l *Lease) runAuthProxy(route *ProxyRoute) error {
 		}
 	}()
 
-	port := ln.Addr().(*net.TCPAddr).Port
-	l.authProxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
 	log.Info("auth proxy started", "addr", l.authProxyAddr, "target", target.Host)
 
 	return nil
@@ -728,7 +788,6 @@ func (l *Lease) runProxy(ctx context.Context, mcps []string) error {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	l.proxyServer = srv
 
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
@@ -738,6 +797,11 @@ func (l *Lease) runProxy(ctx context.Context, mcps []string) error {
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	l.proxyAddr = net.JoinHostPort(DefaultHostAlias, strconv.Itoa(port))
+	l.proxyServer = srv
+	if l.onProxyStarted != nil {
+		l.onProxyStarted(l.proxyAddr)
+	}
+
 	log.Info("proxy started", "addr", l.authProxyAddr)
 
 	return err
@@ -761,6 +825,10 @@ func (l *Lease) stopAuthProxy() error {
 	l.log.Info("auth proxy stop", "addr", l.authProxyAddr)
 	srv := l.authProxyServer
 	l.authProxyServer = nil
+	if l.onAuthProxyStopped != nil {
+		l.onAuthProxyStopped(l.authProxyAddr)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)
@@ -774,6 +842,10 @@ func (l *Lease) stopProxy() error {
 	l.log.Info("proxy stop", "addr", l.proxyAddr)
 	srv := l.proxyServer
 	l.proxyServer = nil
+	if l.onProxyStopped != nil {
+		l.onProxyStopped(l.proxyAddr)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)

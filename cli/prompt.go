@@ -26,14 +26,16 @@ type promptInfo struct {
 func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 	var err error
 	var spec nestor.SandboxSpec
-	if v, err := collectSpec(api); err != nil || v == nil {
+	// TODO: add filteredName
+	if v, err := collectSpec(api, ""); err != nil || v == nil {
 		return &promptInfo{run: false}, err
 	} else {
 		spec = *v
 	}
 
 	var selectedPath string
-	if v, err := collectPath(spec); err != nil || v == nil {
+	// TODO: add filteredPath
+	if v, err := collectPath(spec, ""); err != nil || v == nil {
 		return &promptInfo{run: false}, err
 	} else {
 		selectedPath = *v
@@ -113,7 +115,11 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		_ = lease.Sandbox().Start(ctx)
 	}
 
-	selectedSessionID, title := selectSession(lease)
+	// TODO: filteredSession
+	selectedSessionID, title, err := selectSession(lease, "")
+	if err != nil {
+		return err
+	}
 
 	for {
 		select {

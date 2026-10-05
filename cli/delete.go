@@ -34,6 +34,10 @@ func Delete(api nestor.API, params DeleteArgs) error {
 			}
 			selected = v
 		}
+
+		if selected == nil {
+			return fmt.Errorf("%w: sandbox %q", nestor.ErrNotFound, params.SandboxName)
+		}
 	} else {
 		dt := fmt.Sprintf("Select sandbox (%d available)", len(sandboxes))
 		r, err := Select(sandboxes, dt, func(i int, s nestor.Sandbox) string {
@@ -59,12 +63,6 @@ func Delete(api nestor.API, params DeleteArgs) error {
 		if confirmed {
 			selected = r.Value
 		}
-	}
-
-	if selected == nil {
-		fmt.Println(pterm.Yellow("no sandbox to delete"))
-		fmt.Println(pterm.Green("done"))
-		return nil
 	}
 
 	if err = selected.Stop(ctx); err != nil {

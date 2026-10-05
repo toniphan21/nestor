@@ -21,7 +21,7 @@ var shortDesc = map[string]string{
 	"delete":  "Remove a single sandbox", // migrated
 	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
-	"launch":  "Start an interactive harness session in a sandbox",
+	"launch":  "Start an interactive harness session in a sandbox", // migrated
 	"prompt":  "Run a headless prompt in a sandbox (demo of library usage)",
 	"down":    "Stop all running sandboxes so the next run picks up config changes",
 	"release": "Release the lease held on a sandbox",
@@ -46,7 +46,7 @@ func main() {
 
 		command("destroy", destroy),
 		command("build", build),
-		commandWithAlias("launch", []string{"open", "start"}, launch),
+		launch(),
 		command("prompt", prompt),
 		command("down", down),
 		command("release", release),
@@ -194,14 +194,6 @@ func command(name string, fn func(nestor.API, *cli.Config, ...string) error) *co
 	})
 }
 
-func commandWithAlias(name string, aliases []string, fn func(nestor.API, *cli.Config, ...string) error) *cobra.Command {
-	return withDirFlag(&cobra.Command{
-		Use: name, Short: shortDesc[name],
-		Aliases: aliases,
-		RunE:    runWithAPI(fn),
-	})
-}
-
 func printVersion(cmd *cobra.Command, args []string) {
 	fmt.Println(nestor.Version)
 }
@@ -212,10 +204,6 @@ func destroy(api nestor.API, cf *cli.Config, args ...string) error {
 
 func build(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Build(api, args)
-}
-
-func launch(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.Launch(api, args)
 }
 
 func prompt(api nestor.API, cf *cli.Config, args ...string) error {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,16 +20,16 @@ type launchInfo struct {
 	run  bool
 }
 
-func collectLaunchInfo(api nestor.API, _ []string) (*launchInfo, error) {
+func collectLaunchInfo(api nestor.API, args LaunchArgs) (*launchInfo, error) {
 	var spec nestor.SandboxSpec
-	if v, err := collectSpec(api); err != nil || v == nil {
+	if v, err := collectSpec(api, args.SandboxSpec); err != nil || v == nil {
 		return &launchInfo{run: false}, err
 	} else {
 		spec = *v
 	}
 
 	var selectedPath string
-	if v, err := collectPath(spec); err != nil || v == nil {
+	if v, err := collectPath(spec, args.Path); err != nil || v == nil {
 		return &launchInfo{run: false}, err
 	} else {
 		selectedPath = *v
@@ -36,7 +37,13 @@ func collectLaunchInfo(api nestor.API, _ []string) (*launchInfo, error) {
 	return &launchInfo{spec: spec.Name, path: selectedPath, run: true}, nil
 }
 
-func Launch(api nestor.API, args []string) error {
+type LaunchArgs struct {
+	SandboxSpec string
+	Path        string
+	Session     string
+}
+
+func Launch(api nestor.API, args LaunchArgs) error {
 	info, err := collectLaunchInfo(api, args)
 	if err != nil {
 		return err
@@ -60,12 +67,6 @@ func Launch(api nestor.API, args []string) error {
 		_ = lease.Sandbox().Start(ctx)
 	}
 
-	selectedSessionID, title := selectSession(lease)
-
-	if err = lease.Extend(ctx); err != nil {
-		return fmt.Errorf("extend lease: %w", err)
-	}
-
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		t := time.NewTicker(time.Minute)
@@ -86,6 +87,7 @@ func Launch(api nestor.API, args []string) error {
 		}
 	})
 
+	var runningSessionID string
 	defer func() {
 		cancel()
 		wg.Wait()
@@ -93,22 +95,48 @@ func Launch(api nestor.API, args []string) error {
 		if rErr := lease.Release(context.WithoutCancel(ctx)); rErr != nil {
 			err = errors.Join(err, fmt.Errorf("release lease: %w", rErr))
 		} else if err == nil {
+			argv := []string{
+				"--spec=" + escapeCLIFlagValue(info.spec),
+				"--path=" + escapeCLIFlagValue(info.path),
+				"--session=" + escapeCLIFlagValue(runningSessionID),
+			}
+
+			cmd := "  nestor launch " + strings.Join(argv, " ")
+
+			fmt.Printf("\nTo resume this session:\n\n%s\n\n", pterm.Blue(cmd))
+
 			fmt.Println(pterm.Green("done"))
 		}
 	}()
 
+	selectedSessionID, title, err := selectSession(lease, args.Session)
+	if err != nil {
+		return err
+	}
+	if selectedSessionID != "" {
+		runningSessionID = selectedSessionID
+	}
+
+	if err = lease.Extend(ctx); err != nil {
+		return fmt.Errorf("extend lease: %w", err)
+	}
+
+	lease.OnAuthProxyStarted(func(addr string) { fmt.Printf("opened auth proxy %s\n", addr) })
+	lease.OnAuthProxyStopped(func(addr string) { fmt.Printf("closed auth proxy %s\n", addr) })
+	lease.OnProxyStarted(func(addr string) { fmt.Printf("opened proxy %s\n", addr) })
+	lease.OnProxyStopped(func(addr string) { fmt.Printf("closed proxy %s\n", addr) })
+
 	_, err = lease.Run(ctx, nestor.Interactive{
-		OnInit: func(authProxy string, proxy string) {
-			if authProxy != "" {
-				fmt.Printf("open auth proxy %s\n", authProxy)
-			}
-			if proxy != "" {
-				fmt.Printf("open proxy %s\n", proxy)
-			}
+		OnInit: func() {
 			fmt.Println("initializing")
 		},
 		OnSessionEstablished: func(sess string) {
-			fmt.Printf("start session %s\n", sess)
+			if sess == "" {
+				return
+			}
+
+			runningSessionID = sess
+			fmt.Printf("started session %s\n", sess)
 		},
 		SessionID: selectedSessionID,
 		Title:     title,
@@ -116,9 +144,20 @@ func Launch(api nestor.API, args []string) error {
 	return err
 }
 
-func selectSession(lease *nestor.Lease) (string, string) {
+func selectSession(lease *nestor.Lease, filteredSession string) (string, string, error) {
 	sessions := lease.ListSessions()
 	var selectedID, title string
+
+	if filteredSession != "" {
+		for _, v := range sessions {
+			if v.ID != filteredSession {
+				continue
+			}
+			return v.ID, v.Title, nil
+		}
+		return "", "", fmt.Errorf("%w: session %q", nestor.ErrNotFound, filteredSession)
+	}
+
 	if len(sessions) > 0 {
 		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
 			Title: "New session",
@@ -131,7 +170,7 @@ func selectSession(lease *nestor.Lease) (string, string) {
 			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
 		})
 		if err != nil {
-			return selectedID, title
+			return selectedID, title, nil
 		}
 
 		selectedID = r.Value.ID
@@ -141,9 +180,9 @@ func selectSession(lease *nestor.Lease) (string, string) {
 		t := "Session title (optional — leave blank for an auto-generated name)"
 		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
 		if err != nil {
-			return "", ""
+			return "", "", nil
 		}
 		title = v
 	}
-	return selectedID, title
+	return selectedID, title, nil
 }

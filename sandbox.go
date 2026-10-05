@@ -12,9 +12,11 @@ import (
 	"nhatp.com/go/nestor/infra/fs"
 )
 
-const DefaultStopContainerTimeout = 2 * time.Second
-const SandboxRunsTargetPath = "/sandbox/runs"
-const DefaultContainerHomeDir = "/home/agent"
+const (
+	DefaultStopContainerTimeout = 2 * time.Second
+	SandboxRunsTargetPath       = "/sandbox/runs"
+	DefaultContainerHomeDir     = "/home/agent"
+)
 
 type Sandbox interface {
 	ID() string
@@ -235,7 +237,7 @@ func (s *sandboxImpl) Mounts() []SandboxMount {
 
 func (s *sandboxImpl) Paths() []string {
 	var out []string
-	for h, _ := range s.data.Mounts {
+	for h := range s.data.Mounts {
 		out = append(out, h)
 	}
 	return out
@@ -329,7 +331,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		ReadOnly: true,
 	})
 
-	var env = map[string]string{
+	env := map[string]string{
 		"NESTOR_CONTAINER": container,
 		"NESTOR_IMAGE":     image,
 	}
