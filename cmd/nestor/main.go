@@ -4,14 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 	"nhatp.com/go/nestor"
-	"nhatp.com/go/nestor/cli"
-	"nhatp.com/go/nestor/infra/fs"
 )
 
 var shortDesc = map[string]string{
@@ -34,7 +30,8 @@ var shortDesc = map[string]string{
 
 func main() {
 	root := &cobra.Command{
-		Use: "nestor", Short: shortDesc["root"],
+		Use:   "nestor",
+		Short: shortDesc["root"],
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Usage()
 		},
@@ -42,6 +39,7 @@ func main() {
 
 	spec := newSpecCmd()
 	sandbox := newSandboxCmd()
+	setup := setupCmd()
 
 	root.AddCommand(
 		spec.root,
@@ -53,7 +51,7 @@ func main() {
 		sandbox.root,
 		sandbox.down,
 
-		cmdSetup(),
+		setup,
 
 		&cobra.Command{
 			Use:   "version",
@@ -109,20 +107,4 @@ func run(fn func(nestor.API, *cobra.Command, []string) error) func(*cobra.Comman
 func withGlobalFlags(cmd *cobra.Command) *cobra.Command {
 	cmd.Flags().BoolP("verbose", "v", false, "set log level to debug")
 	return cmd
-}
-
-func readConfig() *cli.Config {
-	var config *cli.Config
-	wd, err := os.Getwd()
-	if err != nil {
-		return cli.DefaultConfig("")
-	}
-
-	if c, err := fs.AtomicReadFile(filepath.Join(wd, ".nestor.yml")); err == nil {
-		_ = yaml.Unmarshal(c, &config)
-	}
-	if config == nil {
-		config = cli.DefaultConfig(wd)
-	}
-	return config
 }

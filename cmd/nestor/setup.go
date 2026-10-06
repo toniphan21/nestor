@@ -9,7 +9,6 @@ import (
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli"
 	"nhatp.com/go/nestor/infra/fs"
@@ -31,7 +30,6 @@ nestor is already set up at %s. Common tasks:
 3. Edit the sandbox — add paths, raise the instance count: edit ./.nestor/sandbox.yml
 4. Launch your coding agent: nestor launch
 5. Release a stuck lease: nestor release
-6. Destroy the sandboxes and start fresh: nestor destroy
 
 `
 
@@ -41,7 +39,7 @@ const (
 	profileOpencode    = "opencode"
 )
 
-func cmdSetup() *cobra.Command {
+func setupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: shortDesc["setup"],
@@ -50,11 +48,7 @@ func cmdSetup() *cobra.Command {
 	return cmd
 }
 
-func setup(cmd *cobra.Command, args []string) error {
-	return setupLocal(cmd, args)
-}
-
-func setupLocal(_ *cobra.Command, _ []string) error {
+func setup(_ *cobra.Command, _ []string) error {
 	colors := map[string]string{
 		"<nestor>":               pterm.Green("nestor"),
 		"<Claude Code>":          pterm.Red("Claude Code"),
@@ -68,7 +62,6 @@ func setupLocal(_ *cobra.Command, _ []string) error {
 	}
 	fmt.Println(msg)
 
-	var accept bool
 	wd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -79,27 +72,16 @@ func setupLocal(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
-	config := readConfig()
-	if fs.HasDir(config.Dir) {
-		fmt.Printf(alreadySetUp, filepath.Join(wd, config.Dir))
-		return nil
-	}
-
-	text := fmt.Sprintf(
-		"Setting up nestor in the current directory: %s. Continue?",
-		wd,
-	)
-
-	accept, err = pterm.DefaultInteractiveConfirm.WithDefaultText(text).WithDefaultValue(true).Show()
+	platform, err := nestor.DefaultPlatform()
 	if err != nil {
-		return err
-	}
-
-	if !accept {
 		return nil
 	}
 
-	dir := filepath.Join(wd, ".nestor")
+	if fs.HasDir(platform.ConfigDir()) {
+		fmt.Printf(alreadySetUp, platform.ConfigDir())
+		return nil
+	}
+
 	maxInstances := 1
 	useWT := false
 	if fs.HasDir(filepath.Join(wd, ".git")) {
@@ -162,14 +144,6 @@ func setupLocal(_ *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println()
-	for _, v := range []string{"config", "data", "state"} {
-		if err = fs.MkdirAll(filepath.Join(dir, v)); err != nil {
-			return nil
-		}
-	}
-
-	fmt.Printf("created %s directory\n", dir)
-
 	specs := scf.ToSandboxSpecs(h.Value)
 
 	var b []byte
@@ -178,51 +152,30 @@ func setupLocal(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	options := []nestor.Option{
-		nestor.WithConfigDir(filepath.Join(dir, "config")),
-		nestor.WithDataDir(filepath.Join(dir, "data")),
-		nestor.WithStateDir(filepath.Join(dir, "state")),
+	api, err := nestor.New(nestor.WithPlatform(platform))
+	if err != nil {
+		return err
 	}
 
-	cfDir := filepath.Join(dir, "config", "sandbox.yml")
-	if err = fs.WriteFile(cfDir, b, 0o644); err != nil {
+	cfDir := platform.SandboxYmlFile()
+	if err = fs.AtomicWriteFile(cfDir, b, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("saved %s\n", cfDir)
 
-	config = cli.DefaultConfig(wd)
-	switch h.Value {
-	case profileClaudeOAuth:
-		config.Hidden.Profiles = []string{profileClaudeAPI, profileOpencode}
-		config.Hidden.Harnesses = []string{string(nestor.HarnessOpenCode)}
-	case profileClaudeAPI:
-		config.Hidden.Profiles = []string{profileClaudeOAuth, profileOpencode}
-		config.Hidden.Harnesses = []string{string(nestor.HarnessOpenCode)}
-	case profileOpencode:
-		config.Hidden.Profiles = []string{profileClaudeOAuth, profileClaudeAPI}
-		config.Hidden.Harnesses = []string{string(nestor.HarnessClaudeCode)}
-	}
-	b, err = yaml.Marshal(config)
-	if err = fs.WriteFile(filepath.Join(wd, ".nestor.yml"), b, 0o644); err != nil {
-		return err
-	}
-	fmt.Printf("saved %s\n", filepath.Join(wd, ".nestor.yml"))
-
-	if _, err = nestor.New(options...); err != nil {
+	if _, err = nestor.New(); err != nil {
 		return err
 	}
 	fmt.Println("initialized nestor")
 	fmt.Println()
 
-	profileYmlPath := filepath.Join(dir, "profile.yml")
+	profileYmlPath := api.Runtime().Platform.ProfileYmlFile()
 	fmt.Printf("Setup complete. %s\n", pterm.Yellow("Next: add your API key or OAuth token to "+profileYmlPath))
 	fmt.Println()
 
 	fmt.Printf("After that, start your coding agent in a sandbox with: %s\n", pterm.Cyan("nestor launch"))
 	fmt.Println()
-	fmt.Println(pterm.White("Add .nestor/ and .nestor.yml to your .gitignore; they hold local config and secrets, and don't belong in the repo."))
-	fmt.Println()
-	fmt.Println("For persistent sessions, consider " + pterm.Blue("tmux") + " or " + pterm.Blue("shpool") + ".")
+	fmt.Println("For persistent sessions, consider " + pterm.Blue("herdr") + ".")
 	fmt.Println()
 	return nil
 }
