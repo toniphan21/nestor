@@ -18,15 +18,20 @@ import (
 var shortDesc = map[string]string{
 	"root":    "Run coding agents in sandboxed containers",
 	"setup":   "Initialize the nestor directory",
-	"delete":  "Remove a single sandbox", // migrated
 	"destroy": "Remove all sandboxes, images",
 	"build":   "Build a sandbox image from a spec",
-	"launch":  "Start an interactive harness session in a sandbox", // migrated
 	"prompt":  "Run a headless prompt in a sandbox (demo of library usage)",
-	"down":    "Stop running sandboxes (all if none given)", // migrated
-	"release": "Release the lease held on a sandbox",
-	"rename":  "Give a sandbox a memorable name", // migrated
-	"view":    "Show the current nestor state",
+
+	"launch": "Start an interactive harness session in a sandbox", // migrated
+
+	"spec":         "Manage sandbox specs",
+	"spec-down":    "Stop running sandboxes (all if none given)", // migrated
+	"spec-release": "Release the lease held on a sandbox",        // migrated
+
+	"sandbox":        "Manage sandboxes",
+	"sandbox-rename": "Give a sandbox a memorable name", // migrated
+	"sandbox-delete": "Remove a single sandbox",         // migrated
+
 	"version": "Print the nestor version",
 }
 
@@ -38,20 +43,24 @@ func main() {
 		},
 	}
 
+	spec := newSpecCmd()
+	sandbox := newSandboxCmd()
+	launch := newLaunchCmd()
+
 	root.AddCommand(
 		&cobra.Command{Use: "version", Short: shortDesc["version"], Run: printVersion},
+		spec.root,
+		spec.down,
+		spec.release,
+
+		sandbox.root,
 
 		cmdSetup(),
-		delete(),
 
 		command("destroy", destroy),
 		command("build", build),
-		launch(),
+		launch,
 		command("prompt", prompt),
-		down(),
-		command("release", release),
-		rename(),
-		command("view", view),
 	)
 
 	if err := withDirFlag(root).Execute(); err != nil {
@@ -208,14 +217,6 @@ func build(api nestor.API, cf *cli.Config, args ...string) error {
 
 func prompt(api nestor.API, cf *cli.Config, args ...string) error {
 	return cli.Prompt(api, args)
-}
-
-func release(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.Release(api, args)
-}
-
-func view(api nestor.API, cf *cli.Config, args ...string) error {
-	return cli.View(api, cf)
 }
 
 func localDirOptions(dir string) []nestor.Option {

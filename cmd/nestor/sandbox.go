@@ -1,0 +1,69 @@
+package main
+
+import (
+	"strings"
+
+	"github.com/spf13/cobra"
+	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
+)
+
+type sandboxCmd struct {
+	root   *cobra.Command
+	rename *cobra.Command
+	delete *cobra.Command
+}
+
+func newSandboxCmd() *sandboxCmd {
+	root := &cobra.Command{
+		Use:   "sandbox",
+		Short: shortDesc["sandbox"],
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+
+	delete := &cobra.Command{
+		Use:   "delete",
+		Short: shortDesc["sandbox-delete"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			name, err := cmd.Flags().GetString("sandbox")
+			if err != nil {
+				return err
+			}
+			return cli.Delete(api, cli.DeleteArgs{Sandbox: strings.TrimSpace(name)})
+		}),
+	}
+	delete.Flags().StringP("sandbox", "s", "", "name of the sandbox to delete")
+
+	rename := &cobra.Command{
+		Use:   "rename",
+		Short: shortDesc["sandbox-rename"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			sandbox, err := cmd.Flags().GetString("sandbox")
+			if err != nil {
+				return err
+			}
+
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+
+			return cli.Rename(api, cli.RenameArgs{
+				Sandbox: strings.TrimSpace(sandbox),
+				NewName: name,
+			})
+		}),
+	}
+	rename.Flags().StringP("sandbox", "s", "", "name of the sandbox to rename")
+	rename.Flags().StringP("name", "n", "", "new name of the sandbox")
+
+	root.AddCommand(delete, rename)
+
+	return &sandboxCmd{
+		root:   root,
+		delete: withGlobalFlags(delete),
+		rename: withGlobalFlags(rename),
+	}
+}

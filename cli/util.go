@@ -12,7 +12,7 @@ import (
 func collectSpec(api nestor.API, filteredName string) (*nestor.SandboxSpec, error) {
 	allSpecs := api.Runtime().Registry.SandboxSpecs()
 	if len(allSpecs) == 0 {
-		fmt.Println(pterm.Yellow("no sandbox specs to prompt"))
+		fmt.Println(pterm.Yellow("no sandbox specs"))
 		return nil, nil
 	}
 
