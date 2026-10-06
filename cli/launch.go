@@ -23,14 +23,14 @@ type launchInfo struct {
 func collectLaunchInfo(api nestor.API, args LaunchArgs) (*launchInfo, error) {
 	var spec nestor.SandboxSpec
 	if v, err := collectSpec(api, args.SandboxSpec); err != nil || v == nil {
-		return &launchInfo{run: false}, err
+		return nil, err
 	} else {
 		spec = *v
 	}
 
 	var selectedPath string
 	if v, err := collectPath(spec, args.Path); err != nil || v == nil {
-		return &launchInfo{run: false}, err
+		return nil, err
 	} else {
 		selectedPath = *v
 	}

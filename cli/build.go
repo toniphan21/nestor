@@ -8,7 +8,11 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-func Build(api nestor.API, specs []string) error {
+type BuildArgs struct {
+	SandboxSpecs []string
+}
+
+func Build(api nestor.API, args BuildArgs) error {
 	allSpecs := api.Runtime().Registry.SandboxSpecs()
 
 	runs := make(map[string]bool)
@@ -17,8 +21,8 @@ func Build(api nestor.API, specs []string) error {
 		exists[v.Name] = true
 	}
 
-	if len(specs) > 0 {
-		for _, v := range specs {
+	if len(args.SandboxSpecs) > 0 {
+		for _, v := range args.SandboxSpecs {
 			if !exists[v] {
 				continue
 			}

@@ -6,12 +6,14 @@ import (
 	"github.com/spf13/cobra"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli"
+	"nhatp.com/go/nestor/internal/nx"
 )
 
 type sandboxCmd struct {
 	root   *cobra.Command
-	rename *cobra.Command
 	delete *cobra.Command
+	down   *cobra.Command
+	rename *cobra.Command
 }
 
 func newSandboxCmd() *sandboxCmd {
@@ -36,6 +38,15 @@ func newSandboxCmd() *sandboxCmd {
 	}
 	delete.Flags().StringP("sandbox", "s", "", "name of the sandbox to delete")
 
+	down := &cobra.Command{
+		Use:   "down",
+		Short: shortDesc["sandbox-down"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			names := nx.Dedup(argv)
+			return cli.Down(api, cli.DownArgs{Sandboxes: names})
+		}),
+	}
+
 	rename := &cobra.Command{
 		Use:   "rename",
 		Short: shortDesc["sandbox-rename"],
@@ -59,11 +70,12 @@ func newSandboxCmd() *sandboxCmd {
 	rename.Flags().StringP("sandbox", "s", "", "name of the sandbox to rename")
 	rename.Flags().StringP("name", "n", "", "new name of the sandbox")
 
-	root.AddCommand(delete, rename)
+	root.AddCommand(delete, down, rename)
 
 	return &sandboxCmd{
 		root:   root,
 		delete: withGlobalFlags(delete),
+		down:   withGlobalFlags(down),
 		rename: withGlobalFlags(rename),
 	}
 }

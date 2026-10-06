@@ -23,27 +23,24 @@ type promptInfo struct {
 	run   bool
 }
 
-func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
-	var err error
+func collectPromptInfo(api nestor.API, args PromptArgs) (*promptInfo, error) {
 	var spec nestor.SandboxSpec
-	// TODO: add filteredName
-	if v, err := collectSpec(api, ""); err != nil || v == nil {
-		return &promptInfo{run: false}, err
+	if v, err := collectSpec(api, args.SandboxSpec); err != nil || v == nil {
+		return nil, err
 	} else {
 		spec = *v
 	}
 
 	var selectedPath string
-	// TODO: add filteredPath
-	if v, err := collectPath(spec, ""); err != nil || v == nil {
-		return &promptInfo{run: false}, err
+	if v, err := collectPath(spec, args.Path); err != nil || v == nil {
+		return nil, err
 	} else {
 		selectedPath = *v
 	}
 
 	profile, have := api.Runtime().Registry.Profile(spec.Profile)
 	if !have {
-		return &promptInfo{run: false}, err
+		return &promptInfo{run: false}, nil
 	}
 
 	models := profile.SupportedModelsWithoutDefault()
@@ -53,20 +50,41 @@ func collectPromptInfo(api nestor.API, args []string) (*promptInfo, error) {
 		fmt.Printf("use model %s\n", pterm.Cyan(selectedModel))
 	} else {
 		models = slices.Insert(models, 0, profile.DefaultModel)
-		dt := fmt.Sprintf("Select model (%d available)", len(models))
-		r, err := Select(models, dt, func(i int, s string) string {
-			return fmt.Sprintf("%d. %s", i+1, s)
-		})
-		if err != nil {
-			return nil, err
+
+		if args.Model != "" {
+			for _, v := range models {
+				if v != args.Model {
+					continue
+				}
+				selectedModel = v
+			}
+
+			if selectedModel == "" {
+				return nil, fmt.Errorf("%w: model %q", nestor.ErrNotFound, args.Model)
+			}
+		} else {
+			dt := fmt.Sprintf("Select model (%d available)", len(models))
+			r, err := Select(models, dt, func(i int, s string) string {
+				return fmt.Sprintf("%d. %s", i+1, s)
+			})
+			if err != nil {
+				return nil, err
+			}
+			selectedModel = r.Value
 		}
-		selectedModel = r.Value
 	}
 
 	return &promptInfo{spec: spec.Name, path: selectedPath, model: selectedModel, run: true}, nil
 }
 
-func Prompt(api nestor.API, args []string) error {
+type PromptArgs struct {
+	SandboxSpec string
+	Path        string
+	Model       string
+	Session     string
+}
+
+func Prompt(api nestor.API, args PromptArgs) error {
 	fmt.Printf("\n%s %s\n\n", pterm.Yellow("Note: nestor prompt is only a demo of a headless call. Headless mode isn't practical from a standalone binary — the real use is"), pterm.Blue("nestor launch"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -77,14 +95,15 @@ func Prompt(api nestor.API, args []string) error {
 		return err
 	}
 	if !info.run {
+		fmt.Println(pterm.Yellow("nothing to prompt"))
 		fmt.Println(pterm.Green("done"))
 		return nil
 	}
 
-	return DoPrompt(ctx, api, info.spec, info.path, info.model)
-}
+	spec := info.spec
+	path := info.path
+	model := info.model
 
-func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) error {
 	lease, err := api.Acquire(ctx, spec, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
@@ -115,8 +134,7 @@ func DoPrompt(ctx context.Context, api nestor.API, spec, path, model string) err
 		_ = lease.Sandbox().Start(ctx)
 	}
 
-	// TODO: filteredSession
-	selectedSessionID, title, err := selectSession(lease, "")
+	selectedSessionID, title, err := selectSession(lease, args.Session)
 	if err != nil {
 		return err
 	}
