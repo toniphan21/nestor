@@ -19,7 +19,7 @@ func delete() *cobra.Command {
 			}
 
 			return cli.Delete(api, cli.DeleteArgs{
-				SandboxName: strings.TrimSpace(name),
+				Sandbox: strings.TrimSpace(name),
 			})
 		}),
 	}

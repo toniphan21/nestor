@@ -9,10 +9,10 @@ import (
 )
 
 type DeleteArgs struct {
-	SandboxName string
+	Sandbox string
 }
 
-func Delete(api nestor.API, params DeleteArgs) error {
+func Delete(api nestor.API, args DeleteArgs) error {
 	ctx := context.Background()
 
 	sandboxes, err := api.ListSandboxes(ctx)
@@ -27,16 +27,17 @@ func Delete(api nestor.API, params DeleteArgs) error {
 
 	var selected nestor.Sandbox
 
-	if params.SandboxName != "" {
+	if args.Sandbox != "" {
 		for _, v := range sandboxes {
-			if v.ID() != params.SandboxName {
+			if v.ID() != args.Sandbox {
 				continue
 			}
 			selected = v
+			break
 		}
 
 		if selected == nil {
-			return fmt.Errorf("%w: sandbox %q", nestor.ErrNotFound, params.SandboxName)
+			return fmt.Errorf("%w: sandbox %q", nestor.ErrNotFound, args.Sandbox)
 		}
 	} else {
 		dt := fmt.Sprintf("Select sandbox (%d available)", len(sandboxes))

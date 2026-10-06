@@ -77,8 +77,12 @@ func Stop(ctx context.Context, container string, timeout time.Duration, logger *
 	log.Info("docker stop", slog.String("container", container))
 	if err := cmd.Run(); err != nil {
 		msg := stderr.String()
-		if strings.Contains(msg, "No such container") {
+		cerr := classifyError(msg)
+		switch {
+		case errors.Is(cerr, ErrContainerNotFound):
 			return nil // already gone
+		case errors.Is(cerr, ErrDaemonUnreachable):
+			return nil // unreachable - nothing to stop
 		}
 
 		log.Error("docker stop", slog.Any("error", err))
@@ -139,7 +143,7 @@ func Run(ctx context.Context, image, name string, opt RunOption, logger *slog.Lo
 	}
 	if opt.Env != nil {
 		loggedOpt.Env = make(map[string]string)
-		for k, _ := range opt.Env {
+		for k := range opt.Env {
 			loggedOpt.Env[k] = "redacted"
 		}
 	}
