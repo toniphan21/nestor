@@ -8,6 +8,7 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cmd/nestor/tui"
 )
 
 var shortDesc = map[string]string{
@@ -32,9 +33,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "nestor",
 		Short: shortDesc["root"],
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Usage()
-		},
+		Run:   func(cmd *cobra.Command, args []string) { tui.Run() },
 	}
 
 	spec := newSpecCmd()
