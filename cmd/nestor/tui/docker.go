@@ -2,10 +2,12 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 )
 
@@ -25,32 +27,22 @@ type dockerImage struct {
 }
 
 type dockerContainer struct {
-	name      string
-	id        string
-	isRunning bool
+	name        string
+	containerID string
+	isRunning   bool
 }
 
 type dockerPage struct {
-	busy    bool
-	focused bool
-	gen     int
-	api     nestor.API
-	images  []dockerImage
+	*basePage
+
+	index  int
+	api    nestor.API
+	images []dockerImage
 }
 
 func (p *dockerPage) Focus() tea.Cmd {
-	p.focused = true
-	p.gen++
+	p.basePage.Focus()
 	return p.fetch()
-}
-
-func (p *dockerPage) Blur() {
-	p.focused = false
-	p.gen++
-}
-
-func (p *dockerPage) Busy() bool {
-	return p.busy
 }
 
 func (p dockerPage) fetch() tea.Cmd {
@@ -60,23 +52,49 @@ func (p dockerPage) fetch() tea.Cmd {
 		specs := p.api.Runtime().Registry.SandboxSpecs()
 		runtime := p.api.Runtime()
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
 		for _, spec := range specs {
-			h, p, err := spec.FindHarnessAndProfile(runtime)
+			h, profile, err := spec.FindHarnessAndProfile(runtime)
 			if err != nil {
-				return err
+				continue
 			}
 
 			img := spec.DockerImageName(runtime.Template)
-			images = append(images, dockerImage{
+
+			image := dockerImage{
 				spec:       spec.Name,
 				image:      img,
-				dockerfile: p.Dockerfile(h, runtime),
+				dockerfile: profile.Dockerfile(h, runtime),
 				imageID:    runtime.Docker().ImageID(ctx, img),
+			}
+
+			sandboxes, err := p.api.ListSandboxes(ctx, spec.Name)
+			if err != nil {
+				images = append(images, image)
+				continue
+			}
+
+			for _, v := range sandboxes {
+				name := v.Container()
+				ctn := dockerContainer{
+					name:        name,
+					containerID: runtime.Docker().ContainerID(ctx, name),
+					isRunning:   v.IsRunning(ctx),
+				}
+				image.containers = append(image.containers, ctn)
+			}
+
+			slices.SortFunc(image.containers, func(a, b dockerContainer) int {
+				return strings.Compare(a.name, b.name)
 			})
+			images = append(images, image)
 		}
+
+		slices.SortFunc(images, func(a, b dockerImage) int {
+			return strings.Compare(a.image, b.image)
+		})
 		return dockerDataMsg{gen: gen, images: images}
 	}
 }
@@ -86,6 +104,14 @@ func (p dockerPage) tick() tea.Cmd {
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
 		return dockerTickMsg{gen: gen}
 	})
+}
+
+func (p dockerPage) rowCount() int {
+	var count int
+	for _, v := range p.images {
+		count += 1 + len(v.containers)
+	}
+	return count
 }
 
 func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
@@ -101,8 +127,26 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 		}
 		p.images = msg.images
+		if p.index >= p.rowCount() {
+			p.index = 0
+		}
 
 		return p, p.tick()
+
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "j":
+			if p.index < p.rowCount()-1 { // there is a header so just len is enough
+				p.index = p.index + 1
+			}
+			return p, nil
+
+		case "k":
+			if p.index > 0 {
+				p.index = p.index - 1
+			}
+			return p, nil
+		}
 	}
 	return p, nil
 }
@@ -120,8 +164,9 @@ func (p *dockerPage) View() string {
 
 	var nameW, idW, extraW int
 	rows := []dockerRow{
-		{name: "NAME", id: "ID", extra: "EXTRA"},
+		{name: " NAME", id: "ID", extra: "EXTRA"},
 	}
+
 	for _, v := range p.images {
 		rows = append(rows, p.buildRows(v)...)
 	}
@@ -133,13 +178,19 @@ func (p *dockerPage) View() string {
 	}
 
 	var out []string
-	for _, v := range rows {
+	for i, v := range rows {
 		cols := []string{
 			v.name, pad(nameW - widthOf(v.name)),
 			v.id, pad(idW - widthOf(v.id)),
 			v.extra, pad(extraW - widthOf(v.extra)),
 		}
-		out = append(out, strings.Join(cols, " "))
+
+		if p.index == i-1 {
+			sel := pterm.NewStyle(pterm.BgGray)
+			out = append(out, pad(2)+sel.Sprint(strings.Join(cols, " "))+pad(2))
+		} else {
+			out = append(out, pad(2)+strings.Join(cols, " ")+pad(2))
+		}
 	}
 	return strings.Join(out, "\n")
 }
@@ -147,11 +198,31 @@ func (p *dockerPage) View() string {
 func (p *dockerPage) buildRows(v dockerImage) []dockerRow {
 	rows := []dockerRow{
 		{
-			name:  v.image,
+			name:  " " + v.image,
 			id:    p.shortID(v.imageID),
 			extra: v.dockerfile,
 		},
 	}
+
+	for i, vv := range v.containers {
+		row := dockerRow{
+			id: p.shortID(vv.containerID),
+		}
+
+		if i == len(v.containers)-1 {
+			row.name = pterm.Gray(" └─ ") + vv.name
+		} else {
+			row.name = pterm.Gray(" ├─ ") + vv.name
+		}
+
+		if vv.isRunning {
+			row.extra = pterm.Green("running")
+		} else {
+			row.extra = pterm.Gray("stopped")
+		}
+		rows = append(rows, row)
+	}
+
 	return rows
 }
 

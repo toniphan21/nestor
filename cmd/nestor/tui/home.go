@@ -16,25 +16,15 @@ type homeDataMsg struct {
 }
 
 type homePage struct {
-	busy    bool
-	focused bool
-	gen     int
-	count   int
+	*basePage
+
+	count int
 }
 
 func (p *homePage) Focus() tea.Cmd {
-	p.focused = true
-	p.gen++
+	p.basePage.Focus()
+
 	return p.fetch()
-}
-
-func (p *homePage) Blur() {
-	p.focused = false
-	p.gen++
-}
-
-func (p *homePage) Busy() bool {
-	return p.busy
 }
 
 func (p homePage) fetch() tea.Cmd {

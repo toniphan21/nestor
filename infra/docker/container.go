@@ -43,6 +43,45 @@ func IsRunning(ctx context.Context, container string, logger *slog.Logger) bool 
 	return result
 }
 
+type ContainerInfo struct {
+	ID      string
+	ImageID string
+	Running bool
+	Exists  bool
+}
+
+func InspectContainer(ctx context.Context, name string, logger *slog.Logger) ContainerInfo {
+	args := []string{"container", "inspect", "--format", "{{.Id}} {{.Image}} {{.State.Running}}", "--", name}
+	cmd := exec.CommandContext(ctx, "docker", args...)
+
+	log := logger.WithGroup("docker").With(slog.Any("args", args))
+	log.Info("docker container inspect")
+
+	out, err := cmd.Output()
+	if err != nil {
+		log.Debug("docker container inspect return", slog.Bool("exists", false))
+		return ContainerInfo{}
+	}
+
+	fields := strings.Fields(string(out))
+	if len(fields) != 3 {
+		log.Debug("docker container inspect unexpected output", slog.String("out", string(out)))
+		return ContainerInfo{}
+	}
+
+	info := ContainerInfo{
+		ID:      fields[0],
+		ImageID: fields[1],
+		Running: fields[2] == "true",
+		Exists:  true,
+	}
+	log.Debug("docker container inspect return",
+		slog.String("id", info.ID),
+		slog.Bool("running", info.Running),
+	)
+	return info
+}
+
 func Kill(ctx context.Context, container string, logger *slog.Logger) error {
 	args := []string{"kill", container}
 	cmd := exec.CommandContext(ctx, "docker", args...)

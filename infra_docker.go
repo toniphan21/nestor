@@ -50,6 +50,8 @@ type Docker interface {
 
 	IsRunning(ctx context.Context, container string) bool
 
+	ContainerID(ctx context.Context, container string) string
+
 	Kill(ctx context.Context, container string) error
 
 	Stop(ctx context.Context, container string, timeout time.Duration) error
@@ -91,7 +93,13 @@ func (d *dockerCLI) ImageID(ctx context.Context, ref string) string {
 }
 
 func (d *dockerCLI) IsRunning(ctx context.Context, container string) bool {
-	return docker.IsRunning(ctx, container, d.log)
+	info := docker.InspectContainer(ctx, container, d.log)
+	return info.Running
+}
+
+func (d *dockerCLI) ContainerID(ctx context.Context, container string) string {
+	info := docker.InspectContainer(ctx, container, d.log)
+	return info.ID
 }
 
 func (d *dockerCLI) Kill(ctx context.Context, container string) error {

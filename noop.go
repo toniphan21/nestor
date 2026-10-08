@@ -83,6 +83,11 @@ func (n *noopDocker) IsRunning(ctx context.Context, container string) bool {
 	return false
 }
 
+func (n *noopDocker) ContainerID(ctx context.Context, container string) string {
+	n.log.Debug("ContainerID", slog.String("container", container))
+	return ""
+}
+
 func (n *noopDocker) Kill(ctx context.Context, container string) error {
 	n.log.Debug("Kill", slog.String("container", container))
 	return nil

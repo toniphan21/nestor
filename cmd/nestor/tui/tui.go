@@ -23,6 +23,7 @@ type page interface {
 	Busy() bool
 	Focus() tea.Cmd
 	Blur()
+	SetSize(w, h int)
 	Update(tea.Msg) (page, tea.Cmd)
 	View() string
 }
@@ -36,7 +37,12 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		t.width, t.height = msg.Width, msg.Height
 		t.header.SetWidth(t.width)
-		t.body.SetSize(t.width, t.height-t.header.Height())
+
+		hh := t.header.Height()
+		t.body.SetSize(t.width, t.height-hh)
+		for _, v := range t.pages {
+			v.SetSize(t.width, t.height-hh)
+		}
 		return t, nil
 
 	case tea.MouseWheelMsg:
@@ -131,8 +137,8 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 func Run(api nestor.API) error {
 	t := &TUI{
 		pages: map[tabID]page{
-			tabHome:   &homePage{},
-			tabDocker: &dockerPage{api: api},
+			tabHome:   &homePage{basePage: &basePage{}},
+			tabDocker: &dockerPage{basePage: &basePage{}, api: api},
 		},
 	}
 	t.initCmd = t.pages[t.header.ActiveTab()].Focus()
