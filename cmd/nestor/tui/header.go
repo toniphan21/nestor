@@ -65,7 +65,7 @@ func (h header) View() string {
 
 	left := " " + strings.Join(tabs, " ")
 	right := strings.Join(helpText, "")
-	gap := max(h.width-lipgloss.Width(left)-lipgloss.Width(right), 0)
+	gap := max(h.width-widthOf(left)-widthOf(right), 0)
 
 	return left + strings.Repeat(" ", gap) + right + "\n" + strings.Repeat(" ", h.width)
 }

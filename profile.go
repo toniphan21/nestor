@@ -8,11 +8,15 @@ import (
 
 type auth string
 
-const AuthCredentials = auth("credentials")
-const AuthAPIKey = auth("api_key")
+const (
+	AuthCredentials = auth("credentials")
+	AuthAPIKey      = auth("api_key")
+)
 
-const ProfileOptionDockerfile = "dockerfile"
-const ProfileOptionContainerHomeDir = "container-home-dir"
+const (
+	ProfileOptionDockerfile       = "dockerfile"
+	ProfileOptionContainerHomeDir = "container-home-dir"
+)
 
 type Profile struct {
 	Name          string              `yaml:"-"`
@@ -64,7 +68,7 @@ func (p *Profile) Model(alias string) string {
 	return v
 }
 
-func (p *Profile) dockerfile(h Harness, r Runtime) string {
+func (p *Profile) Dockerfile(h Harness, r Runtime) string {
 	v, ok := p.Options[ProfileOptionDockerfile]
 	if !ok {
 		return h.DefaultDockerfile(r)

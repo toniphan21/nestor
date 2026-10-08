@@ -33,7 +33,9 @@ func main() {
 	root := &cobra.Command{
 		Use:   "nestor",
 		Short: shortDesc["root"],
-		Run:   func(cmd *cobra.Command, args []string) { tui.Run() },
+		RunE: run(func(api nestor.API, cmd *cobra.Command, args []string) error {
+			return tui.Run(api)
+		}),
 	}
 
 	spec := newSpecCmd()

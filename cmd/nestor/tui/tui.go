@@ -2,19 +2,16 @@
 package tui
 
 import (
-	"fmt"
-	"os"
-
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"nhatp.com/go/nestor"
 )
 
 type TUI struct {
-	home  homePage
-	pages map[tabID]page
-
 	header header
 	body   body
+
+	pages map[tabID]page
 
 	width  int
 	height int
@@ -131,17 +128,17 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 	return cmd
 }
 
-func Run() {
+func Run(api nestor.API) error {
 	t := &TUI{
 		pages: map[tabID]page{
 			tabHome:   &homePage{},
-			tabDocker: &dockerPage{},
+			tabDocker: &dockerPage{api: api},
 		},
 	}
 	t.initCmd = t.pages[t.header.ActiveTab()].Focus()
 
 	if _, err := tea.NewProgram(t).Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

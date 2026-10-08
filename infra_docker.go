@@ -46,6 +46,8 @@ type Docker interface {
 
 	HasImage(ctx context.Context, ref string) bool
 
+	ImageID(ctx context.Context, ref string) string
+
 	IsRunning(ctx context.Context, container string) bool
 
 	Kill(ctx context.Context, container string) error
@@ -79,7 +81,13 @@ func (d *dockerCLI) Build(ctx context.Context, path string, opt DockerBuildOptio
 }
 
 func (d *dockerCLI) HasImage(ctx context.Context, ref string) bool {
-	return docker.HasImage(ctx, ref, d.log)
+	info := docker.InspectImage(ctx, ref, d.log)
+	return info.Exists
+}
+
+func (d *dockerCLI) ImageID(ctx context.Context, ref string) string {
+	info := docker.InspectImage(ctx, ref, d.log)
+	return info.ID
 }
 
 func (d *dockerCLI) IsRunning(ctx context.Context, container string) bool {

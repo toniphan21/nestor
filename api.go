@@ -360,17 +360,17 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 			continue
 		}
 
-		h, p, err := spec.findHarnessAndProfile(runtime)
+		h, p, err := spec.FindHarnessAndProfile(runtime)
 		if err != nil {
 			return err
 		}
 
-		dockerfile := p.dockerfile(h, runtime)
+		dockerfile := p.Dockerfile(h, runtime)
 		buildPath := filepath.Dir(dockerfile)
 		options := DockerBuildOption{
 			Dockerfile: dockerfile,
 			Target:     spec.Target,
-			Tag:        a.template.MakeSandboxTag(spec.Name),
+			Tag:        spec.DockerImageName(a.template),
 		}
 
 		if _, err = a.docker.Build(ctx, buildPath, options); err != nil {
@@ -488,7 +488,7 @@ func (a *api) Acquire(ctx context.Context, spec string, path string) (*Lease, er
 		return nil, err
 	}
 
-	if !a.docker.HasImage(ctx, a.template.MakeSandboxTag(ss.Name)) {
+	if !a.docker.HasImage(ctx, ss.DockerImageName(a.template)) {
 		a.logDebug("no image, build fresh one")
 		if err := a.Build(ctx, spec); err != nil {
 			return nil, err

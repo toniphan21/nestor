@@ -66,7 +66,7 @@ type SandboxMount struct {
 }
 
 func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*sandboxImpl, error) {
-	h, p, err := spec.findHarnessAndProfile(runtime)
+	h, p, err := spec.FindHarnessAndProfile(runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (s *sandboxImpl) StateDir(elem ...string) string {
 }
 
 func (s *sandboxImpl) Tag() string {
-	return s.runtime.Template.MakeSandboxTag(s.spec.Name)
+	return s.spec.DockerImageName(s.runtime.Template)
 }
 
 func (s *sandboxImpl) Spec() SandboxSpec {
@@ -292,7 +292,7 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		return err
 	}
 
-	image := s.runtime.Template.MakeSandboxTag(s.spec.Name)
+	image := s.spec.DockerImageName(s.runtime.Template)
 	container := s.runtime.Template.MakeSandboxContainer(s.ID())
 	options := DockerRunOption{
 		HostAlias: DefaultHostAlias,

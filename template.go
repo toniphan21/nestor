@@ -11,17 +11,19 @@ import (
 	"strings"
 )
 
-const SandboxSlugsKeyword = "slugs"
-const DefaultSandboxIDLength = 5
-const DefaultAgentIDLength = 10
-const DefaultIDLetters = "abcdefghijklmnopqrstuvwxyz"
-const maxBase = 40
+const (
+	SandboxSlugsKeyword    = "slugs"
+	DefaultSandboxIDLength = 5
+	DefaultAgentIDLength   = 10
+	DefaultIDLetters       = "abcdefghijklmnopqrstuvwxyz"
+	maxBase                = 40
+)
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func DefaultTemplate() Template {
 	template := Template{
-		SandboxTag:       "nestor-[sandbox-spec-name]",
+		SandboxTag:       "nestor-[sandbox-spec-name]-[sandbox-spec-target]",
 		SandboxID:        fmt.Sprintf("%s|%d:%s", SandboxSlugsKeyword, DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
 		InitialBranch:    "nestor/initial-branch-[sandbox-id]-[hash]",
@@ -114,13 +116,18 @@ func (t *Template) genRand(template string, defaultLen int) string {
 	return t.rand(length, parts[1])
 }
 
-func (t *Template) MakeSandboxTag(specName string) string {
+func (t *Template) MakeSandboxTag(specName string, specTarget string) string {
 	return t.fillTemplate(t.SandboxTag, map[string]string{
-		"[sandbox-spec-name]": specName,
-		"[sandboxSpecName]":   specName,
-		"$sandboxSpecName":    specName,
-		"[name]":              specName,
-		"$name":               specName,
+		"[sandbox-spec-name]":   specName,
+		"[sandboxSpecName]":     specName,
+		"$sandboxSpecName":      specName,
+		"[name]":                specName,
+		"$name":                 specName,
+		"[sandbox-spec-target]": specTarget,
+		"[sandboxSpecTarget]":   specTarget,
+		"$sandboxSpecTarget":    specTarget,
+		"[target]":              specTarget,
+		"$target":               specTarget,
 	})
 }
 
@@ -196,7 +203,7 @@ func (t *Template) MakeAgentID() string {
 }
 
 func (t *Template) fillTemplate(template string, vars map[string]string) string {
-	var out = template
+	out := template
 	for k, v := range vars {
 		out = strings.ReplaceAll(out, k, v)
 	}

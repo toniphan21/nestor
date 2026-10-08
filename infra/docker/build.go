@@ -68,14 +68,33 @@ func Build(ctx context.Context, path string, options BuildOption, logger *slog.L
 	return strings.TrimSpace(string(id)), nil
 }
 
-func HasImage(ctx context.Context, ref string, logger *slog.Logger) bool {
-	args := []string{"image", "inspect", ref}
+type ImageInfo struct {
+	ID     string
+	Exists bool
+}
+
+func InspectImage(ctx context.Context, ref string, logger *slog.Logger) ImageInfo {
+	args := []string{"image", "inspect", "--format", "{{.Id}}", "--", ref}
 	cmd := exec.CommandContext(ctx, "docker", args...)
 
 	log := logger.WithGroup("docker").With(slog.Any("args", args))
+
 	// do not log stdout/stderr of docker inspect
 	log.Info("docker image inspect")
-	result := cmd.Run() == nil
-	log.Debug("docker image inspect return", slog.Bool("result", result))
-	return result
+
+	out, err := cmd.Output()
+	if err != nil {
+		log.Debug("docker image inspect return", slog.Bool("result", false))
+		return ImageInfo{}
+	}
+
+	info := ImageInfo{
+		ID:     strings.TrimSpace(string(out)),
+		Exists: true,
+	}
+	log.Debug("docker image inspect return",
+		slog.Bool("result", true),
+		slog.String("id", info.ID),
+	)
+	return info
 }

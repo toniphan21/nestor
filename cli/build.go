@@ -41,11 +41,15 @@ func Build(api nestor.API, args BuildArgs) error {
 	}
 
 	ctx := context.Background()
-	template := api.Runtime().Template
-	for spec := range runs {
-		tag := template.MakeSandboxTag(spec)
-		fmt.Printf("building docker image for spec %s with tag %s...\n", pterm.Blue(spec), pterm.Cyan(tag))
-		err := api.Build(ctx, spec)
+	for v := range runs {
+		spec, have := api.Runtime().Registry.SandboxSpec(v)
+		if !have {
+			continue
+		}
+
+		tag := spec.DockerImageName(api.Runtime().Template)
+		fmt.Printf("building docker image for spec %s with tag %s...\n", pterm.Blue(v), pterm.Cyan(tag))
+		err := api.Build(ctx, v)
 		if err != nil {
 			return err
 		}

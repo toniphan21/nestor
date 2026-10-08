@@ -73,6 +73,11 @@ func (n *noopDocker) HasImage(ctx context.Context, ref string) bool {
 	return false
 }
 
+func (n *noopDocker) ImageID(ctx context.Context, ref string) string {
+	n.log.Debug("ImageID", slog.String("ref", ref))
+	return ""
+}
+
 func (n *noopDocker) IsRunning(ctx context.Context, container string) bool {
 	n.log.Debug("IsRunning", slog.String("container", container))
 	return false

@@ -77,7 +77,7 @@ type SandboxSpec struct {
 }
 
 func (s *SandboxSpec) Validate(runtime Runtime) error {
-	_, p, err := s.findHarnessAndProfile(runtime)
+	_, p, err := s.FindHarnessAndProfile(runtime)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,11 @@ func (s *SandboxSpec) TargetInYaml() *string {
 	return s.targetInYaml
 }
 
-func (s *SandboxSpec) findHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {
+func (s *SandboxSpec) DockerImageName(template Template) string {
+	return template.MakeSandboxTag(s.Name, s.Target)
+}
+
+func (s *SandboxSpec) FindHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {
 	h, have := runtime.Registry.Harness(string(s.Harness))
 	if !have {
 		return nil, Profile{}, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
