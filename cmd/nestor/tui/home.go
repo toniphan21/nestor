@@ -7,17 +7,17 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-type TabHome struct{}
+type homePage struct{}
 
-func (t TabHome) Init() tea.Cmd {
+func (t homePage) Init() tea.Cmd {
 	return nil
 }
 
-func (t TabHome) Update(tea.Msg) (TabHome, tea.Cmd) {
+func (t homePage) Update(tea.Msg) (homePage, tea.Cmd) {
 	return t, nil
 }
 
-func (t TabHome) View() string {
+func (t homePage) View() string {
 	sb := strings.Builder{}
 	for i := range 200 {
 		sb.WriteString(strconv.Itoa(i))
@@ -26,6 +26,6 @@ func (t TabHome) View() string {
 	return sb.String()
 }
 
-func (t TabHome) busy() bool {
+func (t homePage) busy() bool {
 	return false
 }
