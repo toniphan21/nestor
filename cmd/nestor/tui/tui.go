@@ -10,17 +10,28 @@ import (
 )
 
 type TUI struct {
-	home homePage
+	home  homePage
+	pages map[tabID]page
 
 	header header
 	body   body
 
 	width  int
 	height int
+
+	initCmd tea.Cmd
+}
+
+type page interface {
+	Busy() bool
+	Focus() tea.Cmd
+	Blur()
+	Update(tea.Msg) (page, tea.Cmd)
+	View() string
 }
 
 func (t TUI) Init() tea.Cmd {
-	return t.home.Init()
+	return t.initCmd
 }
 
 func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -37,7 +48,13 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return t, cmd
 
 	case tea.KeyPressMsg:
-		busy := t.home.busy()
+		var busy bool
+		for _, v := range t.pages {
+			if v.Busy() {
+				busy = true
+				break
+			}
+		}
 		if busy {
 			return t, nil
 		}
@@ -47,34 +64,35 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, tea.Quit
 
 		case "h":
-			t.header.SetActiveTab(tabHome)
-			t.home.Update(msg)
-			t.body.SetContent(t.home.View())
-			return t, nil
+			return t, t.switchPage(tabHome)
 
 		case "d":
-			t.header.SetActiveTab(tabDocker)
-			return t, nil
+			return t, t.switchPage(tabDocker)
 
 		case "s":
-			t.header.SetActiveTab(tabSpec)
-			return t, nil
+			return t, t.switchPage(tabSpec)
 
 		case "p":
-			t.header.SetActiveTab(tabProfile)
-			return t, nil
+			return t, t.switchPage(tabProfile)
 
 		case "m":
-			t.header.SetActiveTab(tabMCP)
-			return t, nil
+			return t, t.switchPage(tabMCP)
 		}
 	}
 
 	// everything else -> all children
-	var c1 tea.Cmd
-	t.home, c1 = t.home.Update(msg)
+	var cmds []tea.Cmd
+	for k, v := range t.pages {
+		var c tea.Cmd
+		t.pages[k], c = v.Update(msg)
+		cmds = append(cmds, c)
 
-	return t, tea.Batch(c1)
+		if k == t.header.ActiveTab() {
+			t.body.SetContent(v.View())
+		}
+	}
+
+	return t, tea.Batch(cmds...)
 }
 
 func (t TUI) View() tea.View {
@@ -90,8 +108,37 @@ func (t TUI) View() tea.View {
 	return v
 }
 
+func (t *TUI) switchPage(id tabID) tea.Cmd {
+	if id == t.header.ActiveTab() {
+		return nil
+	}
+
+	o := t.pages[t.header.ActiveTab()]
+	if o != nil {
+		o.Blur()
+	}
+
+	p := t.pages[id]
+	if p == nil {
+		return nil
+	}
+	t.header.SetActiveTab(id)
+	cmd := p.Focus()
+
+	t.body.SetContent(p.View())
+	t.body.GotoTop()
+
+	return cmd
+}
+
 func Run() {
-	t := &TUI{}
+	t := &TUI{
+		pages: map[tabID]page{
+			tabHome:   &homePage{},
+			tabDocker: &dockerPage{},
+		},
+	}
+	t.initCmd = t.pages[t.header.ActiveTab()].Focus()
 
 	if _, err := tea.NewProgram(t).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

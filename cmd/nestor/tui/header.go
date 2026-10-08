@@ -23,6 +23,10 @@ type header struct {
 	width  int
 }
 
+func (h header) ActiveTab() tabID {
+	return h.active
+}
+
 func (h header) Height() int {
 	return lipgloss.Height(h.View())
 }

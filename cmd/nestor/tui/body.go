@@ -29,6 +29,10 @@ func (b *body) SetContent(content string) {
 	b.vp.SetContent(content)
 }
 
+func (b *body) GotoTop() {
+	b.vp.GotoTop()
+}
+
 func (b body) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top,
 		b.vp.View(),
