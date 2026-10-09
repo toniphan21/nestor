@@ -26,18 +26,69 @@ type dockerImage struct {
 	containers []dockerContainer
 }
 
+func (v *dockerImage) toRows() []dockerRow {
+	rows := []dockerRow{
+		{
+			name:  v.image,
+			id:    v.shortID(v.imageID),
+			extra: v.dockerfile,
+			typ:   "image",
+			data:  v,
+		},
+	}
+
+	for i, vv := range v.containers {
+		row := dockerRow{
+			id:   v.shortID(vv.containerID),
+			data: vv,
+		}
+
+		if i == len(v.containers)-1 {
+			row.name = pterm.Gray("└─ ") + vv.name
+		} else {
+			row.name = pterm.Gray("├─ ") + vv.name
+		}
+
+		if vv.isRunning {
+			row.extra = pterm.Green("running")
+		} else {
+			row.extra = pterm.Gray("stopped")
+		}
+		row.typ = "container"
+		rows = append(rows, row)
+	}
+
+	return rows
+}
+
+func (v *dockerImage) shortID(id string) string {
+	id = strings.TrimPrefix(id, "sha256:")
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	return id
+}
+
 type dockerContainer struct {
 	name        string
 	containerID string
 	isRunning   bool
 }
 
+type dockerRow struct {
+	name  string
+	id    string
+	extra string
+	typ   string
+	data  any
+}
+
 type dockerPage struct {
 	*basePage
 
-	index  int
-	api    nestor.API
-	images []dockerImage
+	index int
+	api   nestor.API
+	rows  []dockerRow
 }
 
 func (p *dockerPage) Focus() tea.Cmd {
@@ -51,6 +102,7 @@ func (p dockerPage) fetch() tea.Cmd {
 		var images []dockerImage
 		specs := p.api.Runtime().Registry.SandboxSpecs()
 		runtime := p.api.Runtime()
+		uhome := runtime.Platform.UserHomeDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -62,11 +114,16 @@ func (p dockerPage) fetch() tea.Cmd {
 			}
 
 			img := spec.DockerImageName(runtime.Template)
+			df := profile.Dockerfile(h, runtime)
+			dfv, haveP := strings.CutPrefix(df, uhome)
+			if haveP {
+				df = "~" + dfv
+			}
 
 			image := dockerImage{
 				spec:       spec.Name,
 				image:      img,
-				dockerfile: profile.Dockerfile(h, runtime),
+				dockerfile: df,
 				imageID:    runtime.Docker().ImageID(ctx, img),
 			}
 
@@ -106,14 +163,6 @@ func (p dockerPage) tick() tea.Cmd {
 	})
 }
 
-func (p dockerPage) rowCount() int {
-	var count int
-	for _, v := range p.images {
-		count += 1 + len(v.containers)
-	}
-	return count
-}
-
 func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case dockerTickMsg:
@@ -126,23 +175,30 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		if msg.gen != p.gen {
 			return p, nil
 		}
-		p.images = msg.images
-		if p.index >= p.rowCount() {
-			p.index = 0
-		}
 
+		rows := []dockerRow{
+			{name: " NAME", id: "ID", extra: "EXTRA", typ: "header"},
+		}
+		for _, v := range msg.images {
+			rows = append(rows, v.toRows()...)
+		}
+		p.rows = rows
+
+		if p.index <= 0 || p.index >= len(rows) {
+			p.index = 1
+		}
 		return p, p.tick()
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "j":
-			if p.index < p.rowCount()-1 { // there is a header so just len is enough
+		case "j", "down":
+			if p.index < len(p.rows)-1 {
 				p.index = p.index + 1
 			}
 			return p, nil
 
-		case "k":
-			if p.index > 0 {
+		case "k", "up":
+			if p.index > 1 {
 				p.index = p.index - 1
 			}
 			return p, nil
@@ -158,84 +214,36 @@ func (p *dockerPage) View() string {
 	   |- nestor-sandbox-alpha  5d75ca36 running...
 	   |-
 	*/
-	if len(p.images) == 0 {
-		return "there is no images or container created by nestor"
+	if len(p.rows) == 0 {
+		return "there is no image or container created by nestor"
 	}
 
 	var nameW, idW, extraW int
-	rows := []dockerRow{
-		{name: " NAME", id: "ID", extra: "EXTRA"},
-	}
-
-	for _, v := range p.images {
-		rows = append(rows, p.buildRows(v)...)
-	}
-
-	for _, v := range rows {
+	for _, v := range p.rows {
 		nameW = max(nameW, widthOf(v.name))
 		idW = max(idW, widthOf(v.id))
-		extraW = max(extraW, widthOf(v.extra))
 	}
 
-	var out []string
-	for i, v := range rows {
+	nameW += 1                             // pad 1 on the left
+	extraW = p.width - 4 - nameW - idW + 1 // pad 1 on the right + 4 padding
+
+	var out strings.Builder
+	for i, v := range p.rows {
 		cols := []string{
-			v.name, pad(nameW - widthOf(v.name)),
-			v.id, pad(idW - widthOf(v.id)),
-			v.extra, pad(extraW - widthOf(v.extra)),
+			fit(padLeft(v.name, 1), nameW),
+			fit(v.id, idW),
+			pad(fit(v.extra, extraW), 1),
 		}
 
-		if p.index == i-1 {
-			sel := pterm.NewStyle(pterm.BgGray)
-			out = append(out, pad(2)+sel.Sprint(strings.Join(cols, " "))+pad(2))
-		} else {
-			out = append(out, pad(2)+strings.Join(cols, " ")+pad(2))
+		row := strings.Join(cols, " ")
+		if p.index == i {
+			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
 		}
+
+		out.WriteString(spaces(2))
+		out.WriteString(row)
+		out.WriteString(spaces(2))
+		out.WriteRune('\n')
 	}
-	return strings.Join(out, "\n")
-}
-
-func (p *dockerPage) buildRows(v dockerImage) []dockerRow {
-	rows := []dockerRow{
-		{
-			name:  " " + v.image,
-			id:    p.shortID(v.imageID),
-			extra: v.dockerfile,
-		},
-	}
-
-	for i, vv := range v.containers {
-		row := dockerRow{
-			id: p.shortID(vv.containerID),
-		}
-
-		if i == len(v.containers)-1 {
-			row.name = pterm.Gray(" └─ ") + vv.name
-		} else {
-			row.name = pterm.Gray(" ├─ ") + vv.name
-		}
-
-		if vv.isRunning {
-			row.extra = pterm.Green("running")
-		} else {
-			row.extra = pterm.Gray("stopped")
-		}
-		rows = append(rows, row)
-	}
-
-	return rows
-}
-
-func (p dockerPage) shortID(id string) string {
-	id = strings.TrimPrefix(id, "sha256:")
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	return id
-}
-
-type dockerRow struct {
-	name  string
-	id    string
-	extra string
+	return out.String()
 }

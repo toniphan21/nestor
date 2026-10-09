@@ -41,7 +41,7 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		hh := t.header.Height()
 		t.body.SetSize(t.width, t.height-hh)
 		for _, v := range t.pages {
-			v.SetSize(t.width, t.height-hh)
+			v.SetSize(t.width-4, t.height-hh) // scroll and padding 1 left+right
 		}
 		return t, nil
 
@@ -63,22 +63,22 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "q", "ctrl+c", "ctrl+d":
+		case "q", "Q", "ctrl+c", "ctrl+d":
 			return t, tea.Quit
 
-		case "h":
+		case "h", "H":
 			return t, t.switchPage(tabHome)
 
-		case "d":
+		case "d", "D":
 			return t, t.switchPage(tabDocker)
 
-		case "s":
+		case "s", "S":
 			return t, t.switchPage(tabSpec)
 
-		case "p":
+		case "p", "P":
 			return t, t.switchPage(tabProfile)
 
-		case "m":
+		case "m", "M":
 			return t, t.switchPage(tabMCP)
 		}
 	}
