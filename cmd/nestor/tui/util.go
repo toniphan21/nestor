@@ -3,9 +3,14 @@ package tui
 import (
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func send(msg tea.Msg) tea.Cmd {
+	return func() tea.Msg { return msg }
+}
 
 func spaces(w int) string {
 	return strings.Repeat(" ", max(0, w))

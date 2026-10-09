@@ -96,6 +96,10 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "m", "M":
 			return t, t.switchPage(tabMCP)
 		}
+
+	case setActionsMsg:
+		t.header.SetActions(msg.actions)
+		return t, nil
 	}
 
 	// everything else -> all children

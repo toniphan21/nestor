@@ -167,6 +167,23 @@ func (p dockerPage) tick() tea.Cmd {
 	})
 }
 
+func (p *dockerPage) actions() tea.Cmd {
+	if _, isDI := p.rowDockerImage(); isDI {
+		return useActions(
+			actionEdit, actionBuild, actionDown,
+			actionMoveUp, actionMoveDown, actionQuit,
+		)
+	}
+
+	if _, isDC := p.rowDockerContainer(); isDC {
+		return useActions(
+			actionDown,
+			actionMoveUp, actionMoveDown, actionQuit,
+		)
+	}
+	return nil
+}
+
 func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case dockerTickMsg:
@@ -192,7 +209,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		if p.index <= 0 || p.index >= len(rows) {
 			p.index = 1
 		}
-		return p, p.tick()
+		return p, tea.Batch(p.tick(), p.actions())
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -200,13 +217,13 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			if p.index < len(p.rows)-1 {
 				p.index = p.index + 1
 			}
-			return p, nil
+			return p, p.actions()
 
 		case "k", "up":
 			if p.index > 1 {
 				p.index = p.index - 1
 			}
-			return p, nil
+			return p, p.actions()
 
 		case "e":
 			di, ok := p.rowDockerImage()
