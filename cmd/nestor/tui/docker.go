@@ -26,12 +26,20 @@ type dockerImage struct {
 	containers []dockerContainer
 }
 
-func (v *dockerImage) toRows() []dockerRow {
+func (v *dockerImage) toRows(userHomeDir string) []dockerRow {
+	df := v.dockerfile
+	if userHomeDir != "" {
+		dfv, haveP := strings.CutPrefix(df, userHomeDir)
+		if haveP {
+			df = "~" + dfv
+		}
+	}
+
 	rows := []dockerRow{
 		{
 			name:  v.image,
 			id:    v.shortID(v.imageID),
-			extra: v.dockerfile,
+			extra: df,
 			typ:   "image",
 			data:  v,
 		},
@@ -40,7 +48,7 @@ func (v *dockerImage) toRows() []dockerRow {
 	for i, vv := range v.containers {
 		row := dockerRow{
 			id:   v.shortID(vv.containerID),
-			data: vv,
+			data: &vv,
 		}
 
 		if i == len(v.containers)-1 {
@@ -70,6 +78,7 @@ func (v *dockerImage) shortID(id string) string {
 }
 
 type dockerContainer struct {
+	sandbox     string
 	name        string
 	containerID string
 	isRunning   bool
@@ -102,7 +111,6 @@ func (p dockerPage) fetch() tea.Cmd {
 		var images []dockerImage
 		specs := p.api.Runtime().Registry.SandboxSpecs()
 		runtime := p.api.Runtime()
-		uhome := runtime.Platform.UserHomeDir()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -114,16 +122,11 @@ func (p dockerPage) fetch() tea.Cmd {
 			}
 
 			img := spec.DockerImageName(runtime.Template)
-			df := profile.Dockerfile(h, runtime)
-			dfv, haveP := strings.CutPrefix(df, uhome)
-			if haveP {
-				df = "~" + dfv
-			}
 
 			image := dockerImage{
 				spec:       spec.Name,
 				image:      img,
-				dockerfile: df,
+				dockerfile: profile.Dockerfile(h, runtime),
 				imageID:    runtime.Docker().ImageID(ctx, img),
 			}
 
@@ -136,6 +139,7 @@ func (p dockerPage) fetch() tea.Cmd {
 			for _, v := range sandboxes {
 				name := v.Container()
 				ctn := dockerContainer{
+					sandbox:     v.ID(),
 					name:        name,
 					containerID: runtime.Docker().ContainerID(ctx, name),
 					isRunning:   v.IsRunning(ctx),
@@ -166,21 +170,22 @@ func (p dockerPage) tick() tea.Cmd {
 func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case dockerTickMsg:
-		if msg.gen != p.gen || !p.focused {
+		if p.ignore(msg.gen) {
 			return p, nil
 		}
 		return p, p.fetch()
 
 	case dockerDataMsg:
-		if msg.gen != p.gen {
+		if p.ignore(msg.gen) {
 			return p, nil
 		}
 
+		uhome := p.api.Runtime().Platform.UserHomeDir()
 		rows := []dockerRow{
 			{name: " NAME", id: "ID", extra: "EXTRA", typ: "header"},
 		}
 		for _, v := range msg.images {
-			rows = append(rows, v.toRows()...)
+			rows = append(rows, v.toRows(uhome)...)
 		}
 		p.rows = rows
 
@@ -202,9 +207,85 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				p.index = p.index - 1
 			}
 			return p, nil
+
+		case "e":
+			di, ok := p.rowDockerImage()
+			if !ok {
+				return p, nil
+			}
+			p.busy = true
+			return p, openEditorWithPath(tabDocker, "edit-dockerfile", di.dockerfile)
+
+		case "d":
+			di, ok := p.rowDockerImage()
+			if ok {
+				args := []string{"sandbox", "down"}
+				for _, v := range di.containers {
+					args = append(args, v.sandbox)
+				}
+				p.busy = true
+				return p, execSelfCommand(tabDocker, "down:sandboxes", args...)
+			}
+
+			dc, ok := p.rowDockerContainer()
+			if ok {
+				args := []string{"sandbox", "down", dc.sandbox}
+
+				p.busy = true
+				return p, execSelfCommand(tabDocker, "down:sandbox", args...)
+			}
+			return p, nil
+
+		case "b":
+			di, ok := p.rowDockerImage()
+			if !ok {
+				return p, nil
+			}
+			args := []string{"spec", "build", di.spec}
+			p.busy = true
+			return p, execSelfCommand(tabDocker, "build", args...)
+
 		}
+
+	case editorDoneMsg:
+		if msg.tab != tabDocker {
+			return p, nil
+		}
+		p.busy = false
+		return p, nil
+
+	case execDoneMsg:
+		if msg.tab != tabDocker {
+			return p, nil
+		}
+		p.busy = false
+		return p, nil
 	}
 	return p, nil
+}
+
+func (p *dockerPage) rowDockerImage() (*dockerImage, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "image" {
+		return nil, false
+	}
+	di, ok := row.data.(*dockerImage)
+	return di, ok
+}
+
+func (p *dockerPage) rowDockerContainer() (*dockerContainer, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "container" {
+		return nil, false
+	}
+	dc, ok := row.data.(*dockerContainer)
+	return dc, ok
 }
 
 func (p *dockerPage) View() string {

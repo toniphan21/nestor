@@ -46,6 +46,17 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return t, nil
 
 	case tea.MouseWheelMsg:
+		var busy bool
+		for _, v := range t.pages {
+			if v.Busy() {
+				busy = true
+				break
+			}
+		}
+		if busy {
+			return t, nil
+		}
+
 		var cmd tea.Cmd
 		t.body, cmd = t.body.Update(msg)
 		return t, cmd
@@ -67,10 +78,14 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, tea.Quit
 
 		case "h", "H":
-			return t, t.switchPage(tabHome)
+			if t.header.ActiveTab() != tabHome {
+				return t, t.switchPage(tabHome)
+			}
 
 		case "d", "D":
-			return t, t.switchPage(tabDocker)
+			if t.header.ActiveTab() != tabDocker {
+				return t, t.switchPage(tabDocker)
+			}
 
 		case "s", "S":
 			return t, t.switchPage(tabSpec)

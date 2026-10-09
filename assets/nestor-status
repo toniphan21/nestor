@@ -29,8 +29,8 @@ authProxyAddr=${NESTOR_AUTH_PROXY_ADDR:-}
 if [[ -z $authProxyAddr ]]; then
   echo "auth-proxy: not set"
 else
-  hp=${authProxyAddr#*://}   # strip scheme
-  hp=${hp%%/*}      # strip path
+  hp=${authProxyAddr#*://} # strip scheme
+  hp=${hp%%/*}             # strip path
   host=${hp%:*}
   port=${hp##*:}
   if timeout 2 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
@@ -43,10 +43,10 @@ fi
 # proxy
 proxyAddr=${NESTOR_PROXY_ADDR:-}
 if [[ -z $proxyAddr ]]; then
-  echo "auth-proxy: not set"
+  echo "proxy: not set"
 else
-  hp=${proxyAddr#*://}   # strip scheme
-  hp=${hp%%/*}      # strip path
+  hp=${proxyAddr#*://} # strip scheme
+  hp=${hp%%/*}         # strip path
   host=${hp%:*}
   port=${hp##*:}
   if timeout 2 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then

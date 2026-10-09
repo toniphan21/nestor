@@ -26,3 +26,7 @@ func (p *basePage) SetSize(w int, h int) {
 	p.width = w
 	p.height = h
 }
+
+func (p *basePage) ignore(gen int) bool {
+	return gen != p.gen || !p.focused
+}

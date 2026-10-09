@@ -23,7 +23,7 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func DefaultTemplate() Template {
 	template := Template{
-		SandboxTag:       "nestor-[sandbox-spec-name]-[sandbox-spec-target]",
+		SandboxTag:       "nestor-[sandbox-spec-name]",
 		SandboxID:        fmt.Sprintf("%s|%d:%s", SandboxSlugsKeyword, DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
 		InitialBranch:    "nestor/initial-branch-[sandbox-id]-[hash]",
