@@ -114,6 +114,14 @@ type action struct {
 	keySeparator string
 }
 
+func (a action) Keys() string {
+	sep := a.keySeparator
+	if sep == "" {
+		sep = pterm.Gray("/")
+	}
+	return strings.Join(a.keys, sep)
+}
+
 type setActionsMsg struct {
 	actions []action
 }
@@ -133,6 +141,7 @@ var (
 	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
 	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
 	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit configuration", priority: 1}
+	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
 )
 
 func useActions(actions ...action) tea.Cmd {

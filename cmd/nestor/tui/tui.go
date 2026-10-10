@@ -155,9 +155,11 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 func Run(provider *APIProvider) error {
 	t := &TUI{
 		pages: map[tabID]page{
-			tabHome:   &homePage{basePage: &basePage{}},
-			tabDocker: &dockerPage{basePage: &basePage{}, provider: provider},
-			tabMCP:    &mcpPage{basePage: &basePage{}, provider: provider},
+			tabHome:    &homePage{basePage: &basePage{}},
+			tabDocker:  &dockerPage{basePage: &basePage{}, provider: provider},
+			tabSpec:    &specPage{basePage: &basePage{}, provider: provider},
+			tabProfile: &profilePage{basePage: &basePage{}, provider: provider},
+			tabMCP:     &mcpPage{basePage: &basePage{}, provider: provider},
 		},
 	}
 	t.initCmd = t.pages[t.header.ActiveTab()].Focus()

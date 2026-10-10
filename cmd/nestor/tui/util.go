@@ -6,7 +6,24 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/pterm/pterm"
 )
+
+var extraSep = pterm.Gray(" · ")
+
+var secretKeyPhrases = []string{
+	"token", "secret", "api_key", "apikey", "authorization", "password", "auth",
+}
+
+func isSecretKey(key string) bool {
+	key = strings.ToLower(key)
+	for _, v := range secretKeyPhrases {
+		if strings.Contains(key, v) {
+			return true
+		}
+	}
+	return false
+}
 
 func send(msg tea.Msg) tea.Cmd {
 	return func() tea.Msg { return msg }

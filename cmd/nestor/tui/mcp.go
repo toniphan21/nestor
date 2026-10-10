@@ -77,8 +77,8 @@ func (v *mcpServer) toRows() []mcpRow {
 
 	keys := slices.Sorted(maps.Keys(v.vars))
 	for i, k := range keys {
-		mv := newMCPVar(k, v.vars[k])
-		row := mcpRow{extra: mv.display, typ: "var", data: mv}
+		mv := &mcpVar{key: k, value: v.vars[k], isSecret: isSecretKey(k)}
+		row := mcpRow{extra: mv.display(), typ: "var", data: mv}
 		if i == len(keys)-1 {
 			row.name = pterm.Gray("└─ ") + k
 		} else {
@@ -90,34 +90,18 @@ func (v *mcpServer) toRows() []mcpRow {
 	return rows
 }
 
-var secretKeyPhrases = []string{
-	"token", "secret", "api_key", "apikey", "authorization", "password", "auth",
-}
-
-func isSecretKey(key string) bool {
-	key = strings.ToLower(key)
-	for _, v := range secretKeyPhrases {
-		if strings.Contains(key, v) {
-			return true
-		}
-	}
-	return false
-}
-
 type mcpVar struct {
 	key      string
 	value    string
-	display  string
 	isSecret bool
 	revealed bool
 }
 
-func newMCPVar(key, value string) *mcpVar {
-	v := &mcpVar{key: key, value: value, display: value, isSecret: isSecretKey(key)}
+func (v *mcpVar) display() string {
 	if v.isSecret {
-		v.display = pterm.Gray("**********")
+		return pterm.Gray("**********")
 	}
-	return v
+	return v.value
 }
 
 type mcpRow struct {
@@ -135,6 +119,9 @@ type mcpPage struct {
 	provider  *APIProvider
 	rows      []mcpRow
 	verifyErr error
+
+	pendingEditErr     error
+	pendingEditContent string
 }
 
 func (p *mcpPage) Focus() tea.Cmd {
@@ -187,6 +174,10 @@ func (p mcpPage) fetchTools(s *mcpServer) tea.Cmd {
 }
 
 func (p *mcpPage) actions() tea.Cmd {
+	if p.pendingEditErr != nil {
+		return useActions(actionBackToEditor, actionQuit)
+	}
+
 	var out []action
 
 	if _, ok := p.rowMCPServer(); ok {
@@ -222,7 +213,7 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 
 		rows := []mcpRow{
-			{name: " NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
+			{name: "NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
 		}
 		for _, v := range msg.mcps {
 			rows = append(rows, v.toRows()...)
@@ -237,6 +228,17 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if !p.focused {
 			return p, nil
+		}
+
+		if p.pendingEditErr != nil {
+			if msg.String() != "enter" {
+				return p, nil
+			}
+			content := p.pendingEditContent
+			p.pendingEditErr = nil
+			p.pendingEditContent = ""
+			p.busy = true
+			return p, openEditorWithInitial(tabMCP, "edit-mcp-config", "mcp-*.yml", content)
 		}
 
 		switch msg.String() {
@@ -312,9 +314,9 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 
 		if _, perr := nestor.ParseMCPs(strings.NewReader(msg.content)); perr != nil {
-			p.busy = true
-			retry := p.commentError(perr) + msg.content
-			return p, openEditorWithInitial(tabMCP, "edit-mcp-config", "mcp-*.yml", retry)
+			p.pendingEditErr = perr
+			p.pendingEditContent = msg.content
+			return p, p.actions()
 		}
 
 		api, err := p.provider.Get()
@@ -335,16 +337,6 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, p.fetch()
 	}
 	return p, nil
-}
-
-func (p *mcpPage) commentError(err error) string {
-	var sb strings.Builder
-	for _, line := range strings.Split(err.Error(), "\n") {
-		sb.WriteString("# error: ")
-		sb.WriteString(line)
-		sb.WriteString("\n")
-	}
-	return sb.String()
 }
 
 func (p *mcpPage) rowMCPServer() (*mcpServer, bool) {
@@ -372,6 +364,23 @@ func (p *mcpPage) rowMCPVar() (*mcpVar, bool) {
 }
 
 func (p *mcpPage) View() string {
+	if p.pendingEditErr != nil {
+		var out strings.Builder
+		out.WriteString("\n  ")
+		out.WriteString(pterm.Red("Failed to parse mcp configuration:"))
+		out.WriteString("\n\n")
+		for _, line := range strings.Split(p.pendingEditErr.Error(), "\n") {
+			out.WriteString("  ")
+			out.WriteString(pterm.Red(line))
+			out.WriteString("\n")
+		}
+		out.WriteString("\n  ")
+		out.WriteString(pterm.Gray("press "))
+		out.WriteString(actionBackToEditor.Keys())
+		out.WriteString(pterm.Gray(" to go back to the editor"))
+		return out.String()
+	}
+
 	var out strings.Builder
 	if p.verifyErr != nil {
 		out.WriteString("  ")
@@ -379,8 +388,10 @@ func (p *mcpPage) View() string {
 		out.WriteString("\n\n")
 	}
 
-	if len(p.rows) == 0 {
-		out.WriteString("there is no MCP registered")
+	if len(p.rows) == 1 {
+		out.WriteString("  There is no MCP registered. Press ")
+		out.WriteString(actionEditConfiguration.Keys())
+		out.WriteString(" to register MCP")
 		return out.String()
 	}
 
