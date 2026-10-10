@@ -30,10 +30,15 @@ func newSpecCmd() *specCmd {
 		Use:   "build",
 		Short: shortDesc["spec-build"],
 		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			noCache, err := cmd.Flags().GetBool("no-cache")
+			if err != nil {
+				return err
+			}
 			names := nx.Dedup(argv)
-			return cli.Build(api, cli.BuildArgs{SandboxSpecs: names})
+			return cli.Build(api, cli.BuildArgs{SandboxSpecs: names, NoCache: noCache})
 		}),
 	}
+	build.Flags().Bool("no-cache", false, "do not use cache when building the image")
 
 	launch := &cobra.Command{
 		Use:     "launch",

@@ -41,7 +41,7 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		hh := t.header.Height()
 		t.body.SetSize(t.width, t.height-hh)
 		for _, v := range t.pages {
-			v.SetSize(t.width-4, t.height-hh) // scroll and padding 1 left+right
+			v.SetSize(t.width-2, t.height-hh) // scroll take 2 on the right
 		}
 		return t, nil
 

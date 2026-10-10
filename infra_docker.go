@@ -13,6 +13,10 @@ type DockerBuildOption struct {
 	Target     string
 	Tag        string
 	Dockerfile string
+	NoCache    bool
+	Stdout     io.Writer
+	Stderr     io.Writer
+	OnStart    func(args []string)
 }
 
 type DockerMount struct {
@@ -78,6 +82,10 @@ func (d *dockerCLI) Build(ctx context.Context, path string, opt DockerBuildOptio
 		Target:     opt.Target,
 		Tag:        opt.Tag,
 		Dockerfile: opt.Dockerfile,
+		NoCache:    opt.NoCache,
+		Stdout:     opt.Stdout,
+		Stderr:     opt.Stderr,
+		OnStart:    opt.OnStart,
 	}
 	return docker.Build(ctx, path, o, d.log)
 }

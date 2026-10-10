@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,10 @@ type BuildOption struct {
 	Target     string
 	Tag        string
 	Dockerfile string
+	NoCache    bool
+	Stdout     io.Writer
+	Stderr     io.Writer
+	OnStart    func(args []string)
 }
 
 func Build(ctx context.Context, path string, options BuildOption, logger *slog.Logger) (string, error) {
@@ -40,14 +45,29 @@ func Build(ctx context.Context, path string, options BuildOption, logger *slog.L
 	if options.Dockerfile != "" {
 		args = append(args, "--file", options.Dockerfile)
 	}
+	if options.NoCache {
+		args = append(args, "--no-cache")
+	}
 	args = append(args, path)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 
 	log := logger.WithGroup("docker").With(slog.Any("args", args))
 	w := &logWriter{log, slog.LevelDebug}
+
+	if options.OnStart != nil {
+		options.OnStart(args)
+	}
+
 	cmd.Stdout = w
+	if options.Stdout != nil {
+		cmd.Stdout = io.MultiWriter(w, options.Stdout)
+	}
+
 	cmd.Stderr = w
+	if options.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(w, options.Stderr)
+	}
 
 	log.Info("build start")
 	if err := cmd.Run(); err != nil {

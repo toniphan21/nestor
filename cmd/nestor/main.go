@@ -25,6 +25,7 @@ var shortDesc = map[string]string{
 	"sandbox-delete": "Remove a single sandbox",
 	"sandbox-down":   "Stop running sandboxes (all if none given)",
 	"sandbox-rename": "Give a sandbox a memorable name",
+	"sandbox-up":     "Start sandboxes (all if none given)",
 
 	"version": "Print the nestor version",
 }

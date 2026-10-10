@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -10,10 +12,12 @@ import (
 
 type BuildArgs struct {
 	SandboxSpecs []string
+	NoCache      bool
 }
 
 func Build(api nestor.API, args BuildArgs) error {
-	allSpecs := api.Runtime().Registry.SandboxSpecs()
+	runtime := api.Runtime()
+	allSpecs := runtime.Registry.SandboxSpecs()
 
 	runs := make(map[string]bool)
 	exists := make(map[string]bool)
@@ -42,15 +46,22 @@ func Build(api nestor.API, args BuildArgs) error {
 
 	ctx := context.Background()
 	for v := range runs {
-		spec, have := api.Runtime().Registry.SandboxSpec(v)
+		spec, have := runtime.Registry.SandboxSpec(v)
 		if !have {
 			continue
 		}
 
-		tag := spec.DockerImageName(api.Runtime().Template)
+		tag := spec.DockerImageName(runtime.Template)
 		fmt.Printf("building docker image for spec %s with tag %s...\n", pterm.Blue(v), pterm.Cyan(tag))
-		err := api.Build(ctx, v)
-		if err != nil {
+		opt := nestor.DockerBuildOption{
+			NoCache: args.NoCache,
+			Stdout:  os.Stdout,
+			Stderr:  os.Stderr,
+			OnStart: func(cmdArgs []string) {
+				fmt.Fprintln(os.Stderr, pterm.Magenta("docker "+strings.Join(cmdArgs, " ")))
+			},
+		}
+		if err := spec.Build(ctx, runtime, runtime.Docker(), opt); err != nil {
 			return err
 		}
 	}

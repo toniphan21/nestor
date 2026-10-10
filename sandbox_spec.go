@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -141,6 +142,21 @@ func (s *SandboxSpec) TargetInYaml() *string {
 
 func (s *SandboxSpec) DockerImageName(template Template) string {
 	return template.MakeSandboxTag(s.Name, s.Target)
+}
+
+func (s *SandboxSpec) Build(ctx context.Context, runtime Runtime, docker Docker, opt DockerBuildOption) error {
+	h, p, err := s.FindHarnessAndProfile(runtime)
+	if err != nil {
+		return err
+	}
+
+	dockerfile := p.Dockerfile(h, runtime)
+	opt.Dockerfile = dockerfile
+	opt.Target = s.Target
+	opt.Tag = s.DockerImageName(runtime.Template)
+
+	_, err = docker.Build(ctx, filepath.Dir(dockerfile), opt)
+	return err
 }
 
 func (s *SandboxSpec) FindHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {

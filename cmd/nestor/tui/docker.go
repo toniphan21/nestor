@@ -46,10 +46,11 @@ func (v *dockerImage) toRows(userHomeDir string) []dockerRow {
 	}
 
 	for i, vv := range v.containers {
-		row := dockerRow{
-			id:   v.shortID(vv.containerID),
-			data: &vv,
+		id := v.shortID(vv.containerID)
+		if id == "" {
+			id = "-"
 		}
+		row := dockerRow{id: id, data: &vv}
 
 		if i == len(v.containers)-1 {
 			row.name = pterm.Gray("└─ ") + vv.name
@@ -162,23 +163,46 @@ func (p dockerPage) fetch() tea.Cmd {
 
 func (p dockerPage) tick() tea.Cmd {
 	gen := p.gen
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(10*time.Second, func(time.Time) tea.Msg {
 		return dockerTickMsg{gen: gen}
 	})
 }
 
 func (p *dockerPage) actions() tea.Cmd {
-	if _, isDI := p.rowDockerImage(); isDI {
-		return useActions(
-			actionEdit, actionBuild, actionDown,
-			actionMoveUp, actionMoveDown, actionQuit,
-		)
+	if di, isDI := p.rowDockerImage(); isDI {
+		allUp, allDown := true, true
+		for _, v := range di.containers {
+			if v.isRunning {
+				allDown = false
+				continue
+			}
+			allUp = false
+			continue
+		}
+		var out []action
+		switch {
+		case allDown:
+			out = append(out, actionContainerUp)
+		case allUp:
+			out = append(out, actionContainerDown)
+		default:
+			out = append(out, actionContainerDown, actionContainerUp)
+		}
+		out = append(out, actionEditDockerfile, actionBuild, actionMove, actionQuit)
+
+		return useActions(out...)
 	}
 
-	if _, isDC := p.rowDockerContainer(); isDC {
+	if dc, isDC := p.rowDockerContainer(); isDC {
+		if dc.isRunning {
+			return useActions(
+				actionContainerShell, actionContainerDown,
+				actionMove, actionQuit,
+			)
+		}
 		return useActions(
-			actionDown,
-			actionMoveUp, actionMoveDown, actionQuit,
+			actionContainerUp,
+			actionMove, actionQuit,
 		)
 	}
 	return nil
@@ -253,6 +277,26 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			}
 			return p, nil
 
+		case "u":
+			di, ok := p.rowDockerImage()
+			if ok {
+				args := []string{"sandbox", "up"}
+				for _, v := range di.containers {
+					args = append(args, v.sandbox)
+				}
+				p.busy = true
+				return p, execSelfCommand(tabDocker, "up:sandboxes", args...)
+			}
+
+			dc, ok := p.rowDockerContainer()
+			if ok {
+				args := []string{"sandbox", "up", dc.sandbox}
+
+				p.busy = true
+				return p, execSelfCommand(tabDocker, "up:sandbox", args...)
+			}
+			return p, nil
+
 		case "b":
 			di, ok := p.rowDockerImage()
 			if !ok {
@@ -262,6 +306,15 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			p.busy = true
 			return p, execSelfCommand(tabDocker, "build", args...)
 
+		case "enter":
+			dc, ok := p.rowDockerContainer()
+			if ok {
+				args := []string{"exec", "-it", dc.containerID, "bash"}
+
+				p.busy = true
+				return p, execCommand(tabDocker, "down:sandbox", "docker", args...)
+			}
+			return p, nil
 		}
 
 	case editorDoneMsg:
@@ -276,6 +329,10 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 		}
 		p.busy = false
+		switch msg.tag {
+		case "down:sandbox", "down:sandboxes", "up:sandbox", "up:sandboxes":
+			return p, p.fetch()
+		}
 		return p, nil
 	}
 	return p, nil
@@ -323,7 +380,7 @@ func (p *dockerPage) View() string {
 	}
 
 	nameW += 1                             // pad 1 on the left
-	extraW = p.width - 4 - nameW - idW + 1 // pad 1 on the right + 4 padding
+	extraW = p.width - 4 - nameW - idW - 4 // pad 1 on the right + 4 padding + 2x2 column separator
 
 	var out strings.Builder
 	for i, v := range p.rows {
@@ -333,7 +390,7 @@ func (p *dockerPage) View() string {
 			pad(fit(v.extra, extraW), 1),
 		}
 
-		row := strings.Join(cols, " ")
+		row := strings.Join(cols, "  ")
 		if p.index == i {
 			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
 		}

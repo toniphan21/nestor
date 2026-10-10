@@ -360,20 +360,7 @@ func (a *api) Build(ctx context.Context, specs ...string) error {
 			continue
 		}
 
-		h, p, err := spec.FindHarnessAndProfile(runtime)
-		if err != nil {
-			return err
-		}
-
-		dockerfile := p.Dockerfile(h, runtime)
-		buildPath := filepath.Dir(dockerfile)
-		options := DockerBuildOption{
-			Dockerfile: dockerfile,
-			Target:     spec.Target,
-			Tag:        spec.DockerImageName(a.template),
-		}
-
-		if _, err = a.docker.Build(ctx, buildPath, options); err != nil {
+		if err := spec.Build(ctx, runtime, a.docker, DockerBuildOption{}); err != nil {
 			return err
 		}
 	}

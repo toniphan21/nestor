@@ -14,6 +14,7 @@ type sandboxCmd struct {
 	delete *cobra.Command
 	down   *cobra.Command
 	rename *cobra.Command
+	up     *cobra.Command
 }
 
 func newSandboxCmd() *sandboxCmd {
@@ -70,12 +71,22 @@ func newSandboxCmd() *sandboxCmd {
 	rename.Flags().StringP("sandbox", "s", "", "name of the sandbox to rename")
 	rename.Flags().StringP("name", "n", "", "new name of the sandbox")
 
-	root.AddCommand(delete, down, rename)
+	up := &cobra.Command{
+		Use:   "up",
+		Short: shortDesc["sandbox-up"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			names := nx.Dedup(argv)
+			return cli.Up(api, cli.UpArgs{Sandboxes: names})
+		}),
+	}
+
+	root.AddCommand(delete, down, rename, up)
 
 	return &sandboxCmd{
 		root:   root,
 		delete: withGlobalFlags(delete),
 		down:   withGlobalFlags(down),
 		rename: withGlobalFlags(rename),
+		up:     withGlobalFlags(up),
 	}
 }

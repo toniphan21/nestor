@@ -83,8 +83,8 @@ type execDoneMsg struct {
 	err error
 }
 
-func execCmd(tab tabID, tag string, cmd *exec.Cmd) tea.Cmd {
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+func execCommand(tab tabID, tag string, cmd string, args ...string) tea.Cmd {
+	return tea.Exec(altScreenCmd{cmd: exec.Command(cmd, args...)}, func(err error) tea.Msg {
 		return execDoneMsg{tab: tab, tag: tag, err: err}
 	})
 }
