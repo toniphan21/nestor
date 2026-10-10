@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/pterm/pterm"
-	"nhatp.com/go/nestor"
 )
 
 type dockerTickMsg struct{ gen int }
@@ -16,6 +15,8 @@ type dockerTickMsg struct{ gen int }
 type dockerDataMsg struct {
 	gen    int
 	images []dockerImage
+	uhome  string
+	err    error
 }
 
 type dockerImage struct {
@@ -96,9 +97,9 @@ type dockerRow struct {
 type dockerPage struct {
 	*basePage
 
-	index int
-	api   nestor.API
-	rows  []dockerRow
+	index    int
+	provider *APIProvider
+	rows     []dockerRow
 }
 
 func (p *dockerPage) Focus() tea.Cmd {
@@ -109,9 +110,14 @@ func (p *dockerPage) Focus() tea.Cmd {
 func (p dockerPage) fetch() tea.Cmd {
 	gen := p.gen
 	return func() tea.Msg {
+		api, err := p.provider.Get()
+		if err != nil {
+			return dockerDataMsg{gen: gen, err: err}
+		}
+
 		var images []dockerImage
-		specs := p.api.Runtime().Registry.SandboxSpecs()
-		runtime := p.api.Runtime()
+		specs := api.Runtime().Registry.SandboxSpecs()
+		runtime := api.Runtime()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -131,7 +137,7 @@ func (p dockerPage) fetch() tea.Cmd {
 				imageID:    runtime.Docker().ImageID(ctx, img),
 			}
 
-			sandboxes, err := p.api.ListSandboxes(ctx, spec.Name)
+			sandboxes, err := api.ListSandboxes(ctx, spec.Name)
 			if err != nil {
 				images = append(images, image)
 				continue
@@ -157,7 +163,7 @@ func (p dockerPage) fetch() tea.Cmd {
 		slices.SortFunc(images, func(a, b dockerImage) int {
 			return strings.Compare(a.image, b.image)
 		})
-		return dockerDataMsg{gen: gen, images: images}
+		return dockerDataMsg{gen: gen, images: images, uhome: runtime.Platform.UserHomeDir()}
 	}
 }
 
@@ -220,13 +226,15 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		if p.ignore(msg.gen) {
 			return p, nil
 		}
+		if msg.err != nil {
+			return p, p.tick()
+		}
 
-		uhome := p.api.Runtime().Platform.UserHomeDir()
 		rows := []dockerRow{
 			{name: " NAME", id: "ID", extra: "EXTRA", typ: "header"},
 		}
 		for _, v := range msg.images {
-			rows = append(rows, v.toRows(uhome)...)
+			rows = append(rows, v.toRows(msg.uhome)...)
 		}
 		p.rows = rows
 
@@ -236,6 +244,10 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, tea.Batch(p.tick(), p.actions())
 
 	case tea.KeyPressMsg:
+		if !p.focused {
+			return p, nil
+		}
+
 		switch msg.String() {
 		case "j", "down":
 			if p.index < len(p.rows)-1 {
@@ -257,7 +269,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			p.busy = true
 			return p, openEditorWithPath(tabDocker, "edit-dockerfile", di.dockerfile)
 
-		case "d":
+		case "D":
 			di, ok := p.rowDockerImage()
 			if ok {
 				args := []string{"sandbox", "down"}
@@ -308,7 +320,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 
 		case "enter":
 			dc, ok := p.rowDockerContainer()
-			if ok {
+			if ok && dc.isRunning {
 				args := []string{"exec", "-it", dc.containerID, "bash"}
 
 				p.busy = true

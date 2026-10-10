@@ -4,7 +4,6 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"nhatp.com/go/nestor"
 )
 
 type TUI struct {
@@ -153,11 +152,12 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 	return cmd
 }
 
-func Run(api nestor.API) error {
+func Run(provider *APIProvider) error {
 	t := &TUI{
 		pages: map[tabID]page{
 			tabHome:   &homePage{basePage: &basePage{}},
-			tabDocker: &dockerPage{basePage: &basePage{}, api: api},
+			tabDocker: &dockerPage{basePage: &basePage{}, provider: provider},
+			tabMCP:    &mcpPage{basePage: &basePage{}, provider: provider},
 		},
 	}
 	t.initCmd = t.pages[t.header.ActiveTab()].Focus()

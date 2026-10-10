@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -34,9 +35,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "nestor",
 		Short: shortDesc["root"],
-		RunE: run(func(api nestor.API, cmd *cobra.Command, args []string) error {
-			return tui.Run(api)
-		}),
+		RunE:  runTUI,
 	}
 
 	spec := newSpecCmd()
@@ -71,17 +70,7 @@ func main() {
 
 func run(fn func(nestor.API, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, argv []string) error {
-		var verbose bool
-		if v, err := cmd.Flags().GetBool("verbose"); err == nil {
-			verbose = v
-		}
-
-		ll := slog.LevelInfo
-		if verbose {
-			ll = slog.LevelDebug
-		}
-
-		logger, closer, err := nestor.DefaultLogger(ll)
+		logger, closer, err := newLogger(cmd)
 		if err != nil {
 			fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger", err.Error())))
 			return nil
@@ -104,6 +93,42 @@ func run(fn func(nestor.API, *cobra.Command, []string) error) func(*cobra.Comman
 		}
 		return nil
 	}
+}
+
+func runTUI(cmd *cobra.Command, argv []string) error {
+	logger, closer, err := newLogger(cmd)
+	if err != nil {
+		fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger", err.Error())))
+		return nil
+	}
+	defer func() {
+		if cErr := closer.Close(); cErr != nil {
+			fmt.Println(pterm.Red(cErr.Error()))
+		}
+	}()
+
+	opts := []nestor.Option{nestor.WithLogger(logger)}
+	provider := tui.NewAPIProvider(func() (nestor.API, error) {
+		return nestor.New(opts...)
+	})
+
+	if err := tui.Run(provider); err != nil {
+		fmt.Println(pterm.Red("Error: ", err.Error()))
+	}
+	return nil
+}
+
+func newLogger(cmd *cobra.Command) (*slog.Logger, io.Closer, error) {
+	var verbose bool
+	if v, err := cmd.Flags().GetBool("verbose"); err == nil {
+		verbose = v
+	}
+
+	ll := slog.LevelInfo
+	if verbose {
+		ll = slog.LevelDebug
+	}
+	return nestor.DefaultLogger(ll)
 }
 
 func withGlobalFlags(cmd *cobra.Command) *cobra.Command {

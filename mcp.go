@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -65,6 +66,12 @@ type MCP interface {
 	ToolPolicy() MCPToolPolicy
 	String() string
 
+	Kind() string
+	Target() string
+	Vars() map[string]string
+
+	AvailableTools(ctx context.Context) (map[string]string, error)
+
 	connect(ctx context.Context, log *slog.Logger) (*mcpUpstream, error)
 }
 
@@ -85,6 +92,22 @@ func (s *localMCP) Name() string {
 
 func (s *localMCP) ToolPolicy() MCPToolPolicy {
 	return s.toolPolicy
+}
+
+func (s *localMCP) Kind() string {
+	return "local"
+}
+
+func (s *localMCP) Target() string {
+	return strings.Join(s.command, " ")
+}
+
+func (s *localMCP) Vars() map[string]string {
+	return s.env
+}
+
+func (s *localMCP) AvailableTools(ctx context.Context) (map[string]string, error) {
+	return availableTools(ctx, s)
 }
 
 func (s *localMCP) String() string {
@@ -125,6 +148,22 @@ func (s *remoteMCP) Name() string {
 
 func (s *remoteMCP) ToolPolicy() MCPToolPolicy {
 	return s.toolPolicy
+}
+
+func (s *remoteMCP) Kind() string {
+	return "remote"
+}
+
+func (s *remoteMCP) Target() string {
+	return s.url
+}
+
+func (s *remoteMCP) Vars() map[string]string {
+	return s.headers
+}
+
+func (s *remoteMCP) AvailableTools(ctx context.Context) (map[string]string, error) {
+	return availableTools(ctx, s)
 }
 
 func (s *remoteMCP) String() string {
@@ -169,6 +208,23 @@ func connect(ctx context.Context, name string, tp MCPToolPolicy, log *slog.Logge
 		return nil, fmt.Errorf("connect %s: %w", name, err)
 	}
 	return &mcpUpstream{Name: name, Session: cs, ToolPolicy: tp, Log: log}, nil
+}
+
+func availableTools(ctx context.Context, m MCP) (map[string]string, error) {
+	u, err := m.connect(ctx, slog.New(slog.DiscardHandler))
+	if err != nil {
+		return nil, err
+	}
+	defer u.Session.Close()
+
+	tools := make(map[string]string)
+	for t, err := range u.Session.Tools(ctx, nil) {
+		if err != nil {
+			return tools, fmt.Errorf("list tools %s: %w", m.Name(), err)
+		}
+		tools[t.Name] = t.Description
+	}
+	return tools, nil
 }
 
 type mcpUpstream struct {

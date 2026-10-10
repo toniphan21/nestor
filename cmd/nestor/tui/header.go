@@ -119,16 +119,20 @@ type setActionsMsg struct {
 }
 
 var (
-	actionQuit           = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
-	actionMove           = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
-	actionMoveUp         = action{keys: []string{pterm.Blue("↑"), pterm.Blue("k")}, desc: "up", priority: 0}
-	actionMoveDown       = action{keys: []string{pterm.Blue("↓"), pterm.Blue("j")}, desc: "down", priority: 0}
-	actionEdit           = action{keys: []string{pterm.Blue("e")}, desc: "edit", priority: 1}
-	actionEditDockerfile = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
-	actionBuild          = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
-	actionContainerDown  = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
-	actionContainerUp    = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
-	actionContainerShell = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
+	actionQuit              = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
+	actionMove              = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
+	actionMoveUp            = action{keys: []string{pterm.Blue("↑"), pterm.Blue("k")}, desc: "up", priority: 0}
+	actionMoveDown          = action{keys: []string{pterm.Blue("↓"), pterm.Blue("j")}, desc: "down", priority: 0}
+	actionEdit              = action{keys: []string{pterm.Blue("e")}, desc: "edit", priority: 1}
+	actionEditDockerfile    = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
+	actionBuild             = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
+	actionContainerDown     = action{keys: []string{pterm.Blue("D")}, desc: "down", priority: 1}
+	actionContainerUp       = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
+	actionContainerShell    = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
+	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
+	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
+	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
+	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit configuration", priority: 1}
 )
 
 func useActions(actions ...action) tea.Cmd {
