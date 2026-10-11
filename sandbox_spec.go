@@ -14,7 +14,7 @@ import (
 )
 
 type SandboxSpecMount struct {
-	Type     mountType `yaml:"type"`
+	Type     MountType `yaml:"type"`
 	Path     string    `yaml:"path"`
 	At       string    `yaml:"at,omitempty"`
 	ReadOnly bool      `yaml:"read_only"`
@@ -43,11 +43,11 @@ func (m *SandboxSpecMount) Target() (string, error) {
 	}
 }
 
-type mountType string
+type MountType string
 
 const (
-	MountTypeDirect            = mountType("direct")
-	MountTypeGitWorktree       = mountType("git_worktree")
+	MountTypeDirect            = MountType("direct")
+	MountTypeGitWorktree       = MountType("git_worktree")
 	DefaultLeaseInitDuration   = time.Minute
 	DefaultLeaseExtendDuration = 15 * time.Minute
 )
@@ -215,17 +215,4 @@ func (s *SandboxSpec) ListSandboxes(runtime Runtime) ([]Sandbox, error) {
 		}
 	}
 	return result, nil
-}
-
-func (s *SandboxSpec) ListSessions(runtime Runtime, path string) []HarnessSession {
-	harness, have := runtime.Registry.Harness(string(s.Harness))
-	if !have {
-		return nil
-	}
-
-	sandboxes, err := s.ListSandboxes(runtime)
-	if err != nil {
-		return nil
-	}
-	return harness.ListSessions(path, sandboxes...)
 }

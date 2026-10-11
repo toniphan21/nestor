@@ -232,7 +232,7 @@ func (h *harnessClaude) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
-func (h *harnessClaude) ListSessions(path string, sandboxes ...Sandbox) []HarnessSession {
+func (h *harnessClaude) ListSessions(_ context.Context, path string, sandboxes ...Sandbox) []HarnessSession {
 	var out []HarnessSession
 	for _, sandbox := range sandboxes {
 		cd := sandbox.StateDir(ClaudeDir)

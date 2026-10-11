@@ -97,7 +97,7 @@ func (t *failedTenancy) Run(ctx context.Context, param RunParam) (RunResult, err
 
 func (t *failedTenancy) SessionID() string { return "" }
 
-func (t *failedTenancy) ListSessions() []HarnessSession { return nil }
+func (t *failedTenancy) ListSessions(ctx context.Context) []HarnessSession { return nil }
 
 func (t *failedTenancy) OnAuthProxyStarted(callback func(addr string)) {}
 
@@ -145,7 +145,9 @@ func (t *leaseTenancy) Run(ctx context.Context, param RunParam) (RunResult, erro
 
 func (t *leaseTenancy) SessionID() string { return t.lease.SessionID() }
 
-func (t *leaseTenancy) ListSessions() []HarnessSession { return t.lease.ListSessions() }
+func (t *leaseTenancy) ListSessions(ctx context.Context) []HarnessSession {
+	return t.lease.ListSessions(ctx)
+}
 
 func (t *leaseTenancy) OnAuthProxyStarted(callback func(addr string)) {
 	t.lease.OnAuthProxyStarted(callback)

@@ -263,10 +263,7 @@ func (h *harnessOpenCode) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
-func (h *harnessOpenCode) ListSessions(path string, sandboxes ...Sandbox) []HarnessSession {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
+func (h *harnessOpenCode) ListSessions(ctx context.Context, path string, sandboxes ...Sandbox) []HarnessSession {
 	var result []HarnessSession
 	for _, sandbox := range sandboxes {
 		workDir, _, ok := sandbox.ResolveWorkDir(path)

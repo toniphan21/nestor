@@ -33,9 +33,7 @@ go.work.sum
 .idea/
 .vscode/
 
-# work dir
 /work
-/work*
 
 # nestor util files
 /.nestor

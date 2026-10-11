@@ -50,7 +50,7 @@ func TestSandboxMountTarget(t *testing.T) {
 		},
 		{
 			name:  "unknown type",
-			mount: SandboxSpecMount{Type: mountType("bogus"), Path: "/src"},
+			mount: SandboxSpecMount{Type: MountType("bogus"), Path: "/src"},
 			err:   ErrNotSupported,
 		},
 	}

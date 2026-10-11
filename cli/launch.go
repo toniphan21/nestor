@@ -15,7 +15,7 @@ import (
 )
 
 type launchInfo struct {
-	spec nestor.SandboxSpec
+	spec string
 	path string
 	run  bool
 }
@@ -34,7 +34,7 @@ func collectLaunchInfo(api nestor.API, args LaunchArgs) (*launchInfo, error) {
 	} else {
 		selectedPath = *v
 	}
-	return &launchInfo{spec: spec, path: selectedPath, run: true}, nil
+	return &launchInfo{spec: spec.Name, path: selectedPath, run: true}, nil
 }
 
 type LaunchArgs struct {
@@ -54,20 +54,11 @@ func Launch(api nestor.API, args LaunchArgs) error {
 		return nil
 	}
 
-	var runningSessionID string
-	selectedSessionID, title, err := selectSession(api.Runtime(), info.spec, info.path, args.Session)
-	if err != nil {
-		return err
-	}
-	if selectedSessionID != "" {
-		runningSessionID = selectedSessionID
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	log := api.Runtime().Logger
-	lease, err := api.Acquire(ctx, info.spec.Name, info.path)
+	lease, err := api.Acquire(ctx, info.spec, info.path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
@@ -96,6 +87,7 @@ func Launch(api nestor.API, args LaunchArgs) error {
 		}
 	})
 
+	var runningSessionID string
 	defer func() {
 		cancel()
 		wg.Wait()
@@ -104,7 +96,7 @@ func Launch(api nestor.API, args LaunchArgs) error {
 			err = errors.Join(err, fmt.Errorf("release lease: %w", rErr))
 		} else if err == nil {
 			argv := []string{
-				"--spec=" + escapeCLIFlagValue(info.spec.Name),
+				"--spec=" + escapeCLIFlagValue(info.spec),
 				"--path=" + escapeCLIFlagValue(info.path),
 				"--session=" + escapeCLIFlagValue(runningSessionID),
 			}
@@ -116,6 +108,17 @@ func Launch(api nestor.API, args LaunchArgs) error {
 			fmt.Println(pterm.Green("done"))
 		}
 	}()
+
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	selectedSessionID, title, err := selectSession(sctx, lease, args.Session)
+	if err != nil {
+		return err
+	}
+	if selectedSessionID != "" {
+		runningSessionID = selectedSessionID
+	}
 
 	if err = lease.Extend(ctx); err != nil {
 		return fmt.Errorf("extend lease: %w", err)
@@ -144,8 +147,8 @@ func Launch(api nestor.API, args LaunchArgs) error {
 	return err
 }
 
-func selectSession(runtime nestor.Runtime, spec nestor.SandboxSpec, path string, filteredSession string) (string, string, error) {
-	sessions := spec.ListSessions(runtime, path)
+func selectSession(ctx context.Context, lease *nestor.Lease, filteredSession string) (string, string, error) {
+	sessions := lease.ListSessions(ctx)
 	var selectedID, title string
 
 	if filteredSession != "" {

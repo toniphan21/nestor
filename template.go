@@ -26,6 +26,7 @@ func DefaultTemplate() Template {
 		SandboxTag:       "nestor-[sandbox-spec-name]",
 		SandboxID:        fmt.Sprintf("%s|%d:%s", SandboxSlugsKeyword, DefaultSandboxIDLength, DefaultIDLetters),
 		WorktreeID:       "[base]-[hash]",
+		WorkspaceName:    "[base]-[hash]",
 		InitialBranch:    "nestor/initial-branch-[sandbox-id]-[hash]",
 		SandboxContainer: "nestor-sandbox-[sandbox-id]",
 		AgentSuffix:      fmt.Sprintf("%d:%s", DefaultAgentIDLength, DefaultIDLetters),
@@ -63,6 +64,7 @@ type Template struct {
 	SandboxTag                           string
 	SandboxID                            string
 	WorktreeID                           string
+	WorkspaceName                        string
 	InitialBranch                        string
 	SandboxContainer                     string
 	AgentSuffix                          string
@@ -131,18 +133,38 @@ func (t *Template) MakeSandboxTag(specName string, specTarget string) string {
 	})
 }
 
-func (t *Template) MakeWorktreeID(repository string) string {
-	abs, err := filepath.Abs(repository)
+func (t *Template) getBaseAndHash(path string) (string, string) {
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		abs = filepath.Clean(repository)
+		abs = filepath.Clean(path)
 	}
 
 	hash := t.hashPath(abs)
 	base := t.sanitize(filepath.Base(abs))
+	return base, hash
+}
+
+func (t *Template) MakeWorktreeID(repository string) string {
+	base, hash := t.getBaseAndHash(repository)
 	if base == "" {
 		return hash
 	}
 	return t.fillTemplate(t.WorktreeID, map[string]string{
+		"[base]": base,
+		"$base":  base,
+		"[hash]": hash,
+		"$hash":  hash,
+		"[id]":   hash,
+		"$id":    hash,
+	})
+}
+
+func (t *Template) MakeWorkspaceName(path string) string {
+	base, hash := t.getBaseAndHash(path)
+	if base == "" {
+		return hash
+	}
+	return t.fillTemplate(t.WorkspaceName, map[string]string{
 		"[base]": base,
 		"$base":  base,
 		"[hash]": hash,

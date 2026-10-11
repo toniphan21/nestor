@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -53,7 +54,7 @@ type Harness interface {
 
 	ProxyRoute(lease *Lease) *ProxyRoute
 
-	ListSessions(path string, sandboxes ...Sandbox) []HarnessSession
+	ListSessions(ctx context.Context, path string, sandboxes ...Sandbox) []HarnessSession
 }
 
 type ProxyRoute struct {

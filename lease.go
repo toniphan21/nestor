@@ -97,7 +97,7 @@ type leaseAPI interface {
 	Release(ctx context.Context) error
 	Run(ctx context.Context, param RunParam) (RunResult, error)
 	SessionID() string
-	ListSessions() []HarnessSession
+	ListSessions(ctx context.Context) []HarnessSession
 
 	OnProxyStarted(callback func(addr string))
 	OnProxyStopped(callback func(addr string))
@@ -326,7 +326,9 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (result RunResult, err 
 		}
 	}
 
-	if param.resumeSession() && !l.hasSession(param.sessionID()) {
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if param.resumeSession() && !l.hasSession(sctx, param.sessionID()) {
 		return RunResult{ExitCode: RunExitCodeInvalidParam}, fmt.Errorf("%w: session %q", ErrNotFound, param.sessionID())
 	}
 
@@ -410,8 +412,8 @@ func (l *Lease) SessionID() string {
 	return l.sessionID
 }
 
-func (l *Lease) ListSessions() []HarnessSession {
-	return l.sandbox.Harness().ListSessions(l.data.Path, l.sandbox)
+func (l *Lease) ListSessions(ctx context.Context) []HarnessSession {
+	return l.sandbox.Harness().ListSessions(ctx, l.data.Path, l.sandbox)
 }
 
 func (l *Lease) OnAuthProxyStarted(callback func(addr string)) {
@@ -439,9 +441,9 @@ func (l *Lease) StageFile(rel string, data []byte, perm os.FileMode) (string, er
 	return cp, nil
 }
 
-func (l *Lease) hasSession(id string) bool {
+func (l *Lease) hasSession(ctx context.Context, id string) bool {
 	seen := make(map[string]bool)
-	for _, v := range l.ListSessions() {
+	for _, v := range l.ListSessions(ctx) {
 		seen[v.ID] = true
 	}
 	return seen[id]

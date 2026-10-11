@@ -26,6 +26,8 @@ type API interface {
 	RenameSandbox(ctx context.Context, sandbox Sandbox, newName string) error
 
 	Acquire(ctx context.Context, spec string, path string) (*Lease, error)
+
+	Workspaces(ctx context.Context) []Workspace
 }
 
 const (
@@ -503,6 +505,17 @@ func (a *api) acquireLocked(ctx context.Context, spec string, path string) (*Lea
 		return nil, err
 	}
 	return lease, nil
+}
+
+func (a *api) Workspaces(ctx context.Context) []Workspace {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.workspacesLocked(ctx)
+}
+
+func (a *api) workspacesLocked(ctx context.Context) []Workspace {
+	return collectWorkspaces(ctx, a)
 }
 
 var _ API = (*api)(nil)

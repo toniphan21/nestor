@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -17,7 +18,7 @@ import (
 )
 
 type promptInfo struct {
-	spec  nestor.SandboxSpec
+	spec  string
 	path  string
 	model string
 	run   bool
@@ -74,7 +75,7 @@ func collectPromptInfo(api nestor.API, args PromptArgs) (*promptInfo, error) {
 		}
 	}
 
-	return &promptInfo{spec: spec, path: selectedPath, model: selectedModel, run: true}, nil
+	return &promptInfo{spec: spec.Name, path: selectedPath, model: selectedModel, run: true}, nil
 }
 
 type PromptArgs struct {
@@ -104,12 +105,7 @@ func Prompt(api nestor.API, args PromptArgs) error {
 	path := info.path
 	model := info.model
 
-	selectedSessionID, title, err := selectSession(api.Runtime(), spec, path, args.Session)
-	if err != nil {
-		return err
-	}
-
-	lease, err := api.Acquire(ctx, spec.Name, path)
+	lease, err := api.Acquire(ctx, spec, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
@@ -137,6 +133,14 @@ func Prompt(api nestor.API, args PromptArgs) error {
 
 	if !lease.Sandbox().IsRunning(ctx) {
 		_ = lease.Sandbox().Start(ctx)
+	}
+
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	selectedSessionID, title, err := selectSession(sctx, lease, args.Session)
+	if err != nil {
+		return err
 	}
 
 	for {
