@@ -56,6 +56,7 @@ nestor launch
 ```
 
 options
+
 ```bash
 ❯ go run ./cmd/nestor --help
 Run coding agents in sandboxed containers
@@ -146,7 +147,6 @@ data:
     harness: claude
     profile: claude-subscription
     mcp: [gh, github]
-    state_scope: shared
     target: go
     max_instances: 3
     mounts:
@@ -163,19 +163,19 @@ nestor can be used as a library to build your own agent orchestrator:
 package main
 
 import (
-	"log"
+ "log"
 
-	"nhatp.com/go/nestor"
+ "nhatp.com/go/nestor"
 )
 
 func main() {
-	options := []nestor.Option{}
-	api, err := nestor.New(options...)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+ options := []nestor.Option{}
+ api, err := nestor.New(options...)
+ if err != nil {
+  log.Fatal(err.Error())
+ }
 
-	...
+ ...
 }
 ```
 

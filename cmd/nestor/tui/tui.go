@@ -4,6 +4,7 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 type TUI struct {
@@ -45,14 +46,7 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return t, nil
 
 	case tea.MouseWheelMsg:
-		var busy bool
-		for _, v := range t.pages {
-			if v.Busy() {
-				busy = true
-				break
-			}
-		}
-		if busy {
+		if t.isBusy() {
 			return t, nil
 		}
 
@@ -60,15 +54,22 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.body, cmd = t.body.Update(msg)
 		return t, cmd
 
-	case tea.KeyPressMsg:
-		var busy bool
-		for _, v := range t.pages {
-			if v.Busy() {
-				busy = true
-				break
+	case tea.MouseClickMsg:
+		if t.isBusy() {
+			return t, nil
+		}
+
+		switch m := msg.Mouse(); m.Button {
+		case uv.MouseLeft:
+			tab := t.header.TabPosition(m.X, m.Y)
+			if tab != nil {
+				return t, t.switchPage(*tab)
 			}
 		}
-		if busy {
+		return t, nil
+
+	case tea.KeyPressMsg:
+		if t.isBusy() {
 			return t, nil
 		}
 
@@ -127,6 +128,17 @@ func (t TUI) View() tea.View {
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
 	return v
+}
+
+func (t *TUI) isBusy() bool {
+	var busy bool
+	for _, v := range t.pages {
+		if v.Busy() {
+			busy = true
+			break
+		}
+	}
+	return busy
 }
 
 func (t *TUI) switchPage(id tabID) tea.Cmd {

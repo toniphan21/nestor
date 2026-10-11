@@ -26,6 +26,7 @@ type header struct {
 	active    tabID
 	actionBar actionBar
 	width     int
+	y         int
 }
 
 func (h header) ActiveTab() tabID {
@@ -44,8 +45,32 @@ func (h *header) SetWidth(w int) {
 	h.width = max(0, w)
 }
 
+func (h *header) SetY(y int) {
+	h.y = y
+}
+
 func (h *header) SetActions(actions []action) {
 	h.actionBar = actionBar{actions: actions}
+}
+
+func (h *header) TabPosition(x, y int) *tabID {
+	if h.y+2 == y { // self takes 2 lines, tabs is the 3rd line
+		tabs := h.tabs()
+		tabIDs := []tabID{tabHome, tabDocker, tabSpec, tabProfile, tabMCP}
+
+		start := 1 // a space before first tab
+		for i := range tabIDs {
+			end := start + widthOf(tabs[i])
+			if start <= x && x <= end {
+				v := tabIDs[i]
+				return &v
+			}
+
+			start = end + 1 // a space between tab
+		}
+		return nil
+	}
+	return nil
 }
 
 func (h header) View() string {
@@ -55,21 +80,23 @@ func (h header) View() string {
 
 	self := fmt.Sprintf("%s v%s %s %s\n\n", nestor.BinaryName, nestor.Version, pterm.Gray(nestor.GoOS), pterm.Gray(nestor.GoArch))
 
-	tabs := []string{
-		" ",
+	tabs := h.tabs()
+	left := " " + strings.Join(tabs, " ")
+
+	width := h.width - widthOf(left) - 1
+	h.actionBar.SetWidth(width)
+
+	return self + left + fitLeft(h.actionBar.View(), width) + "\n"
+}
+
+func (h header) tabs() []string {
+	return []string{
 		h.tab("Home", 'h', h.active == tabHome),
 		h.tab("Docker", 'd', h.active == tabDocker),
 		h.tab("Spec", 's', h.active == tabSpec),
 		h.tab("Profile", 'p', h.active == tabProfile),
 		h.tab("MCP", 'm', h.active == tabMCP),
 	}
-
-	left := strings.Join(tabs, " ")
-
-	width := h.width - widthOf(left) - 1
-	h.actionBar.SetWidth(width)
-
-	return self + left + fitLeft(h.actionBar.View(), width) + "\n"
 }
 
 func (h header) tab(text string, key rune, isActive bool) string {

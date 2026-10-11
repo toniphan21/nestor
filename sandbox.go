@@ -190,14 +190,7 @@ func (s *sandboxImpl) ShareDir(elem ...string) string {
 }
 
 func (s *sandboxImpl) StateDir(elem ...string) string {
-	switch s.spec.StateScope {
-	case StateScopeShared:
-		return s.ShareDir(elem...)
-	case StateScopeInstance:
-		return s.Dir(elem...)
-	default:
-		return s.Dir(elem...)
-	}
+	return s.ShareDir(elem...)
 }
 
 func (s *sandboxImpl) Tag() string {
@@ -575,9 +568,6 @@ func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) er
 }
 
 func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, sessionId string) error {
-	if s.spec.StateScope != StateScopeShared {
-		return nil
-	}
 	sd, err := readSandboxSharedData(s.ShareDir())
 	if err != nil {
 		return err

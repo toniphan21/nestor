@@ -54,23 +54,15 @@ type SandboxSpecLease struct {
 	ExtendDuration      *time.Duration `yaml:"extend_duration,omitempty"`
 }
 
-type stateScope string
-
-const (
-	StateScopeInstance stateScope = "instance"
-	StateScopeShared   stateScope = "shared"
-)
-
 type SandboxSpec struct {
 	Name         string             `yaml:"-"`
 	Harness      harness            `yaml:"harness"`
 	Profile      string             `yaml:"profile,omitempty"`
-	MCPs         []string           `yaml:"mcp,omitempty"`
 	Target       string             `yaml:"target"`
 	MaxInstances int                `yaml:"max_instances"`
-	StateScope   stateScope         `yaml:"state_scope,omitempty"`
-	Lease        *SandboxSpecLease  `yaml:"lease,omitempty"`
 	Mounts       []SandboxSpecMount `yaml:"mounts"`
+	MCPs         []string           `yaml:"mcp,omitempty"`
+	Lease        *SandboxSpecLease  `yaml:"lease,omitempty"`
 	Env          map[string]string  `yaml:"env,omitempty"`
 
 	profileInYaml *string `yaml:"-"`
@@ -89,10 +81,6 @@ func (s *SandboxSpec) Validate(runtime Runtime) error {
 
 	if s.MaxInstances <= 0 {
 		s.MaxInstances = 1
-	}
-
-	if s.StateScope == "" {
-		s.StateScope = StateScopeShared
 	}
 
 	if len(s.MCPs) > 0 {

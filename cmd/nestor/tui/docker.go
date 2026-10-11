@@ -231,7 +231,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 
 		rows := []dockerRow{
-			{name: " NAME", id: "ID", extra: "EXTRA", typ: "header"},
+			{name: "NAME", id: "ID", extra: "EXTRA", typ: "header"},
 		}
 		for _, v := range msg.images {
 			rows = append(rows, v.toRows(msg.uhome)...)

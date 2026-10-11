@@ -59,17 +59,9 @@ type specEntry struct {
 	profile      string
 	target       string
 	maxInstances int
-	stateScope   string
 	mcps         []string
 	mounts       []specMount
 	env          map[string]string
-}
-
-func (v *specEntry) stateScopeDisplay() string {
-	if v.stateScope == "instance" {
-		return "per-instance"
-	}
-	return v.stateScope
 }
 
 func (v *specEntry) extraDisplay() string {
@@ -77,8 +69,7 @@ func (v *specEntry) extraDisplay() string {
 	if len(v.mcps) > 0 {
 		extra += extraSep + "mcps: " + strings.Join(v.mcps, ", ")
 	}
-	extra += extraSep + "max-instances: " + strconv.Itoa(v.maxInstances) +
-		extraSep + "state-scope: " + v.stateScopeDisplay()
+	extra += extraSep + "max-instances: " + strconv.Itoa(v.maxInstances)
 	return extra
 }
 
@@ -87,42 +78,46 @@ func (v *specEntry) toRows(uhome string) []specRow {
 		{name: v.name, kind: v.harness, profile: v.profile, extra: v.extraDisplay(), typ: "specEntry", data: v},
 	}
 
+	var children []specRow
+
 	for i, m := range v.mounts {
 		readOnly := "read-write"
 		if m.readOnly {
 			readOnly = "read-only"
 		}
 
-		at := m.at
-		if at == "" {
-			at = m.path
+		value := cutHome(m.path, uhome)
+		if m.at != "" && m.at != m.path {
+			value += " → " + cutHome(m.at, uhome)
 		}
-		value := cutHome(m.path, uhome) + " → " + cutHome(at, uhome)
 
-		row := specRow{
+		children = append(children, specRow{
+			name:    "mounts" + pterm.Gray("[") + strconv.Itoa(i) + pterm.Gray("]"),
 			kind:    strings.TrimPrefix(m.mtype, "git_"),
 			profile: readOnly,
 			extra:   value,
 			typ:     "specMount",
 			data:    &v.mounts[i],
-		}
-		name := "mount[" + strconv.Itoa(i) + "]"
-		if i == len(v.mounts)-1 {
-			row.name = pterm.Gray("└─ ") + name
-		} else {
-			row.name = pterm.Gray("├─ ") + name
-		}
-		rows = append(rows, row)
+		})
 	}
 
 	envKeys := slices.Sorted(maps.Keys(v.env))
-	for i, k := range envKeys {
+	for _, k := range envKeys {
 		mv := &specVar{key: k, value: v.env[k], isSecret: isSecretKey(k)}
-		row := specRow{kind: pterm.Gray("env"), extra: mv.display(), typ: "specEnv", data: mv}
-		if i == len(envKeys)-1 {
-			row.name = pterm.Gray("└─ ") + k
+		children = append(children, specRow{
+			name:  k,
+			kind:  pterm.Gray("env"),
+			extra: mv.display(),
+			typ:   "specEnv",
+			data:  mv,
+		})
+	}
+
+	for i, row := range children {
+		if i == len(children)-1 {
+			row.name = pterm.Gray("└─ ") + row.name
 		} else {
-			row.name = pterm.Gray("├─ ") + k
+			row.name = pterm.Gray("├─ ") + row.name
 		}
 		rows = append(rows, row)
 	}
@@ -177,7 +172,6 @@ func (p specPage) fetch() tea.Cmd {
 				profile:      sp.Profile,
 				target:       sp.Target,
 				maxInstances: sp.MaxInstances,
-				stateScope:   string(sp.StateScope),
 				mcps:         sp.MCPs,
 				mounts:       mounts,
 				env:          sp.Env,
