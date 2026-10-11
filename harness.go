@@ -7,8 +7,10 @@ import (
 
 type harness string
 
-const HarnessClaudeCode = harness("claude")
-const HarnessOpenCode = harness("opencode")
+const (
+	HarnessClaudeCode = harness("claude")
+	HarnessOpenCode   = harness("opencode")
+)
 
 type ExecRequest struct {
 	Interactive      bool
@@ -51,7 +53,7 @@ type Harness interface {
 
 	ProxyRoute(lease *Lease) *ProxyRoute
 
-	ListSessions(lease *Lease) []HarnessSession
+	ListSessions(path string, sandboxes ...Sandbox) []HarnessSession
 }
 
 type ProxyRoute struct {

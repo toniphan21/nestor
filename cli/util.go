@@ -45,10 +45,7 @@ func collectSpec(api nestor.API, filteredName string) (*nestor.SandboxSpec, erro
 }
 
 func collectPath(spec nestor.SandboxSpec, filteredPath string) (*string, error) {
-	var paths []string
-	for _, v := range spec.Mounts {
-		paths = append(paths, v.Path)
-	}
+	paths := spec.Paths()
 
 	if filteredPath != "" {
 		for _, v := range paths {

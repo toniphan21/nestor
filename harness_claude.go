@@ -85,7 +85,7 @@ func (h *harnessClaude) Syncers(sandbox Sandbox) []Syncer {
 	s := &harnessClaudeSyncer{
 		auth:       profile.Auth,
 		claudeDir:  profile.Options[ClaudeDir],
-		claudeJson: profile.Options[ClaudeConfigFile],
+		claudeJSON: profile.Options[ClaudeConfigFile],
 		os:         runtime.Platform.OS(),
 	}
 	return []Syncer{s}
@@ -232,17 +232,21 @@ func (h *harnessClaude) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
-func (h *harnessClaude) ListSessions(lease *Lease) []HarnessSession {
-	sandbox := lease.Sandbox()
-	cd := sandbox.StateDir(ClaudeDir)
-	wd := lease.WorkDir()
-
+func (h *harnessClaude) ListSessions(path string, sandboxes ...Sandbox) []HarnessSession {
 	var out []HarnessSession
-	for _, s := range readSessionFiles(cd) {
-		if s.CWD != wd {
+	for _, sandbox := range sandboxes {
+		cd := sandbox.StateDir(ClaudeDir)
+		wd, _, ok := sandbox.ResolveWorkDir(path)
+		if !ok {
 			continue
 		}
-		out = append(out, s.toHarnessSession())
+
+		for _, s := range readSessionFiles(cd) {
+			if s.CWD != wd {
+				continue
+			}
+			out = append(out, s.toHarnessSession())
+		}
 	}
 	return out
 }
@@ -252,7 +256,7 @@ var _ Harness = (*harnessClaude)(nil)
 type harnessClaudeSyncer struct {
 	auth       auth
 	claudeDir  string
-	claudeJson string
+	claudeJSON string
 	os         OSKind
 }
 
@@ -264,7 +268,7 @@ func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 		return err
 	}
 
-	err = fs.CopyFile(h.claudeJson, filepath.Join(targetDir, ClaudeConfigFile))
+	err = fs.CopyFile(h.claudeJSON, filepath.Join(targetDir, ClaudeConfigFile))
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,7 @@ import (
 )
 
 type promptInfo struct {
-	spec  string
+	spec  nestor.SandboxSpec
 	path  string
 	model string
 	run   bool
@@ -74,7 +74,7 @@ func collectPromptInfo(api nestor.API, args PromptArgs) (*promptInfo, error) {
 		}
 	}
 
-	return &promptInfo{spec: spec.Name, path: selectedPath, model: selectedModel, run: true}, nil
+	return &promptInfo{spec: spec, path: selectedPath, model: selectedModel, run: true}, nil
 }
 
 type PromptArgs struct {
@@ -104,7 +104,12 @@ func Prompt(api nestor.API, args PromptArgs) error {
 	path := info.path
 	model := info.model
 
-	lease, err := api.Acquire(ctx, spec, path)
+	selectedSessionID, title, err := selectSession(api.Runtime(), spec, path, args.Session)
+	if err != nil {
+		return err
+	}
+
+	lease, err := api.Acquire(ctx, spec.Name, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
@@ -132,11 +137,6 @@ func Prompt(api nestor.API, args PromptArgs) error {
 
 	if !lease.Sandbox().IsRunning(ctx) {
 		_ = lease.Sandbox().Start(ctx)
-	}
-
-	selectedSessionID, title, err := selectSession(lease, args.Session)
-	if err != nil {
-		return err
 	}
 
 	for {

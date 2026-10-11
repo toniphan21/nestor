@@ -263,28 +263,41 @@ func (h *harnessOpenCode) CaptureSessionID(line []byte) (string, bool) {
 	return id, true
 }
 
-func (h *harnessOpenCode) ListSessions(lease *Lease) []HarnessSession {
-	sandbox := lease.Sandbox()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (h *harnessOpenCode) ListSessions(path string, sandboxes ...Sandbox) []HarnessSession {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := []string{"opencode", "session", "list", "--format", "json"}
+	var result []HarnessSession
+	for _, sandbox := range sandboxes {
+		workDir, _, ok := sandbox.ResolveWorkDir(path)
+		if !ok {
+			return nil
+		}
 
-	out := bytes.Buffer{}
-	_, err := sandbox.Docker().Exec(ctx, lease.Sandbox().Container(), cmd, DockerExecOption{
-		WorkDir: lease.WorkDir(),
-		Stdout:  &out,
-	})
-	if err != nil {
-		sandbox.Runtime().Logger.Warn("opencode list sessions error", slog.Any("error", err))
-		return nil
-	}
+		if !sandbox.IsRunning(ctx) { // to get sessions we need the sandbox up and running
+			if err := sandbox.Start(ctx); err != nil {
+				continue
+			}
+		}
 
-	result, err := parseOpenCodeSessions(out.Bytes())
-	if err != nil {
-		sandbox.Runtime().Logger.Warn("opencode parse sessions error", slog.Any("error", err))
-		return nil
+		cmd := []string{"opencode", "session", "list", "--format", "json"}
+
+		out := bytes.Buffer{}
+		_, err := sandbox.Docker().Exec(ctx, sandbox.Container(), cmd, DockerExecOption{
+			WorkDir: workDir,
+			Stdout:  &out,
+		})
+		if err != nil {
+			sandbox.Runtime().Logger.Warn("opencode list sessions error", slog.Any("error", err))
+			continue
+		}
+
+		sess, err := parseOpenCodeSessions(out.Bytes())
+		if err != nil {
+			sandbox.Runtime().Logger.Warn("opencode parse sessions error", slog.Any("error", err))
+			continue
+		}
+		result = append(result, sess...)
 	}
 	return result
 }

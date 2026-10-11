@@ -2,11 +2,15 @@ package nestor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type SandboxSpecMount struct {
@@ -132,6 +136,14 @@ func (s *SandboxSpec) DockerImageName(template Template) string {
 	return template.MakeSandboxTag(s.Name, s.Target)
 }
 
+func (s *SandboxSpec) Paths() []string {
+	var paths []string
+	for _, v := range s.Mounts {
+		paths = append(paths, v.Path)
+	}
+	return paths
+}
+
 func (s *SandboxSpec) Build(ctx context.Context, runtime Runtime, docker Docker, opt DockerBuildOption) error {
 	h, p, err := s.FindHarnessAndProfile(runtime)
 	if err != nil {
@@ -176,4 +188,44 @@ func (s *SandboxSpec) FindHarnessAndProfile(runtime Runtime) (Harness, Profile, 
 
 	p.Options = po
 	return h, p, nil
+}
+
+func (s *SandboxSpec) ListSandboxes(runtime Runtime) ([]Sandbox, error) {
+	var result []Sandbox
+	dirs, err := fs.ListDirs(runtime.Platform.SandboxDir())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range dirs {
+		dir := runtime.Platform.SandboxDir(v)
+		sb, err := parseSandbox(runtime, dir)
+		if err != nil {
+			// when sandbox spec not found, it maybe deleted - nothing to warn
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+
+			runtime.Logger.Warn("cannot read sandbox", slog.String("dir", dir))
+			continue
+		}
+
+		if sb.Spec().Name == s.Name {
+			result = append(result, sb)
+		}
+	}
+	return result, nil
+}
+
+func (s *SandboxSpec) ListSessions(runtime Runtime, path string) []HarnessSession {
+	harness, have := runtime.Registry.Harness(string(s.Harness))
+	if !have {
+		return nil
+	}
+
+	sandboxes, err := s.ListSandboxes(runtime)
+	if err != nil {
+		return nil
+	}
+	return harness.ListSessions(path, sandboxes...)
 }

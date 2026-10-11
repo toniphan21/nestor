@@ -381,40 +381,27 @@ func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandb
 		return nil, nil
 	}
 
-	selected := make(map[string]bool)
+	var selected []SandboxSpec
 	if len(specs) == 0 {
-		for _, v := range a.registry.SandboxSpecs() {
-			selected[v.Name] = true
-		}
+		selected = append(selected, a.registry.SandboxSpecs()...)
 	} else {
 		for _, v := range specs {
-			selected[v] = true
+			vv, ok := a.registry.SandboxSpec(v)
+			if !ok {
+				continue
+			}
+			selected = append(selected, vv)
 		}
 	}
 
 	var result []Sandbox
-	dirs, err := fs.ListDirs(a.platform.SandboxDir())
-	if err != nil {
-		return nil, err
-	}
-
 	runtime := a.Runtime()
-	for _, v := range dirs {
-		dir := a.platform.SandboxDir(v)
-		sb, err := parseSandbox(runtime, dir)
+	for _, v := range selected {
+		sandboxes, err := v.ListSandboxes(runtime)
 		if err != nil {
-			// when sandbox spec not found, it maybe deleted - nothing to warn
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
-
-			a.log.Warn("cannot read sandbox", slog.String("dir", dir))
-			continue
+			return nil, err
 		}
-
-		if selected[sb.Spec().Name] {
-			result = append(result, sb)
-		}
+		result = append(result, sandboxes...)
 	}
 	return result, nil
 }

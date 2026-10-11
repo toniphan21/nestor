@@ -46,6 +46,7 @@ type Sandbox interface {
 	Delete(ctx context.Context) error
 
 	Acquire(ctx context.Context, path string) (*Lease, error)
+	ResolveWorkDir(path string) (string, string, bool)
 }
 
 type Syncer interface {
@@ -377,7 +378,7 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 }
 
 func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
-	workDir, hostWorkDir, ok := s.resolveWorkDir(path)
+	workDir, hostWorkDir, ok := s.ResolveWorkDir(path)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q is not under any mount", ErrNotAllowed, path)
 	}
@@ -399,6 +400,28 @@ func (s *sandboxImpl) ContainerHomeDir() string {
 		v = DefaultContainerHomeDir
 	}
 	return v
+}
+
+func (s *sandboxImpl) ResolveWorkDir(path string) (string, string, bool) {
+	sm, rel := s.spec.Resolve(path)
+	switch {
+	case sm == nil:
+		return "", "", false
+
+	case sm.Type == MountTypeDirect:
+		return filepath.Join(sm.At, rel), filepath.Join(sm.Path, rel), true
+
+	case sm.Type == MountTypeGitWorktree:
+		for _, v := range s.data.Worktree {
+			if v.Repository == sm.Path {
+				return filepath.Join(v.Dir, rel), filepath.Join(v.Dir, rel), true
+			}
+		}
+		return "", "", false
+
+	default:
+		return "", "", false
+	}
 }
 
 func (s *sandboxImpl) startCopyScriptsAndMount(options *DockerRunOption) error {
@@ -678,26 +701,4 @@ func (s *sandboxImpl) newLease(ctx context.Context, requestedPath, workDir, host
 		return nil, err
 	}
 	return newLease(s, ld), nil
-}
-
-func (s *sandboxImpl) resolveWorkDir(path string) (string, string, bool) {
-	sm, rel := s.spec.Resolve(path)
-	switch {
-	case sm == nil:
-		return "", "", false
-
-	case sm.Type == MountTypeDirect:
-		return filepath.Join(sm.At, rel), filepath.Join(sm.Path, rel), true
-
-	case sm.Type == MountTypeGitWorktree:
-		for _, v := range s.data.Worktree {
-			if v.Repository == sm.Path {
-				return filepath.Join(v.Dir, rel), filepath.Join(v.Dir, rel), true
-			}
-		}
-		return "", "", false
-
-	default:
-		return "", "", false
-	}
 }

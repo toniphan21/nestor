@@ -411,7 +411,7 @@ func (l *Lease) SessionID() string {
 }
 
 func (l *Lease) ListSessions() []HarnessSession {
-	return l.sandbox.Harness().ListSessions(l)
+	return l.sandbox.Harness().ListSessions(l.data.Path, l.sandbox)
 }
 
 func (l *Lease) OnAuthProxyStarted(callback func(addr string)) {
