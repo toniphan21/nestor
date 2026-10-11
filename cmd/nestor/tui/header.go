@@ -167,6 +167,8 @@ var (
 	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
 	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
 	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
+	actionCollapse          = action{keys: []string{pterm.Blue("space")}, desc: "collapse", priority: 1}
+	actionExpand            = action{keys: []string{pterm.Blue("space")}, desc: "expand", priority: 1}
 	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit configuration", priority: 1}
 	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
 )

@@ -70,9 +70,21 @@ func (v *mcpServer) useToolsContent(tools map[string]string, mcpYmlPath string) 
 	return sb.String()
 }
 
-func (v *mcpServer) toRows() []mcpRow {
+func (v *mcpServer) toRows(collapsed bool) []mcpRow {
+	name := v.name
+	if len(v.vars) > 0 {
+		if collapsed {
+			name = pterm.Gray("▸ ") + name
+		} else {
+			name = pterm.Gray("▾ ") + name
+		}
+	}
+
 	rows := []mcpRow{
-		{name: v.name, kind: v.kind, extra: v.target, typ: "mcp", data: v},
+		{name: name, kind: v.kind, extra: v.target, typ: "mcp", data: v},
+	}
+	if collapsed {
+		return rows
 	}
 
 	keys := slices.Sorted(maps.Keys(v.vars))
@@ -117,6 +129,8 @@ type mcpPage struct {
 
 	index     int
 	provider  *APIProvider
+	servers   []mcpServer
+	collapsed map[string]bool
 	rows      []mcpRow
 	verifyErr error
 
@@ -126,7 +140,30 @@ type mcpPage struct {
 
 func (p *mcpPage) Focus() tea.Cmd {
 	p.basePage.Focus()
+	if p.collapsed == nil {
+		p.collapsed = make(map[string]bool)
+	}
 	return p.fetch()
+}
+
+func (p *mcpPage) buildRows() []mcpRow {
+	rows := []mcpRow{
+		{name: "NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
+	}
+	for _, v := range p.servers {
+		rows = append(rows, v.toRows(p.collapsed[v.name])...)
+	}
+	return rows
+}
+
+func (p *mcpPage) setCollapsed(collapsed bool) (page, tea.Cmd) {
+	s, ok := p.rowMCPServer()
+	if !ok || len(s.vars) == 0 || p.collapsed[s.name] == collapsed {
+		return p, nil
+	}
+	p.collapsed[s.name] = collapsed
+	p.rows = p.buildRows()
+	return p, p.actions()
 }
 
 func (p mcpPage) fetch() tea.Cmd {
@@ -180,8 +217,15 @@ func (p *mcpPage) actions() tea.Cmd {
 
 	var out []action
 
-	if _, ok := p.rowMCPServer(); ok {
+	if s, ok := p.rowMCPServer(); ok {
 		out = append(out, actionTool)
+		if len(s.vars) > 0 {
+			if p.collapsed[s.name] {
+				out = append(out, actionExpand)
+			} else {
+				out = append(out, actionCollapse)
+			}
+		}
 	}
 
 	if v, ok := p.rowMCPVar(); ok && v.isSecret {
@@ -212,12 +256,8 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, p.tick()
 		}
 
-		rows := []mcpRow{
-			{name: "NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
-		}
-		for _, v := range msg.mcps {
-			rows = append(rows, v.toRows()...)
-		}
+		p.servers = msg.mcps
+		rows := p.buildRows()
 		p.rows = rows
 
 		if p.index <= 0 || p.index >= len(rows) {
@@ -253,6 +293,19 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				p.index = p.index - 1
 			}
 			return p, p.actions()
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
+
+		case "space":
+			s, ok := p.rowMCPServer()
+			if !ok || len(s.vars) == 0 {
+				return p, nil
+			}
+			return p.setCollapsed(!p.collapsed[s.name])
 
 		case "e":
 			api, err := p.provider.Get()

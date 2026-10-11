@@ -73,9 +73,21 @@ func (v *specEntry) extraDisplay() string {
 	return extra
 }
 
-func (v *specEntry) toRows(uhome string) []specRow {
+func (v *specEntry) toRows(uhome string, collapsed bool) []specRow {
+	name := v.name
+	if len(v.mounts) > 0 || len(v.env) > 0 {
+		if collapsed {
+			name = pterm.Gray("▸ ") + name
+		} else {
+			name = pterm.Gray("▾ ") + name
+		}
+	}
+
 	rows := []specRow{
-		{name: v.name, kind: v.harness, profile: v.profile, extra: v.extraDisplay(), typ: "specEntry", data: v},
+		{name: name, kind: v.harness, profile: v.profile, extra: v.extraDisplay(), typ: "specEntry", data: v},
+	}
+	if collapsed {
+		return rows
 	}
 
 	var children []specRow
@@ -139,6 +151,9 @@ type specPage struct {
 
 	index     int
 	provider  *APIProvider
+	specs     []specEntry
+	uhome     string
+	collapsed map[string]bool
 	rows      []specRow
 	verifyErr error
 
@@ -148,7 +163,30 @@ type specPage struct {
 
 func (p *specPage) Focus() tea.Cmd {
 	p.basePage.Focus()
+	if p.collapsed == nil {
+		p.collapsed = make(map[string]bool)
+	}
 	return p.fetch()
+}
+
+func (p *specPage) buildRows() []specRow {
+	rows := []specRow{
+		{name: "NAME", kind: "TYPE", profile: "PROFILE", extra: "EXTRA", typ: "header"},
+	}
+	for _, v := range p.specs {
+		rows = append(rows, v.toRows(p.uhome, p.collapsed[v.name])...)
+	}
+	return rows
+}
+
+func (p *specPage) setCollapsed(collapsed bool) (page, tea.Cmd) {
+	s, ok := p.rowSpecEntry()
+	if !ok || (len(s.mounts) == 0 && len(s.env) == 0) || p.collapsed[s.name] == collapsed {
+		return p, nil
+	}
+	p.collapsed[s.name] = collapsed
+	p.rows = p.buildRows()
+	return p, p.actions()
 }
 
 func (p specPage) fetch() tea.Cmd {
@@ -199,6 +237,14 @@ func (p *specPage) actions() tea.Cmd {
 
 	var out []action
 
+	if s, ok := p.rowSpecEntry(); ok && (len(s.mounts) > 0 || len(s.env) > 0) {
+		if p.collapsed[s.name] {
+			out = append(out, actionExpand)
+		} else {
+			out = append(out, actionCollapse)
+		}
+	}
+
 	if v, ok := p.rowSpecVar(); ok && v.isSecret {
 		if v.revealed {
 			out = append(out, actionHideSecret)
@@ -227,12 +273,9 @@ func (p *specPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, p.tick()
 		}
 
-		rows := []specRow{
-			{name: "NAME", kind: "TYPE", profile: "PROFILE", extra: "EXTRA", typ: "header"},
-		}
-		for _, v := range msg.specs {
-			rows = append(rows, v.toRows(msg.uhome)...)
-		}
+		p.specs = msg.specs
+		p.uhome = msg.uhome
+		rows := p.buildRows()
 		p.rows = rows
 
 		if p.index <= 0 || p.index >= len(rows) {
@@ -268,6 +311,19 @@ func (p *specPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				p.index = p.index - 1
 			}
 			return p, p.actions()
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
+
+		case "space":
+			s, ok := p.rowSpecEntry()
+			if !ok || (len(s.mounts) == 0 && len(s.env) == 0) {
+				return p, nil
+			}
+			return p.setCollapsed(!p.collapsed[s.name])
 
 		case "e":
 			api, err := p.provider.Get()
@@ -328,6 +384,18 @@ func (p *specPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, p.fetch()
 	}
 	return p, nil
+}
+
+func (p *specPage) rowSpecEntry() (*specEntry, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "specEntry" {
+		return nil, false
+	}
+	v, ok := row.data.(*specEntry)
+	return v, ok
 }
 
 func (p *specPage) rowSpecVar() (*specVar, bool) {

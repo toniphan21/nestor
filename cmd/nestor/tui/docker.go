@@ -27,7 +27,7 @@ type dockerImage struct {
 	containers []dockerContainer
 }
 
-func (v *dockerImage) toRows(userHomeDir string) []dockerRow {
+func (v *dockerImage) toRows(userHomeDir string, collapsed bool) []dockerRow {
 	df := v.dockerfile
 	if userHomeDir != "" {
 		dfv, haveP := strings.CutPrefix(df, userHomeDir)
@@ -36,14 +36,26 @@ func (v *dockerImage) toRows(userHomeDir string) []dockerRow {
 		}
 	}
 
+	name := v.image
+	if len(v.containers) > 0 {
+		if collapsed {
+			name = pterm.Gray("▸ ") + name
+		} else {
+			name = pterm.Gray("▾ ") + name
+		}
+	}
+
 	rows := []dockerRow{
 		{
-			name:  v.image,
+			name:  name,
 			id:    v.shortID(v.imageID),
 			extra: df,
 			typ:   "image",
 			data:  v,
 		},
+	}
+	if collapsed {
+		return rows
 	}
 
 	for i, vv := range v.containers {
@@ -97,14 +109,40 @@ type dockerRow struct {
 type dockerPage struct {
 	*basePage
 
-	index    int
-	provider *APIProvider
-	rows     []dockerRow
+	index     int
+	provider  *APIProvider
+	images    []dockerImage
+	uhome     string
+	collapsed map[string]bool
+	rows      []dockerRow
 }
 
 func (p *dockerPage) Focus() tea.Cmd {
 	p.basePage.Focus()
+	if p.collapsed == nil {
+		p.collapsed = make(map[string]bool)
+	}
 	return p.fetch()
+}
+
+func (p *dockerPage) buildRows() []dockerRow {
+	rows := []dockerRow{
+		{name: "NAME", id: "ID", extra: "EXTRA", typ: "header"},
+	}
+	for _, v := range p.images {
+		rows = append(rows, v.toRows(p.uhome, p.collapsed[v.spec])...)
+	}
+	return rows
+}
+
+func (p *dockerPage) setCollapsed(collapsed bool) (page, tea.Cmd) {
+	di, ok := p.rowDockerImage()
+	if !ok || len(di.containers) == 0 || p.collapsed[di.spec] == collapsed {
+		return p, nil
+	}
+	p.collapsed[di.spec] = collapsed
+	p.rows = p.buildRows()
+	return p, p.actions()
 }
 
 func (p dockerPage) fetch() tea.Cmd {
@@ -194,6 +232,13 @@ func (p *dockerPage) actions() tea.Cmd {
 		default:
 			out = append(out, actionContainerDown, actionContainerUp)
 		}
+		if len(di.containers) > 0 {
+			if p.collapsed[di.spec] {
+				out = append(out, actionExpand)
+			} else {
+				out = append(out, actionCollapse)
+			}
+		}
 		out = append(out, actionEditDockerfile, actionBuild, actionMove, actionQuit)
 
 		return useActions(out...)
@@ -230,12 +275,9 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, p.tick()
 		}
 
-		rows := []dockerRow{
-			{name: "NAME", id: "ID", extra: "EXTRA", typ: "header"},
-		}
-		for _, v := range msg.images {
-			rows = append(rows, v.toRows(msg.uhome)...)
-		}
+		p.images = msg.images
+		p.uhome = msg.uhome
+		rows := p.buildRows()
 		p.rows = rows
 
 		if p.index <= 0 || p.index >= len(rows) {
@@ -260,6 +302,19 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				p.index = p.index - 1
 			}
 			return p, p.actions()
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
+
+		case "space":
+			di, ok := p.rowDockerImage()
+			if !ok || len(di.containers) == 0 {
+				return p, nil
+			}
+			return p.setCollapsed(!p.collapsed[di.spec])
 
 		case "e":
 			di, ok := p.rowDockerImage()

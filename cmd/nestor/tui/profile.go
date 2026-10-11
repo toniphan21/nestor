@@ -79,9 +79,21 @@ func (v *profileEntry) extraDisplay() string {
 		extraSep + "models: " + strconv.Itoa(v.models) + ", default: " + v.defaultModel
 }
 
-func (v *profileEntry) toRows() []profileRow {
+func (v *profileEntry) toRows(collapsed bool) []profileRow {
+	name := v.name
+	if len(v.settings) > 0 || len(v.options) > 0 {
+		if collapsed {
+			name = pterm.Gray("▸ ") + name
+		} else {
+			name = pterm.Gray("▾ ") + name
+		}
+	}
+
 	rows := []profileRow{
-		{name: v.name, kind: v.auth, extra: v.extraDisplay(), typ: "profile", data: v},
+		{name: name, kind: v.auth, extra: v.extraDisplay(), typ: "profile", data: v},
+	}
+	if collapsed {
+		return rows
 	}
 
 	settingKeys := slices.Sorted(maps.Keys(v.settings))
@@ -134,6 +146,8 @@ type profilePage struct {
 
 	index     int
 	provider  *APIProvider
+	profiles  []profileEntry
+	collapsed map[string]bool
 	rows      []profileRow
 	verifyErr error
 
@@ -143,7 +157,30 @@ type profilePage struct {
 
 func (p *profilePage) Focus() tea.Cmd {
 	p.basePage.Focus()
+	if p.collapsed == nil {
+		p.collapsed = make(map[string]bool)
+	}
 	return p.fetch()
+}
+
+func (p *profilePage) buildRows() []profileRow {
+	rows := []profileRow{
+		{name: "NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
+	}
+	for _, v := range p.profiles {
+		rows = append(rows, v.toRows(p.collapsed[v.name])...)
+	}
+	return rows
+}
+
+func (p *profilePage) setCollapsed(collapsed bool) (page, tea.Cmd) {
+	v, ok := p.rowProfileEntry()
+	if !ok || (len(v.settings) == 0 && len(v.options) == 0) || p.collapsed[v.name] == collapsed {
+		return p, nil
+	}
+	p.collapsed[v.name] = collapsed
+	p.rows = p.buildRows()
+	return p, p.actions()
 }
 
 func (p profilePage) fetch() tea.Cmd {
@@ -190,6 +227,14 @@ func (p *profilePage) actions() tea.Cmd {
 
 	var out []action
 
+	if v, ok := p.rowProfileEntry(); ok && (len(v.settings) > 0 || len(v.options) > 0) {
+		if p.collapsed[v.name] {
+			out = append(out, actionExpand)
+		} else {
+			out = append(out, actionCollapse)
+		}
+	}
+
 	if v, ok := p.rowProfileVar(); ok && v.isSecret {
 		if v.revealed {
 			out = append(out, actionHideSecret)
@@ -218,12 +263,8 @@ func (p *profilePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, p.tick()
 		}
 
-		rows := []profileRow{
-			{name: "NAME", kind: "TYPE", extra: "EXTRA", typ: "header"},
-		}
-		for _, v := range msg.profiles {
-			rows = append(rows, v.toRows()...)
-		}
+		p.profiles = msg.profiles
+		rows := p.buildRows()
 		p.rows = rows
 
 		if p.index <= 0 || p.index >= len(rows) {
@@ -259,6 +300,19 @@ func (p *profilePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				p.index = p.index - 1
 			}
 			return p, p.actions()
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
+
+		case "space":
+			v, ok := p.rowProfileEntry()
+			if !ok || (len(v.settings) == 0 && len(v.options) == 0) {
+				return p, nil
+			}
+			return p.setCollapsed(!p.collapsed[v.name])
 
 		case "e":
 			api, err := p.provider.Get()
@@ -317,6 +371,18 @@ func (p *profilePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, p.fetch()
 	}
 	return p, nil
+}
+
+func (p *profilePage) rowProfileEntry() (*profileEntry, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "profile" {
+		return nil, false
+	}
+	v, ok := row.data.(*profileEntry)
+	return v, ok
 }
 
 func (p *profilePage) rowProfileVar() (*profileVar, bool) {
