@@ -47,7 +47,7 @@ func (v *specVar) display() string {
 }
 
 type specMount struct {
-	mtype    string
+	mtype    nestor.MountType
 	path     string
 	at       string
 	readOnly bool
@@ -105,7 +105,7 @@ func (v *specEntry) toRows(uhome string, collapsed bool) []specRow {
 
 		children = append(children, specRow{
 			name:    "mounts" + pterm.Gray("[") + strconv.Itoa(i) + pterm.Gray("]"),
-			kind:    strings.TrimPrefix(m.mtype, "git_"),
+			kind:    mountTypeDisplay(m.mtype),
 			profile: readOnly,
 			extra:   value,
 			typ:     "specMount",
@@ -201,7 +201,7 @@ func (p specPage) fetch() tea.Cmd {
 		for _, sp := range api.Runtime().Registry.SandboxSpecs() {
 			var mounts []specMount
 			for _, m := range sp.Mounts {
-				mounts = append(mounts, specMount{mtype: string(m.Type), path: m.Path, at: m.At, readOnly: m.ReadOnly})
+				mounts = append(mounts, specMount{mtype: m.Type, path: m.Path, at: m.At, readOnly: m.ReadOnly})
 			}
 
 			specs = append(specs, specEntry{

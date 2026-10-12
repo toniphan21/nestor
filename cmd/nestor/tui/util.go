@@ -7,9 +7,21 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pterm/pterm"
+	"nhatp.com/go/nestor"
 )
 
 var extraSep = pterm.Gray(" · ")
+
+func mountTypeDisplay(t nestor.MountType) string {
+	switch t {
+	case nestor.MountTypeGitWorktree:
+		return "worktree"
+	case nestor.MountTypeDirect:
+		return "direct"
+	default:
+		return string(t)
+	}
+}
 
 var secretKeyPhrases = []string{
 	"token", "secret", "api_key", "apikey", "authorization", "password", "auth",

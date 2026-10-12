@@ -167,7 +167,7 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 func Run(provider *APIProvider) error {
 	t := &TUI{
 		pages: map[tabID]page{
-			tabHome:    &homePage{basePage: &basePage{}},
+			tabHome:    &homePage{basePage: &basePage{}, provider: provider},
 			tabDocker:  &dockerPage{basePage: &basePage{}, provider: provider},
 			tabSpec:    &specPage{basePage: &basePage{}, provider: provider},
 			tabProfile: &profilePage{basePage: &basePage{}, provider: provider},

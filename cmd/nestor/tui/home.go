@@ -1,70 +1,463 @@
 package tui
 
 import (
-	"strconv"
+	"context"
+	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/pterm/pterm"
+	"nhatp.com/go/nestor"
 )
+
+var uuidV4Pattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
+
+// trimSessionID shortens a claude session ID (a uuid-v4) or an opencode
+// session ID ("ses_" prefix) to the same "<first 8>…<last 6>" shape, so
+// both harnesses' IDs take up the same width in a session listing.
+func trimSessionID(id string) string {
+	v := strings.TrimPrefix(id, "ses_")
+	if v == id && !uuidV4Pattern.MatchString(id) {
+		return id
+	}
+	if len(v) <= 14 {
+		return v
+	}
+	return v[:8] + "…" + v[len(v)-6:]
+}
+
+func sessionTitle(s nestor.HarnessSession) string {
+	if s.Title != "" {
+		return s.Title
+	}
+	return "last opened: " + s.UpdatedAt.Local().Format("2006-01-02 15:04")
+}
 
 type homeTickMsg struct{ gen int }
 
 type homeDataMsg struct {
-	gen   int
-	count int
+	gen        int
+	workspaces []homeWorkspace
+	uhome      string
+	err        error
+}
+
+type homeSessionsMsg struct {
+	gen      int
+	sandbox  *homeSandbox
+	sessions []nestor.HarnessSession
+}
+
+type homeSandbox struct {
+	wsPath      string
+	id          string
+	mountType   nestor.MountType
+	sandbox     nestor.Sandbox
+	workDir     string
+	hostWorkDir string
+	isFree      bool
+}
+
+func (v *homeSandbox) statusDisplay() string {
+	if v.isFree {
+		return pterm.Green("free")
+	}
+	return pterm.Red("busy")
+}
+
+func (v *homeSandbox) extraDisplay(uhome string) string {
+	extra := cutHome(v.hostWorkDir, uhome)
+	if v.workDir != v.hostWorkDir {
+		extra += " → " + cutHome(v.workDir, uhome)
+	}
+	return extra
+}
+
+func (v *homeSandbox) useSessionsContent(sessions []nestor.HarnessSession) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# sessions for sandbox %q\n\n", v.id)
+	if len(sessions) == 0 {
+		sb.WriteString("# no sessions found\n")
+		return sb.String()
+	}
+	for _, s := range sessions {
+		fmt.Fprintf(&sb, "- %s: %s\n", trimSessionID(s.ID), sessionTitle(s))
+	}
+	return sb.String()
+}
+
+func (v *homeSandbox) toRows(isLast bool, cont string, uhome string) []homeRow {
+	prefix := pterm.Gray("├─ ")
+	if isLast {
+		prefix = pterm.Gray("└─ ")
+	}
+
+	return []homeRow{
+		{name: cont + prefix + v.id, status: v.statusDisplay(), kind: mountTypeDisplay(v.mountType), extra: v.extraDisplay(uhome), typ: "sandbox", data: v},
+	}
+}
+
+type homeMount struct {
+	wsPath       string
+	specName     string
+	harness      string
+	profile      string
+	mcps         []string
+	maxInstances int
+	sandboxes    []homeSandbox
+}
+
+func (v *homeMount) key() string {
+	return v.wsPath + "\x00" + v.specName
+}
+
+func (v *homeMount) extraDisplay() string {
+	profile := v.profile
+	if profile == "" {
+		profile = "-"
+	}
+
+	facts := []string{"profile: " + profile}
+	if len(v.mcps) > 0 {
+		facts = append(facts, "mcp: "+strings.Join(v.mcps, ", "))
+	}
+	return strings.Join(facts, extraSep)
+}
+
+func (v *homeMount) toRows(isLast bool, collapsed bool, uhome string) []homeRow {
+	prefix, cont := pterm.Gray("├─ "), pterm.Gray("│  ")
+	if isLast {
+		prefix, cont = pterm.Gray("└─ "), "   "
+	}
+
+	name := v.specName
+	if len(v.sandboxes) > 0 {
+		if collapsed {
+			name = pterm.Gray("▸ ") + name
+		} else {
+			name = pterm.Gray("▾ ") + name
+		}
+	}
+
+	rows := []homeRow{
+		{
+			name:   prefix + name,
+			status: fmt.Sprintf("%d/%d", len(v.sandboxes), v.maxInstances),
+			kind:   v.harness,
+			extra:  v.extraDisplay(),
+			typ:    "mount",
+			data:   v,
+		},
+	}
+	if collapsed {
+		return rows
+	}
+
+	for i, sb := range v.sandboxes {
+		rows = append(rows, sb.toRows(i == len(v.sandboxes)-1, cont, uhome)...)
+	}
+	return rows
+}
+
+type homeWorkspace struct {
+	name   string
+	path   string
+	mounts []homeMount
+}
+
+func (v *homeWorkspace) toRows(collapsed map[string]bool, uhome string) []homeRow {
+	rows := []homeRow{
+		{name: v.name, extra: cutHome(v.path, uhome), typ: "workspace", data: v},
+	}
+	for i, m := range v.mounts {
+		rows = append(rows, m.toRows(i == len(v.mounts)-1, collapsed[m.key()], uhome)...)
+	}
+	return rows
+}
+
+type homeRow struct {
+	name   string
+	status string
+	kind   string
+	extra  string
+	typ    string
+	data   any
 }
 
 type homePage struct {
 	*basePage
 
-	count int
+	index      int
+	provider   *APIProvider
+	workspaces []homeWorkspace
+	uhome      string
+	collapsed  map[string]bool
+	rows       []homeRow
 }
 
 func (p *homePage) Focus() tea.Cmd {
 	p.basePage.Focus()
-
+	if p.collapsed == nil {
+		p.collapsed = make(map[string]bool)
+	}
 	return p.fetch()
+}
+
+func (p *homePage) buildRows() []homeRow {
+	rows := []homeRow{
+		{name: "NAME", status: "STATUS", kind: "TYPE", extra: "EXTRA", typ: "header"},
+	}
+	for _, v := range p.workspaces {
+		rows = append(rows, v.toRows(p.collapsed, p.uhome)...)
+	}
+	return rows
+}
+
+func (p *homePage) setCollapsed(collapsed bool) (page, tea.Cmd) {
+	m, ok := p.rowHomeMount()
+	if !ok || len(m.sandboxes) == 0 || p.collapsed[m.key()] == collapsed {
+		return p, nil
+	}
+	p.collapsed[m.key()] = collapsed
+	p.rows = p.buildRows()
+	return p, p.actions()
 }
 
 func (p homePage) fetch() tea.Cmd {
 	gen := p.gen
-	count := p.count
 	return func() tea.Msg {
-		return homeDataMsg{gen: gen, count: count + 1}
+		api, err := p.provider.Get()
+		if err != nil {
+			return homeDataMsg{gen: gen, err: err}
+		}
+
+		var workspaces []homeWorkspace
+		for _, w := range api.Workspaces(context.Background()) {
+			hw := homeWorkspace{name: w.Name(), path: w.Path()}
+
+			for _, m := range w.Mounts() {
+				spec := m.Spec()
+				hm := homeMount{
+					wsPath:       w.Path(),
+					specName:     spec.Name,
+					harness:      string(spec.Harness),
+					profile:      spec.Profile,
+					mcps:         spec.MCPs,
+					maxInstances: spec.MaxInstances,
+				}
+
+				for i, s := range m.Sandboxes() {
+					sb := s.Sandbox()
+					hm.sandboxes = append(hm.sandboxes, homeSandbox{
+						wsPath:      w.Path(),
+						id:          sb.ID(),
+						mountType:   m.Type(),
+						sandbox:     sb,
+						workDir:     s.WorkDir(),
+						hostWorkDir: s.HostWorkDir(),
+						isFree:      i%2 == 1, // TODO: fake status until real data is wired in
+					})
+				}
+
+				slices.SortFunc(hm.sandboxes, func(a, b homeSandbox) int {
+					return strings.Compare(a.id, b.id)
+				})
+				hw.mounts = append(hw.mounts, hm)
+			}
+
+			slices.SortFunc(hw.mounts, func(a, b homeMount) int {
+				return strings.Compare(a.specName, b.specName)
+			})
+			workspaces = append(workspaces, hw)
+		}
+
+		slices.SortFunc(workspaces, func(a, b homeWorkspace) int {
+			return strings.Compare(a.name, b.name)
+		})
+		return homeDataMsg{gen: gen, workspaces: workspaces, uhome: api.Runtime().Platform.UserHomeDir()}
 	}
 }
 
 func (p homePage) tick() tea.Cmd {
 	gen := p.gen
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(10*time.Second, func(time.Time) tea.Msg {
 		return homeTickMsg{gen: gen}
 	})
+}
+
+func (p homePage) fetchSessions(sb *homeSandbox) tea.Cmd {
+	gen := p.gen
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		sessions := sb.sandbox.Harness().ListSessions(ctx, sb.wsPath, sb.sandbox)
+		return homeSessionsMsg{gen: gen, sandbox: sb, sessions: sessions}
+	}
+}
+
+func (p *homePage) actions() tea.Cmd {
+	var out []action
+
+	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
+		if p.collapsed[m.key()] {
+			out = append(out, actionExpand)
+		} else {
+			out = append(out, actionCollapse)
+		}
+	}
+
+	if _, ok := p.rowHomeSandbox(); ok {
+		out = append(out, actionSessions)
+	}
+
+	out = append(out, actionMove, actionQuit)
+	return useActions(out...)
 }
 
 func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case homeTickMsg:
-		if msg.gen != p.gen || !p.focused {
+		if p.ignore(msg.gen) {
 			return p, nil
 		}
 		return p, p.fetch()
 
 	case homeDataMsg:
-		if msg.gen != p.gen {
+		if p.ignore(msg.gen) {
 			return p, nil
 		}
-		p.count = msg.count
-		return p, p.tick()
+		if msg.err != nil {
+			return p, p.tick()
+		}
+
+		p.workspaces = msg.workspaces
+		p.uhome = msg.uhome
+		rows := p.buildRows()
+		p.rows = rows
+
+		if p.index <= 0 || p.index >= len(rows) {
+			p.index = 1
+		}
+		return p, tea.Batch(p.tick(), p.actions())
+
+	case tea.KeyPressMsg:
+		if !p.focused {
+			return p, nil
+		}
+
+		switch msg.String() {
+		case "j", "down":
+			if p.index < len(p.rows)-1 {
+				p.index = p.index + 1
+			}
+			return p, p.actions()
+
+		case "k", "up":
+			if p.index > 1 {
+				p.index = p.index - 1
+			}
+			return p, p.actions()
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
+
+		case "space":
+			m, ok := p.rowHomeMount()
+			if !ok || len(m.sandboxes) == 0 {
+				return p, nil
+			}
+			return p.setCollapsed(!p.collapsed[m.key()])
+
+		case "enter":
+			sb, ok := p.rowHomeSandbox()
+			if !ok {
+				return p, nil
+			}
+			p.busy = true
+			return p, p.fetchSessions(sb)
+		}
+
+	case homeSessionsMsg:
+		if p.ignore(msg.gen) {
+			return p, nil
+		}
+		p.busy = false
+		return p, openEditorWithInitial(tabHome, "view-sessions", "sessions-*.yml", msg.sandbox.useSessionsContent(msg.sessions))
+
+	case editorDoneMsg:
+		if msg.tab != tabHome {
+			return p, nil
+		}
+		p.busy = false
+		return p, nil
 	}
 	return p, nil
 }
 
-func (p *homePage) View() string {
-	sb := strings.Builder{}
-	for i := range p.count {
-		sb.WriteString(strconv.Itoa(i))
-		sb.WriteString("\n")
+func (p *homePage) rowHomeMount() (*homeMount, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
 	}
-	return sb.String()
+	row := p.rows[p.index]
+	if row.typ != "mount" {
+		return nil, false
+	}
+	v, ok := row.data.(*homeMount)
+	return v, ok
+}
+
+func (p *homePage) rowHomeSandbox() (*homeSandbox, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "sandbox" {
+		return nil, false
+	}
+	v, ok := row.data.(*homeSandbox)
+	return v, ok
+}
+
+func (p *homePage) View() string {
+	if len(p.rows) <= 1 {
+		return "  There is no workspace detected."
+	}
+
+	var nameW, statusW, kindW, extraW int
+	for _, v := range p.rows {
+		nameW = max(nameW, widthOf(v.name))
+		statusW = max(statusW, widthOf(v.status))
+		kindW = max(kindW, widthOf(v.kind))
+	}
+
+	nameW += 1                                         // pad 1 on the left
+	extraW = p.width - 4 - nameW - statusW - kindW - 6 // pad 1 on the right + 4 padding + 3x2 column separator
+
+	var out strings.Builder
+	for i, v := range p.rows {
+		cols := []string{
+			fit(padLeft(v.name, 1), nameW),
+			fit(v.status, statusW),
+			fit(v.kind, kindW),
+			pad(fit(v.extra, extraW), 1),
+		}
+
+		row := strings.Join(cols, "  ")
+		if p.index == i {
+			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
+		}
+
+		out.WriteString(spaces(2))
+		out.WriteString(row)
+		out.WriteString(spaces(2))
+		out.WriteRune('\n')
+	}
+	return out.String()
 }

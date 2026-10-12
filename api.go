@@ -511,11 +511,11 @@ func (a *api) Workspaces(ctx context.Context) []Workspace {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	return a.workspacesLocked(ctx)
+	return a.workspacesLocked()
 }
 
-func (a *api) workspacesLocked(ctx context.Context) []Workspace {
-	return collectWorkspaces(ctx, a)
+func (a *api) workspacesLocked() []Workspace {
+	return collectWorkspaces(a)
 }
 
 var _ API = (*api)(nil)

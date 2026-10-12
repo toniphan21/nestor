@@ -436,8 +436,11 @@ func (p *dockerPage) View() string {
 	   |- nestor-sandbox-alpha  5d75ca36 running...
 	   |-
 	*/
-	if len(p.rows) == 0 {
-		return "there is no image or container created by nestor"
+	if p.rows == nil {
+		return "  Loading…"
+	}
+	if len(p.rows) <= 1 {
+		return "  There is no image or container created by nestor."
 	}
 
 	var nameW, idW, extraW int
