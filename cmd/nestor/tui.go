@@ -48,7 +48,37 @@ func newTUICmd() *tuiCmd {
 	renameWorkspace.Flags().StringP("path", "p", "", "path of the workspace to rename")
 	renameWorkspace.Flags().StringP("name", "n", "", "new name of the workspace")
 
-	root.AddCommand(renameWorkspace)
+	launchSandbox := &cobra.Command{
+		Use:   "launch-sandbox",
+		Short: shortDesc["tui-launch-sandbox"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			spec, err := cmd.Flags().GetString("spec")
+			if err != nil {
+				return err
+			}
+
+			path, err := cmd.Flags().GetString("path")
+			if err != nil {
+				return err
+			}
+
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+
+			return cli.LaunchSandbox(api, cli.LaunchSandboxArgs{
+				Spec:    strings.TrimSpace(spec),
+				Path:    strings.TrimSpace(path),
+				Sandbox: strings.TrimSpace(name),
+			})
+		}),
+	}
+	launchSandbox.Flags().StringP("spec", "s", "", "sandbox spec name")
+	launchSandbox.Flags().StringP("path", "p", "", "working path")
+	launchSandbox.Flags().StringP("name", "n", "", "sandbox name")
+
+	root.AddCommand(renameWorkspace, launchSandbox)
 	return &tuiCmd{
 		root: root,
 	}

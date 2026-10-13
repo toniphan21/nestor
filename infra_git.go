@@ -20,6 +20,8 @@ type Git interface {
 
 	HasBranch(ctx context.Context, repository, branch string) bool
 
+	CurrentBranch(ctx context.Context, repository string) string
+
 	RenameBranch(ctx context.Context, repository, oldBranch, newBranch string) error
 
 	ListWorktrees(ctx context.Context, repository string) ([]GitWorktree, error)
@@ -47,6 +49,11 @@ func (g *gitCLI) RemoveBranchForce(ctx context.Context, repository, branch strin
 
 func (g *gitCLI) HasBranch(ctx context.Context, repository, branch string) bool {
 	v, _ := git.HasBranch(ctx, repository, branch, g.log)
+	return v
+}
+
+func (g *gitCLI) CurrentBranch(ctx context.Context, repository string) string {
+	v, _ := git.CurrentBranch(ctx, repository, g.log)
 	return v
 }
 

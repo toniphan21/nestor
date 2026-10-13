@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -54,6 +55,26 @@ func HasBranch(ctx context.Context, repository, branch string, logger *slog.Logg
 		return false, fmt.Errorf("git show-ref: %w", err)
 	}
 	return true, nil
+}
+
+func CurrentBranch(ctx context.Context, repository string, logger *slog.Logger) (string, error) {
+	args := []string{
+		"-C", repository, "branch", "--show-current",
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	log := logger.WithGroup("git").With(slog.Any("args", args))
+	cmd.Stderr = &logWriter{log, slog.LevelDebug}
+
+	log.Info("git branch --show-current", slog.String("repository", repository))
+	if err := cmd.Run(); err != nil {
+		log.Error("git branch --show-current", slog.Any("error", err))
+		return "", fmt.Errorf("git branch --show-current: %w", err)
+	}
+	return strings.TrimSpace(out.String()), nil
 }
 
 func RenameBranch(ctx context.Context, repository, oldBranch, newBranch string, logger *slog.Logger) error {

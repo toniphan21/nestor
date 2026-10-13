@@ -30,8 +30,8 @@ var shortDesc = map[string]string{
 
 	"tui":                  "Commands for TUI",
 	"tui-rename-workspace": "Rename a workspace",
-	"tui-prompt":           "Write a prompt in $EDITOR and execute in background",
-	"tui-launch":           "Launch in a specific sandbox",
+	"tui-prompt-sandbox":   "Write a prompt in $EDITOR and execute in background in a specific sandbox",
+	"tui-launch-sandbox":   "Launch in a specific sandbox",
 
 	"version": "Print the nestor version",
 }

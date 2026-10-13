@@ -26,6 +26,11 @@ func (n *noopGit) HasBranch(ctx context.Context, repository, branch string) bool
 	return false
 }
 
+func (n *noopGit) CurrentBranch(ctx context.Context, repository string) string {
+	n.log.Debug("CurrentBranch", slog.String("repository", repository))
+	return ""
+}
+
 func (n *noopGit) RenameBranch(ctx context.Context, repository, oldBranch, newBranch string) error {
 	n.log.Debug("RenameBranch", slog.String("repository", repository), slog.String("oldBranch", oldBranch), slog.String("newBranch", newBranch))
 	return nil

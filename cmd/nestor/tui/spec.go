@@ -22,16 +22,6 @@ type specDataMsg struct {
 	err   error
 }
 
-func cutHome(path, uhome string) string {
-	if uhome == "" {
-		return path
-	}
-	if rel, ok := strings.CutPrefix(path, uhome); ok {
-		return "~" + rel
-	}
-	return path
-}
-
 type specVar struct {
 	key      string
 	value    string

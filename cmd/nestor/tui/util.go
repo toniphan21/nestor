@@ -14,6 +14,20 @@ func selectedRow(text string) string {
 	return pterm.NewStyle(pterm.BgGray).Sprint(text)
 }
 
+func replacePathPrefix(path, prefix, replacement string) string {
+	if prefix == "" {
+		return path
+	}
+	if rel, ok := strings.CutPrefix(path, prefix); ok {
+		return replacement + rel
+	}
+	return path
+}
+
+func cutHome(path, uhome string) string {
+	return replacePathPrefix(path, uhome, "~")
+}
+
 var extraSep = pterm.Gray(" · ")
 
 func mountTypeDisplay(t nestor.MountType) string {

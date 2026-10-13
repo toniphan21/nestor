@@ -30,6 +30,9 @@ type homeSandbox struct {
 	workDir     string
 	hostWorkDir string
 	isFree      bool
+	branch      string
+	uhome       string
+	stateDir    string
 }
 
 func (v *homeSandbox) statusDisplay() string {
@@ -39,22 +42,38 @@ func (v *homeSandbox) statusDisplay() string {
 	return pterm.Red("busy")
 }
 
-func (v *homeSandbox) extraDisplay(uhome string) string {
-	extra := cutHome(v.hostWorkDir, uhome)
+func (v *homeSandbox) extraDisplay(width int) string {
+	full := cutHome(v.hostWorkDir, v.uhome)
+	short := replacePathPrefix(v.hostWorkDir, v.stateDir, "$NESTOR_SANDBOX")
+	if v.mountType == nestor.MountTypeGitWorktree && v.branch != "" {
+		full += ":" + pterm.Cyan(v.branch)
+		short += ":" + pterm.Cyan(v.branch)
+	}
+
+	vals := []string{full, short}
+	extra := vals[len(vals)-1]
+	for _, v := range vals {
+		w := widthOf(v)
+		if w < width {
+			extra = v
+			break
+		}
+	}
+
 	if v.workDir != v.hostWorkDir {
-		extra += " → " + cutHome(v.workDir, uhome)
+		extra += " → " + cutHome(v.workDir, v.uhome)
 	}
 	return extra
 }
 
-func (v *homeSandbox) toRows(isLast bool, cont string, uhome string) []homeRow {
+func (v *homeSandbox) toRows(isLast bool, cont string) []homeRow {
 	prefix := pterm.Gray("├─ ")
 	if isLast {
 		prefix = pterm.Gray("└─ ")
 	}
 
 	return []homeRow{
-		{name: cont + prefix + v.id, status: v.statusDisplay(), kind: mountTypeDisplay(v.mountType), extra: v.extraDisplay(uhome), typ: "sandbox", data: v},
+		{name: cont + prefix + v.id, status: v.statusDisplay(), kind: mountTypeDisplay(v.mountType), typ: "sandbox", data: v},
 	}
 }
 
@@ -85,7 +104,7 @@ func (v *homeMount) extraDisplay() string {
 	return strings.Join(facts, extraSep)
 }
 
-func (v *homeMount) toRows(isLast bool, collapsed bool, uhome string) []homeRow {
+func (v *homeMount) toRows(isLast bool, collapsed bool) []homeRow {
 	prefix, cont := pterm.Gray("├─ "), pterm.Gray("│  ")
 	if isLast {
 		prefix, cont = pterm.Gray("└─ "), "   "
@@ -115,22 +134,28 @@ func (v *homeMount) toRows(isLast bool, collapsed bool, uhome string) []homeRow 
 	}
 
 	for i, sb := range v.sandboxes {
-		rows = append(rows, sb.toRows(i == len(v.sandboxes)-1, cont, uhome)...)
+		rows = append(rows, sb.toRows(i == len(v.sandboxes)-1, cont)...)
 	}
 	return rows
 }
 
 type homeWorkspace struct {
 	workspace cli.Workspace
+	branch    string
 	mounts    []homeMount
 }
 
 func (v *homeWorkspace) toRows(collapsed map[string]bool, uhome string) []homeRow {
+	extra := cutHome(v.workspace.Path(), uhome)
+	if v.branch != "" {
+		extra += ":" + pterm.Magenta(v.branch)
+	}
+
 	rows := []homeRow{
-		{name: v.workspace.Name(), extra: cutHome(v.workspace.Path(), uhome), typ: "workspace", data: v},
+		{name: v.workspace.Name(), extra: extra, typ: "workspace", data: v},
 	}
 	for i, m := range v.mounts {
-		rows = append(rows, m.toRows(i == len(v.mounts)-1, collapsed[m.key()], uhome)...)
+		rows = append(rows, m.toRows(i == len(v.mounts)-1, collapsed[m.key()])...)
 	}
 	return rows
 }
@@ -190,10 +215,16 @@ func (p homePage) fetch() tea.Cmd {
 		if err != nil {
 			return homeDataMsg{gen: gen, err: err}
 		}
+		runtime := api.Runtime()
+		uhome := runtime.Platform.UserHomeDir()
+		stateDir := runtime.Platform.StateDir("sandbox")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
 
 		var workspaces []homeWorkspace
-		for _, w := range cli.Workspaces(context.Background(), api) {
-			hw := homeWorkspace{workspace: w}
+		for _, w := range cli.Workspaces(ctx, api) {
+			hw := homeWorkspace{workspace: w, branch: runtime.Git().CurrentBranch(ctx, w.Path())}
 
 			for _, m := range w.Mounts() {
 				spec := m.Spec()
@@ -208,14 +239,24 @@ func (p homePage) fetch() tea.Cmd {
 
 				for _, s := range m.Sandboxes() {
 					sb := s.Sandbox()
+					hostWorkDir := s.HostWorkDir()
+
+					var branch string
+					if m.Type() == nestor.MountTypeGitWorktree {
+						branch = runtime.Git().CurrentBranch(ctx, hostWorkDir)
+					}
+
 					hm.sandboxes = append(hm.sandboxes, homeSandbox{
 						wsPath:      w.Path(),
 						id:          sb.ID(),
 						mountType:   m.Type(),
 						sandbox:     sb,
 						workDir:     s.WorkDir(),
-						hostWorkDir: s.HostWorkDir(),
+						hostWorkDir: hostWorkDir,
 						isFree:      sb.IsFree(w.Path()),
+						branch:      branch,
+						uhome:       uhome,
+						stateDir:    stateDir,
 					})
 				}
 
@@ -234,7 +275,7 @@ func (p homePage) fetch() tea.Cmd {
 		slices.SortFunc(workspaces, func(a, b homeWorkspace) int {
 			return strings.Compare(a.workspace.Name(), b.workspace.Name())
 		})
-		return homeDataMsg{gen: gen, workspaces: workspaces, uhome: api.Runtime().Platform.UserHomeDir()}
+		return homeDataMsg{gen: gen, workspaces: workspaces, uhome: uhome}
 	}
 }
 
@@ -265,7 +306,10 @@ func (p *homePage) actions() tea.Cmd {
 		if sb.isFree {
 			out = append(out, actionRename)
 		}
-		out = append(out, actionGotoDir, actionPrompt, actionLaunch)
+		out = append(out, actionGotoDir, actionPrompt)
+		if sb.isFree {
+			out = append(out, actionLaunch)
+		}
 	}
 
 	out = append(out, actionMove, actionQuit)
@@ -373,6 +417,15 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				return p, execSelfCommand(tabHome, "rename-sandbox", "sandbox", "rename", "-s", sb.id)
 			}
 			return p, nil
+
+		case "enter", "l":
+			sb, ok := p.rowHomeSandbox()
+			if !ok || !sb.isFree {
+				return p, nil
+			}
+
+			p.busy = true
+			return p, execSelfCommand(tabHome, "launch-sandbox", "tui", "launch-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
 		}
 
 	case execDoneMsg:
@@ -381,7 +434,7 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 		p.busy = false
 		switch msg.tag {
-		case "rename-workspace", "rename-sandbox":
+		case "rename-workspace", "rename-sandbox", "launch-sandbox":
 			return p, p.fetch()
 		}
 		return p, nil
@@ -458,11 +511,16 @@ func (p *homePage) View() string {
 
 	var out strings.Builder
 	for i, v := range p.rows {
+		extra := v.extra
+		if sb, ok := v.data.(*homeSandbox); ok {
+			extra = sb.extraDisplay(extraW)
+		}
+
 		cols := []string{
 			fit(padLeft(v.name, 1), nameW),
 			fit(v.status, statusW),
 			fit(v.kind, kindW),
-			pad(fit(v.extra, extraW), 1),
+			pad(fit(extra, extraW), 1),
 		}
 
 		row := strings.Join(cols, "  ")
