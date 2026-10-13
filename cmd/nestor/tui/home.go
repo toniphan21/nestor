@@ -249,7 +249,7 @@ func (p homePage) fetch() tea.Cmd {
 					maxInstances: spec.MaxInstances,
 				}
 
-				for i, s := range m.Sandboxes() {
+				for _, s := range m.Sandboxes() {
 					sb := s.Sandbox()
 					hm.sandboxes = append(hm.sandboxes, homeSandbox{
 						wsPath:      w.Path(),
@@ -258,7 +258,7 @@ func (p homePage) fetch() tea.Cmd {
 						sandbox:     sb,
 						workDir:     s.WorkDir(),
 						hostWorkDir: s.HostWorkDir(),
-						isFree:      i%2 == 1, // TODO: fake status until real data is wired in
+						isFree:      sb.IsFree(w.Path()),
 					})
 				}
 
@@ -302,16 +302,21 @@ func (p homePage) fetchSessions(sb *homeSandbox) tea.Cmd {
 func (p *homePage) actions() tea.Cmd {
 	var out []action
 
+	if _, ok := p.rowHomeWorkspace(); ok {
+		out = append(out, actionGotoDir)
+	}
+
 	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
 		if p.collapsed[m.key()] {
 			out = append(out, actionExpand)
 		} else {
 			out = append(out, actionCollapse)
 		}
+		out = append(out, actionPrompt, actionLaunch)
 	}
 
 	if _, ok := p.rowHomeSandbox(); ok {
-		out = append(out, actionSessions)
+		out = append(out, actionGotoDir, actionPrompt, actionLaunch)
 	}
 
 	out = append(out, actionMove, actionQuit)
@@ -374,14 +379,6 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				return p, nil
 			}
 			return p.setCollapsed(!p.collapsed[m.key()])
-
-		case "enter":
-			sb, ok := p.rowHomeSandbox()
-			if !ok {
-				return p, nil
-			}
-			p.busy = true
-			return p, p.fetchSessions(sb)
 		}
 
 	case homeSessionsMsg:
@@ -399,6 +396,18 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, nil
 	}
 	return p, nil
+}
+
+func (p *homePage) rowHomeWorkspace() (*homeWorkspace, bool) {
+	if !p.focused || p.index <= 0 || p.index >= len(p.rows) {
+		return nil, false
+	}
+	row := p.rows[p.index]
+	if row.typ != "workspace" {
+		return nil, false
+	}
+	v, ok := row.data.(*homeWorkspace)
+	return v, ok
 }
 
 func (p *homePage) rowHomeMount() (*homeMount, bool) {

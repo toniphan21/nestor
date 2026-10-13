@@ -170,8 +170,11 @@ var (
 	actionSessions          = action{keys: []string{pterm.Blue("enter")}, desc: "sessions", priority: 1}
 	actionCollapse          = action{keys: []string{pterm.Blue("space")}, desc: "collapse", priority: 1}
 	actionExpand            = action{keys: []string{pterm.Blue("space")}, desc: "expand", priority: 1}
-	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit configuration", priority: 1}
+	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
 	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
+	actionGotoDir           = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
+	actionPrompt            = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
+	actionLaunch            = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "enter", priority: 1}
 )
 
 func useActions(actions ...action) tea.Cmd {

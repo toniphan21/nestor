@@ -45,6 +45,7 @@ type Sandbox interface {
 	Sync(ctx context.Context) error
 	Delete(ctx context.Context) error
 
+	IsFree(path string) bool
 	Acquire(ctx context.Context, path string) (*Lease, error)
 	ResolveWorkDir(path string) (string, string, bool)
 }
@@ -292,8 +293,13 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 		HostAlias: DefaultHostAlias,
 	}
 
+	seen := make(map[string]bool)
+
 	// mounts from spec
 	for _, v := range s.data.Mounts {
+		if seen[v.Host] {
+			continue
+		}
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
 			Target:   v.Target,
@@ -303,12 +309,40 @@ func (s *sandboxImpl) Start(ctx context.Context) error {
 
 	// mounts from harness
 	for _, v := range s.data.HarnessMounts {
+		if seen[v.Host] {
+			continue
+		}
 		options.Mounts = append(options.Mounts, DockerMount{
 			Source:   v.Host,
 			Target:   v.Target,
 			ReadOnly: v.ReadOnly,
 		})
 	}
+
+	// mounts from other sandbox in the spec
+	// let's decide later should it be included
+	// otherSandboxes, err := s.spec.ListSandboxes(s.runtime)
+	// if err == nil {
+	// 	for _, v := range otherSandboxes {
+	// 		if v.ID() == s.ID() {
+	// 			continue
+	// 		}
+	//
+	// 		if err = v.Sync(ctx); err != nil { // ignore err when sync other sandboxes
+	// 			continue
+	// 		}
+	// 		for _, vv := range v.Mounts() {
+	// 			if seen[vv.Host] {
+	// 				continue
+	// 			}
+	// 			options.Mounts = append(options.Mounts, DockerMount{
+	// 				Source:   vv.Host,
+	// 				Target:   vv.Target,
+	// 				ReadOnly: vv.ReadOnly,
+	// 			})
+	// 		}
+	// 	}
+	// }
 
 	if err := s.startCopyScriptsAndMount(&options); err != nil {
 		return err
@@ -377,21 +411,25 @@ func (s *sandboxImpl) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
-	workDir, hostWorkDir, ok := s.ResolveWorkDir(path)
-	if !ok {
-		return nil, fmt.Errorf("%w: %q is not under any mount", ErrNotAllowed, path)
-	}
-
+func (s *sandboxImpl) IsFree(path string) bool {
 	if s.data.Leases == nil {
 		s.data.Leases = make(map[string]leaseData)
 	}
 
 	ld, ok := s.data.Leases[path]
-	if !ok || ld.ExpiresAt.Before(time.Now()) {
-		return s.newLease(ctx, path, workDir, hostWorkDir)
+	return !ok || !ld.ExpiresAt.Before(time.Now())
+}
+
+func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
+	if s.IsFree(path) {
+		return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
 	}
-	return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
+
+	workDir, hostWorkDir, ok := s.ResolveWorkDir(path)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q is not under any mount", ErrNotAllowed, path)
+	}
+	return s.newLease(ctx, path, workDir, hostWorkDir)
 }
 
 func (s *sandboxImpl) ContainerHomeDir() string {
