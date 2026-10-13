@@ -53,10 +53,6 @@ func widthOf(s string) int {
 	return lipgloss.Width(s)
 }
 
-func heightOf(s string) int {
-	return lipgloss.Height(s)
-}
-
 func fit(s string, w int) string {
 	if w <= 0 {
 		return ""

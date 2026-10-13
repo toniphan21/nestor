@@ -156,9 +156,6 @@ type setActionsMsg struct {
 var (
 	actionQuit              = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
 	actionMove              = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
-	actionMoveUp            = action{keys: []string{pterm.Blue("↑"), pterm.Blue("k")}, desc: "up", priority: 0}
-	actionMoveDown          = action{keys: []string{pterm.Blue("↓"), pterm.Blue("j")}, desc: "down", priority: 0}
-	actionEdit              = action{keys: []string{pterm.Blue("e")}, desc: "edit", priority: 1}
 	actionEditDockerfile    = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
 	actionBuild             = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
 	actionContainerDown     = action{keys: []string{pterm.Blue("D")}, desc: "down", priority: 1}
@@ -167,14 +164,14 @@ var (
 	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
 	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
 	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
-	actionSessions          = action{keys: []string{pterm.Blue("enter")}, desc: "sessions", priority: 1}
 	actionCollapse          = action{keys: []string{pterm.Blue("space")}, desc: "collapse", priority: 1}
 	actionExpand            = action{keys: []string{pterm.Blue("space")}, desc: "expand", priority: 1}
 	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
 	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
 	actionGotoDir           = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
+	actionRename            = action{keys: []string{pterm.Blue("r")}, desc: "rename", priority: 1}
 	actionPrompt            = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
-	actionLaunch            = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "enter", priority: 1}
+	actionLaunch            = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "launch", priority: 1}
 )
 
 func useActions(actions ...action) tea.Cmd {

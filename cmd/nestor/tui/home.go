@@ -10,14 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
 )
-
-func sessionTitle(s nestor.HarnessSession) string {
-	if s.Title != "" {
-		return s.Title
-	}
-	return "last opened: " + s.UpdatedAt.Local().Format("2006-01-02 15:04")
-}
 
 type homeTickMsg struct{ gen int }
 
@@ -26,12 +20,6 @@ type homeDataMsg struct {
 	workspaces []homeWorkspace
 	uhome      string
 	err        error
-}
-
-type homeSessionsMsg struct {
-	gen      int
-	sandbox  *homeSandbox
-	sessions []nestor.HarnessSession
 }
 
 type homeSandbox struct {
@@ -57,19 +45,6 @@ func (v *homeSandbox) extraDisplay(uhome string) string {
 		extra += " → " + cutHome(v.workDir, uhome)
 	}
 	return extra
-}
-
-func (v *homeSandbox) useSessionsContent(sessions []nestor.HarnessSession) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# sessions for sandbox %q\n\n", v.id)
-	if len(sessions) == 0 {
-		sb.WriteString("# no sessions found\n")
-		return sb.String()
-	}
-	for _, s := range sessions {
-		fmt.Fprintf(&sb, "- %s: %s\n", s.ID, sessionTitle(s))
-	}
-	return sb.String()
 }
 
 func (v *homeSandbox) toRows(isLast bool, cont string, uhome string) []homeRow {
@@ -146,7 +121,7 @@ func (v *homeMount) toRows(isLast bool, collapsed bool, uhome string) []homeRow 
 }
 
 type homeWorkspace struct {
-	workspace Workspace
+	workspace cli.Workspace
 	mounts    []homeMount
 }
 
@@ -217,7 +192,7 @@ func (p homePage) fetch() tea.Cmd {
 		}
 
 		var workspaces []homeWorkspace
-		for _, w := range loadWorkspaces(context.Background(), api) {
+		for _, w := range cli.Workspaces(context.Background(), api) {
 			hw := homeWorkspace{workspace: w}
 
 			for _, m := range w.Mounts() {
@@ -270,22 +245,11 @@ func (p homePage) tick() tea.Cmd {
 	})
 }
 
-func (p homePage) fetchSessions(sb *homeSandbox) tea.Cmd {
-	gen := p.gen
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		sessions := sb.sandbox.Harness().ListSessions(ctx, sb.wsPath, sb.sandbox)
-		return homeSessionsMsg{gen: gen, sandbox: sb, sessions: sessions}
-	}
-}
-
 func (p *homePage) actions() tea.Cmd {
 	var out []action
 
 	if _, ok := p.rowHomeWorkspace(); ok {
-		out = append(out, actionGotoDir)
+		out = append(out, actionRename, actionGotoDir)
 	}
 
 	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
@@ -297,7 +261,10 @@ func (p *homePage) actions() tea.Cmd {
 		out = append(out, actionPrompt, actionLaunch)
 	}
 
-	if _, ok := p.rowHomeSandbox(); ok {
+	if sb, ok := p.rowHomeSandbox(); ok {
+		if sb.isFree {
+			out = append(out, actionRename)
+		}
 		out = append(out, actionGotoDir, actionPrompt, actionLaunch)
 	}
 
@@ -391,10 +358,21 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			if err != nil {
 				return p, nil
 			}
-			shell := LoadConfig(api.Runtime().Platform).Shell
+			shell := cli.LoadConfig(api.Runtime().Platform).Shell
 
 			p.busy = true
 			return p, gotoDir(tabHome, shell, dir, banner)
+
+		case "r":
+			if w, ok := p.rowHomeWorkspace(); ok {
+				p.busy = true
+				return p, execSelfCommand(tabHome, "rename-workspace", "tui", "rename-workspace", "-p", w.workspace.Path())
+			}
+			if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+				p.busy = true
+				return p, execSelfCommand(tabHome, "rename-sandbox", "sandbox", "rename", "-s", sb.id)
+			}
+			return p, nil
 		}
 
 	case execDoneMsg:
@@ -402,14 +380,11 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 		}
 		p.busy = false
-		return p, nil
-
-	case homeSessionsMsg:
-		if p.ignore(msg.gen) {
-			return p, nil
+		switch msg.tag {
+		case "rename-workspace", "rename-sandbox":
+			return p, p.fetch()
 		}
-		p.busy = false
-		return p, openEditorWithInitial(tabHome, "view-sessions", "sessions-*.yml", msg.sandbox.useSessionsContent(msg.sessions))
+		return p, nil
 
 	case editorDoneMsg:
 		if msg.tab != tabHome {

@@ -28,6 +28,11 @@ var shortDesc = map[string]string{
 	"sandbox-rename": "Give a sandbox a memorable name",
 	"sandbox-up":     "Start sandboxes (all if none given)",
 
+	"tui":                  "Commands for TUI",
+	"tui-rename-workspace": "Rename a workspace",
+	"tui-prompt":           "Write a prompt in $EDITOR and execute in background",
+	"tui-launch":           "Launch in a specific sandbox",
+
 	"version": "Print the nestor version",
 }
 
@@ -41,6 +46,7 @@ func main() {
 	spec := newSpecCmd()
 	sandbox := newSandboxCmd()
 	setup := setupCmd()
+	tui := newTUICmd()
 
 	root.AddCommand(
 		spec.root,
@@ -53,6 +59,8 @@ func main() {
 		sandbox.down,
 
 		setup,
+
+		tui.root,
 
 		&cobra.Command{
 			Use:   "version",

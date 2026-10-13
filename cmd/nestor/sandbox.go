@@ -62,7 +62,7 @@ func newSandboxCmd() *sandboxCmd {
 				return err
 			}
 
-			return cli.Rename(api, cli.RenameArgs{
+			return cli.RenameSandbox(api, cli.RenameSandboxArgs{
 				Sandbox: strings.TrimSpace(sandbox),
 				NewName: name,
 			})

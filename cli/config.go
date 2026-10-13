@@ -1,4 +1,4 @@
-package tui
+package cli
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/infra/fs"
 )
@@ -51,7 +50,7 @@ func (w *Workspace) Name() string {
 	return w.name
 }
 
-func loadWorkspaces(ctx context.Context, api nestor.API) []Workspace {
+func Workspaces(ctx context.Context, api nestor.API) []Workspace {
 	nws := api.Workspaces(ctx)
 	platform := api.Runtime().Platform
 	cfg := LoadConfig(platform)

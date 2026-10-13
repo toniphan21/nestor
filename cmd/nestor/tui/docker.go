@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/pterm/pterm"
+	"nhatp.com/go/nestor/cli"
 )
 
 type dockerTickMsg struct{ gen int }
@@ -378,7 +379,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			if ok && dc.isRunning {
 				shell := "bash"
 				if api, err := p.provider.Get(); err == nil {
-					shell = LoadConfig(api.Runtime().Platform).DockerShell
+					shell = cli.LoadConfig(api.Runtime().Platform).DockerShell
 				}
 				args := []string{"exec", "-it", dc.containerID, shell}
 

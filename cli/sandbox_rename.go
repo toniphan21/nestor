@@ -9,12 +9,12 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-type RenameArgs struct {
+type RenameSandboxArgs struct {
 	Sandbox string
 	NewName string
 }
 
-func Rename(api nestor.API, args RenameArgs) error {
+func RenameSandbox(api nestor.API, args RenameSandboxArgs) error {
 	ctx := context.Background()
 
 	sandboxes, err := api.ListSandboxes(ctx)
@@ -60,11 +60,14 @@ func Rename(api nestor.API, args RenameArgs) error {
 		selected = r.Value
 	}
 
+	currentName := selected.ID()
+	fmt.Printf("Current name: %s\n", pterm.Green(currentName))
+
 	var newName string
 	if args.NewName != "" {
 		newName = args.NewName
 	} else {
-		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText("New name").Show()
+		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText("    New name").Show()
 		if err != nil {
 			return nil
 		}
@@ -86,7 +89,7 @@ func Rename(api nestor.API, args RenameArgs) error {
 		return err
 	}
 
-	fmt.Printf("rename sandbox %q to %q\n", selected.ID(), newName)
+	fmt.Printf("rename sandbox %q to %q\n", currentName, newName)
 
 	fmt.Println(pterm.Green("done"))
 	return nil
