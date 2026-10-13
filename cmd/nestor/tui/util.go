@@ -10,6 +10,10 @@ import (
 	"nhatp.com/go/nestor"
 )
 
+func selectedRow(text string) string {
+	return pterm.NewStyle(pterm.BgGray).Sprint(text)
+}
+
 var extraSep = pterm.Gray(" · ")
 
 func mountTypeDisplay(t nestor.MountType) string {

@@ -466,7 +466,7 @@ func (p *specPage) View() string {
 		}, "  ")
 
 		if p.index == i {
-			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
+			row = selectedRow(row)
 		}
 
 		out.WriteString(spaces(2))

@@ -12,6 +12,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/muesli/cancelreader"
 	"golang.org/x/term"
+
+	"nhatp.com/go/nestor"
 )
 
 type editorDoneMsg struct {
@@ -89,7 +91,17 @@ func execCommand(tab tabID, tag string, cmd string, args ...string) tea.Cmd {
 	})
 }
 
-func execSelfCommand(tab tabID, tag string, args ...string) tea.Cmd {
+func gotoDir(tab tabID, shell, dir, banner string) tea.Cmd {
+	cmd := exec.Command(shell)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), nestor.EnvVarNestorShell+"="+shell)
+
+	return tea.Exec(altScreenCmd{cmd: cmd, banner: banner}, func(err error) tea.Msg {
+		return execDoneMsg{tab: tab, tag: "goto-dir", err: err}
+	})
+}
+
+func runExecSelfCommand(tab tabID, tag string, args []string, wait bool) tea.Cmd {
 	self, err := os.Executable()
 	if err != nil {
 		return func() tea.Msg { return editorDoneMsg{tab: tab, tag: tag, err: err} }
@@ -100,9 +112,17 @@ func execSelfCommand(tab tabID, tag string, args ...string) tea.Cmd {
 		return func() tea.Msg { return editorDoneMsg{tab: tab, tag: tag, err: err} }
 	}
 
-	return tea.Exec(altScreenCmd{cmd: exec.Command(self, args...)}, func(err error) tea.Msg {
+	return tea.Exec(altScreenCmd{cmd: exec.Command(self, args...), wait: wait}, func(err error) tea.Msg {
 		return execDoneMsg{tab: tab, tag: tag, err: err}
 	})
+}
+
+func execSelfCommand(tab tabID, tag string, args ...string) tea.Cmd {
+	return runExecSelfCommand(tab, tag, args, false)
+}
+
+func execSelfCommandDelayed(tab tabID, tag string, args ...string) tea.Cmd {
+	return runExecSelfCommand(tab, tag, args, false)
 }
 
 const (
@@ -111,13 +131,18 @@ const (
 	cursorHome     = "\x1b[H"
 )
 
-const minDisplay = 2 * time.Second
+const minDisplay = 3 * time.Second
 
-// altScreenCmd runs a command on its own alternate screen and waits for
-// enter before returning, so output is readable but never lands on the
-// user's shell screen.
+// altScreenCmd runs a command on its own alternate screen, so output is
+// readable but never lands on the user's shell screen. When wait is true, it
+// additionally pauses for a minimum display time (or a key press on error)
+// before returning, for commands whose output would otherwise flash by too
+// fast to read. When banner is non-empty, it's printed once the alt screen
+// is entered, before the command runs.
 type altScreenCmd struct {
-	cmd *exec.Cmd
+	cmd    *exec.Cmd
+	wait   bool
+	banner string
 }
 
 func (c altScreenCmd) SetStdin(r io.Reader)  { c.cmd.Stdin = r }
@@ -135,6 +160,9 @@ func (c altScreenCmd) Run() error {
 	}
 
 	_, _ = fmt.Fprint(out, enterAltScreen+cursorHome)
+	if c.banner != "" {
+		_, _ = fmt.Fprintln(out, c.banner)
+	}
 	defer func() {
 		_, _ = fmt.Fprint(out, exitAltScreen)
 	}()
@@ -142,14 +170,18 @@ func (c altScreenCmd) Run() error {
 	start := time.Now()
 	err := c.cmd.Run()
 	if err != nil {
-		_, _ = fmt.Fprintf(out, "\nerror: %v\npress any key to return…", err)
-		waitKey(in, 0) // errors: wait until the user has read it
+		if c.wait {
+			_, _ = fmt.Fprintf(out, "\nerror: %v\npress any key to return…", err)
+			waitKey(in, 0) // errors: wait until the user has read it
+		}
 		return err
 	}
 
-	if remaining := minDisplay - time.Since(start); remaining > 0 {
-		_, _ = fmt.Fprint(out, "\npress any key to return")
-		waitKey(in, remaining)
+	if c.wait {
+		if remaining := minDisplay - time.Since(start); remaining > 0 {
+			_, _ = fmt.Fprint(out, "\npress any key to return")
+			waitKey(in, remaining)
+		}
 	}
 	return nil
 }

@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"slices"
 	"syscall"
-	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -135,10 +134,7 @@ func Prompt(api nestor.API, args PromptArgs) error {
 		_ = lease.Sandbox().Start(ctx)
 	}
 
-	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	selectedSessionID, title, err := selectSession(sctx, lease, args.Session)
+	selectedSessionID, title, err := selectSession(ctx, lease, args.Session)
 	if err != nil {
 		return err
 	}

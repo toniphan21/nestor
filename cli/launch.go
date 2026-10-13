@@ -109,10 +109,7 @@ func Launch(api nestor.API, args LaunchArgs) error {
 		}
 	}()
 
-	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	selectedSessionID, title, err := selectSession(sctx, lease, args.Session)
+	selectedSessionID, title, err := selectSession(ctx, lease, args.Session)
 	if err != nil {
 		return err
 	}
@@ -148,7 +145,10 @@ func Launch(api nestor.API, args LaunchArgs) error {
 }
 
 func selectSession(ctx context.Context, lease *nestor.Lease, filteredSession string) (string, string, error) {
-	sessions := lease.ListSessions(ctx)
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sessions := lease.ListSessions(sctx)
 	var selectedID, title string
 
 	if filteredSession != "" {

@@ -452,7 +452,7 @@ func (p *profilePage) View() string {
 
 		row := strings.Join(cols, "  ")
 		if p.index == i {
-			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
+			row = selectedRow(row)
 		}
 
 		out.WriteString(spaces(2))

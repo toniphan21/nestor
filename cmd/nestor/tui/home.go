@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -12,22 +11,6 @@ import (
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 )
-
-var uuidV4Pattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
-
-// trimSessionID shortens a claude session ID (a uuid-v4) or an opencode
-// session ID ("ses_" prefix) to the same "<first 8>…<last 6>" shape, so
-// both harnesses' IDs take up the same width in a session listing.
-func trimSessionID(id string) string {
-	v := strings.TrimPrefix(id, "ses_")
-	if v == id && !uuidV4Pattern.MatchString(id) {
-		return id
-	}
-	if len(v) <= 14 {
-		return v
-	}
-	return v[:8] + "…" + v[len(v)-6:]
-}
 
 func sessionTitle(s nestor.HarnessSession) string {
 	if s.Title != "" {
@@ -84,7 +67,7 @@ func (v *homeSandbox) useSessionsContent(sessions []nestor.HarnessSession) strin
 		return sb.String()
 	}
 	for _, s := range sessions {
-		fmt.Fprintf(&sb, "- %s: %s\n", trimSessionID(s.ID), sessionTitle(s))
+		fmt.Fprintf(&sb, "- %s: %s\n", s.ID, sessionTitle(s))
 	}
 	return sb.String()
 }
@@ -163,14 +146,13 @@ func (v *homeMount) toRows(isLast bool, collapsed bool, uhome string) []homeRow 
 }
 
 type homeWorkspace struct {
-	name   string
-	path   string
-	mounts []homeMount
+	workspace Workspace
+	mounts    []homeMount
 }
 
 func (v *homeWorkspace) toRows(collapsed map[string]bool, uhome string) []homeRow {
 	rows := []homeRow{
-		{name: v.name, extra: cutHome(v.path, uhome), typ: "workspace", data: v},
+		{name: v.workspace.Name(), extra: cutHome(v.workspace.Path(), uhome), typ: "workspace", data: v},
 	}
 	for i, m := range v.mounts {
 		rows = append(rows, m.toRows(i == len(v.mounts)-1, collapsed[m.key()], uhome)...)
@@ -235,8 +217,8 @@ func (p homePage) fetch() tea.Cmd {
 		}
 
 		var workspaces []homeWorkspace
-		for _, w := range api.Workspaces(context.Background()) {
-			hw := homeWorkspace{name: w.Name(), path: w.Path()}
+		for _, w := range loadWorkspaces(context.Background(), api) {
+			hw := homeWorkspace{workspace: w}
 
 			for _, m := range w.Mounts() {
 				spec := m.Spec()
@@ -275,7 +257,7 @@ func (p homePage) fetch() tea.Cmd {
 		}
 
 		slices.SortFunc(workspaces, func(a, b homeWorkspace) int {
-			return strings.Compare(a.name, b.name)
+			return strings.Compare(a.workspace.Name(), b.workspace.Name())
 		})
 		return homeDataMsg{gen: gen, workspaces: workspaces, uhome: api.Runtime().Platform.UserHomeDir()}
 	}
@@ -379,7 +361,48 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				return p, nil
 			}
 			return p.setCollapsed(!p.collapsed[m.key()])
+
+		case "g":
+			var dir, banner string
+			if w, ok := p.rowHomeWorkspace(); ok {
+				dir = w.workspace.Path()
+				banner = fmt.Sprintf(
+					"You are in main directory %s of the project %s.\nExit the shell or press %s to go back to nestor.",
+					pterm.Magenta(dir), pterm.Green(w.workspace.Name()), pterm.Blue("ctrl-D"),
+				)
+			} else if sb, ok := p.rowHomeSandbox(); ok {
+				dir = sb.hostWorkDir
+				if dir == "" {
+					dir = sb.workDir
+				}
+				project := sb.wsPath
+				if w, ok := p.homeWorkspaceByPath(sb.wsPath); ok {
+					project = w.workspace.Name()
+				}
+				banner = fmt.Sprintf(
+					"You are in %s directory %s of the sandbox %s in the project %s.\nExit the shell or press %s to go back to nestor.",
+					pterm.Yellow(mountTypeDisplay(sb.mountType)), pterm.Magenta(dir), pterm.Cyan(sb.id), pterm.Green(project), pterm.Blue("ctrl-D"),
+				)
+			} else {
+				return p, nil
+			}
+
+			api, err := p.provider.Get()
+			if err != nil {
+				return p, nil
+			}
+			shell := LoadConfig(api.Runtime().Platform).Shell
+
+			p.busy = true
+			return p, gotoDir(tabHome, shell, dir, banner)
 		}
+
+	case execDoneMsg:
+		if msg.tab != tabHome {
+			return p, nil
+		}
+		p.busy = false
+		return p, nil
 
 	case homeSessionsMsg:
 		if p.ignore(msg.gen) {
@@ -396,6 +419,15 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, nil
 	}
 	return p, nil
+}
+
+func (p *homePage) homeWorkspaceByPath(path string) (*homeWorkspace, bool) {
+	for i := range p.workspaces {
+		if p.workspaces[i].workspace.Path() == path {
+			return &p.workspaces[i], true
+		}
+	}
+	return nil, false
 }
 
 func (p *homePage) rowHomeWorkspace() (*homeWorkspace, bool) {
@@ -460,7 +492,7 @@ func (p *homePage) View() string {
 
 		row := strings.Join(cols, "  ")
 		if p.index == i {
-			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
+			row = selectedRow(row)
 		}
 
 		out.WriteString(spaces(2))

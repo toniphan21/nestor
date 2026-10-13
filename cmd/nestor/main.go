@@ -95,7 +95,23 @@ func run(fn func(nestor.API, *cobra.Command, []string) error) func(*cobra.Comman
 	}
 }
 
+// guardAgainstNestedShell declines to proceed when run inside a shell nestor
+// itself opened (see tui.gotoDir), so the user doesn't end up nesting one
+// nestor session inside another by running `nestor` again from there.
+func guardAgainstNestedShell() error {
+	shell, ok := os.LookupEnv(nestor.EnvVarNestorShell)
+	if !ok {
+		return nil
+	}
+	return fmt.Errorf("you are running a shell %q inside nestor, you can go back by pressing ctrl-D", shell)
+}
+
 func runTUI(cmd *cobra.Command, argv []string) error {
+	if err := guardAgainstNestedShell(); err != nil {
+		fmt.Println(pterm.Red(err.Error()))
+		return nil
+	}
+
 	logger, closer, err := newLogger(cmd)
 	if err != nil {
 		fmt.Println(pterm.Red(fmt.Sprintf("%s, cannot create a logger", err.Error())))

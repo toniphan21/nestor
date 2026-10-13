@@ -253,7 +253,7 @@ func (s *sandboxImpl) Leases() []*Lease {
 			continue
 		}
 
-		out = append(out, &Lease{data: ld, sandbox: s, log: s.leaseLog})
+		out = append(out, &Lease{sync: &leaseSyncedData{}, data: ld, sandbox: s, log: s.leaseLog})
 	}
 
 	if save {
@@ -417,11 +417,11 @@ func (s *sandboxImpl) IsFree(path string) bool {
 	}
 
 	ld, ok := s.data.Leases[path]
-	return !ok || !ld.ExpiresAt.Before(time.Now())
+	return !ok || ld.ExpiresAt.Before(time.Now())
 }
 
 func (s *sandboxImpl) Acquire(ctx context.Context, path string) (*Lease, error) {
-	if s.IsFree(path) {
+	if !s.IsFree(path) {
 		return nil, fmt.Errorf("%w: lease on path %q is already acquired", ErrNotAvailable, path)
 	}
 

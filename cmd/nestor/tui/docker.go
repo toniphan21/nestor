@@ -332,7 +332,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 					args = append(args, v.sandbox)
 				}
 				p.busy = true
-				return p, execSelfCommand(tabDocker, "down:sandboxes", args...)
+				return p, execSelfCommandDelayed(tabDocker, "down:sandboxes", args...)
 			}
 
 			dc, ok := p.rowDockerContainer()
@@ -340,7 +340,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				args := []string{"sandbox", "down", dc.sandbox}
 
 				p.busy = true
-				return p, execSelfCommand(tabDocker, "down:sandbox", args...)
+				return p, execSelfCommandDelayed(tabDocker, "down:sandbox", args...)
 			}
 			return p, nil
 
@@ -352,7 +352,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 					args = append(args, v.sandbox)
 				}
 				p.busy = true
-				return p, execSelfCommand(tabDocker, "up:sandboxes", args...)
+				return p, execSelfCommandDelayed(tabDocker, "up:sandboxes", args...)
 			}
 
 			dc, ok := p.rowDockerContainer()
@@ -360,7 +360,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 				args := []string{"sandbox", "up", dc.sandbox}
 
 				p.busy = true
-				return p, execSelfCommand(tabDocker, "up:sandbox", args...)
+				return p, execSelfCommandDelayed(tabDocker, "up:sandbox", args...)
 			}
 			return p, nil
 
@@ -371,12 +371,16 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			}
 			args := []string{"spec", "build", di.spec}
 			p.busy = true
-			return p, execSelfCommand(tabDocker, "build", args...)
+			return p, execSelfCommandDelayed(tabDocker, "build", args...)
 
 		case "enter":
 			dc, ok := p.rowDockerContainer()
 			if ok && dc.isRunning {
-				args := []string{"exec", "-it", dc.containerID, "bash"}
+				shell := "bash"
+				if api, err := p.provider.Get(); err == nil {
+					shell = LoadConfig(api.Runtime().Platform).DockerShell
+				}
+				args := []string{"exec", "-it", dc.containerID, shell}
 
 				p.busy = true
 				return p, execCommand(tabDocker, "down:sandbox", "docker", args...)
@@ -462,7 +466,7 @@ func (p *dockerPage) View() string {
 
 		row := strings.Join(cols, "  ")
 		if p.index == i {
-			row = pterm.NewStyle(pterm.BgGray).Sprint(row)
+			row = selectedRow(row)
 		}
 
 		out.WriteString(spaces(2))

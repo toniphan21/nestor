@@ -11,6 +11,11 @@ import (
 
 const EnvVarNestorDir = "NESTOR_DIR"
 
+// EnvVarNestorShell is set on a shell nestor opens itself (see the TUI's
+// gotoDir) to the shell it launched, so a nested `nestor` invocation can
+// detect it and decline to start another session.
+const EnvVarNestorShell = "NESTOR_SHELL"
+
 type OSKind string
 
 const (
