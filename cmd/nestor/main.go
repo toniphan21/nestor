@@ -33,7 +33,8 @@ var shortDesc = map[string]string{
 	"tui-prompt-sandbox":   "Write a prompt in $EDITOR and execute in background in a specific sandbox",
 	"tui-launch-sandbox":   "Launch in a specific sandbox",
 
-	"version": "Print the nestor version",
+	"version":     "Print the nestor version",
+	"self-update": "Download and install the latest nestor release",
 }
 
 func main() {
@@ -70,6 +71,10 @@ func main() {
 			},
 		},
 	)
+
+	if su := selfUpdateCmd(); su != nil {
+		root.AddCommand(su)
+	}
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -136,7 +141,7 @@ func runTUI(cmd *cobra.Command, argv []string) error {
 		return nestor.New(opts...)
 	})
 
-	if err := tui.Run(provider); err != nil {
+	if err := tui.Run(provider, upgradeCommand); err != nil {
 		fmt.Println(pterm.Red("Error: ", err.Error()))
 	}
 	return nil

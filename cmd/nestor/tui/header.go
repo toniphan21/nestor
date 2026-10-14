@@ -23,10 +23,12 @@ const (
 )
 
 type header struct {
-	active    tabID
-	actionBar actionBar
-	width     int
-	y         int
+	active         tabID
+	actionBar      actionBar
+	width          int
+	y              int
+	latestVersion  string
+	upgradeCommand string
 }
 
 func (h header) ActiveTab() tabID {
@@ -47,6 +49,10 @@ func (h *header) SetWidth(w int) {
 
 func (h *header) SetY(y int) {
 	h.y = y
+}
+
+func (h *header) SetLatestVersion(v string) {
+	h.latestVersion = v
 }
 
 func (h *header) SetActions(actions []action) {
@@ -78,7 +84,19 @@ func (h header) View() string {
 		return ""
 	}
 
-	self := fmt.Sprintf("%s v%s %s %s\n\n", nestor.BinaryName, nestor.Version, pterm.Gray(nestor.GoOS), pterm.Gray(nestor.GoArch))
+	var update string
+	if h.latestVersion != "" {
+		update = fmt.Sprintf(
+			"- %s, run %s to upgrade",
+			pterm.Yellow(displayVersion(h.latestVersion)+" available"),
+			pterm.Blue(h.upgradeCommand),
+		)
+	}
+
+	self := fmt.Sprintf(
+		"%s %s %s %s\n\n",
+		nestor.BinaryName, displayVersion(nestor.Version), pterm.Gray(nestor.GoOS+"/"+nestor.GoArch), update,
+	)
 
 	tabs := h.tabs()
 	left := " " + strings.Join(tabs, " ")

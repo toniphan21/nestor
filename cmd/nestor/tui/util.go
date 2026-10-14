@@ -10,6 +10,13 @@ import (
 	"nhatp.com/go/nestor"
 )
 
+func displayVersion(v string) string {
+	if v == "dev" {
+		return v
+	}
+	return "v" + v
+}
+
 func selectedRow(text string) string {
 	return pterm.NewStyle(pterm.BgGray).Sprint(text)
 }

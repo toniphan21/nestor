@@ -1,16 +1,42 @@
 version: 2
+project_name: nestor
 builds:
-  - main: ./cmd/nestor
+  - id: nestor
+    main: ./cmd/nestor
     binary: nestor
     env: [CGO_ENABLED=0]
     goos: [linux, darwin]
     goarch: [amd64, arm64]
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    ldflags: &ldflags
+      - -s -w
+        -X nhatp.com/go/nestor.BinaryName={{.ProjectName}}
+        -X nhatp.com/go/nestor.Version={{.Version}}
+        -X nhatp.com/go/nestor.GoOS={{.Os}}
+        -X nhatp.com/go/nestor.GoArch={{.Arch}}
+  - id: nestor-noselfupdate
+    main: ./cmd/nestor
+    binary: nestor
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    tags: [noselfupdate]
+    ldflags: *ldflags
 archives:
-  - formats: [tar.gz]
+  - id: default
+    ids: [nestor]
+    formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+  - id: noselfupdate
+    ids: [nestor-noselfupdate]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_noselfupdate_{{ .Os }}_{{ .Arch }}"
 checksum:
   name_template: checksums.txt
+  extra_files:
+    - glob: ./install.sh
+release:
+  extra_files:
+    - glob: ./install.sh
 changelog:
   disable: true
+

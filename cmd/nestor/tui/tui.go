@@ -2,10 +2,21 @@
 package tui
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
+	"nhatp.com/go/nestor"
 )
+
+const bgInterval = 5 * time.Minute
+
+type bgJobTickMsg struct{}
+
+type bgJobDataMsg struct {
+	lastestVersion string
+}
 
 type TUI struct {
 	header header
@@ -28,6 +39,25 @@ type page interface {
 	View() string
 }
 
+func (t TUI) bgJobTick() tea.Cmd {
+	return tea.Tick(bgInterval, func(time.Time) tea.Msg {
+		return bgJobTickMsg{}
+	})
+}
+
+func (t TUI) bgJob() tea.Cmd {
+	return func() tea.Msg {
+		if nestor.Version == "dev" {
+			return bgJobDataMsg{}
+		}
+		latestVersion, isNew := nestor.CheckUpdate(nestor.LatestReleaseURL)
+		if !isNew {
+			latestVersion = ""
+		}
+		return bgJobDataMsg{latestVersion}
+	}
+}
+
 func (t TUI) Init() tea.Cmd {
 	return t.initCmd
 }
@@ -44,6 +74,15 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.SetSize(t.width-2, t.height-hh) // scroll take 2 on the right
 		}
 		return t, nil
+
+	case bgJobTickMsg:
+		return t, t.bgJob()
+
+	case bgJobDataMsg:
+		if msg.lastestVersion != "" {
+			t.header.SetLatestVersion(msg.lastestVersion)
+		}
+		return t, t.bgJobTick()
 
 	case tea.MouseWheelMsg:
 		if t.isBusy() {
@@ -164,7 +203,7 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 	return cmd
 }
 
-func Run(provider *APIProvider) error {
+func Run(provider *APIProvider, upgradeCommand string) error {
 	t := &TUI{
 		pages: map[tabID]page{
 			tabHome:    &homePage{basePage: &basePage{}, provider: provider},
@@ -174,7 +213,8 @@ func Run(provider *APIProvider) error {
 			tabMCP:     &mcpPage{basePage: &basePage{}, provider: provider},
 		},
 	}
-	t.initCmd = t.pages[t.header.ActiveTab()].Focus()
+	t.header.upgradeCommand = upgradeCommand
+	t.initCmd = tea.Batch(t.pages[t.header.ActiveTab()].Focus(), t.bgJob())
 
 	if _, err := tea.NewProgram(t).Run(); err != nil {
 		return err
