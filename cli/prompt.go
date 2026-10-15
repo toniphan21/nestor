@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -179,4 +180,50 @@ func Prompt(api nestor.API, args PromptArgs) error {
 			}
 		}
 	}
+}
+
+func selectSession(ctx context.Context, lease *nestor.Lease, filteredSession string) (string, string, error) {
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sessions := lease.ListSessions(sctx)
+	var selectedID, title string
+
+	if filteredSession != "" {
+		for _, v := range sessions {
+			if v.ID != filteredSession {
+				continue
+			}
+			return v.ID, v.Title, nil
+		}
+		return "", "", fmt.Errorf("%w: session %q", nestor.ErrNotFound, filteredSession)
+	}
+
+	if len(sessions) > 0 {
+		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
+			Title: "New session",
+		})
+		dt := fmt.Sprintf("Select sessions (%d available)", len(sessions))
+		r, err := Select(sessions, dt, func(i int, s nestor.HarnessSession) string {
+			if i == 0 {
+				return fmt.Sprintf("%d. %s", i+1, s.Title)
+			}
+			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
+		})
+		if err != nil {
+			return selectedID, title, nil
+		}
+
+		selectedID = r.Value.ID
+	}
+
+	if selectedID == "" {
+		t := "Session title (optional — leave blank for an auto-generated name)"
+		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
+		if err != nil {
+			return "", "", nil
+		}
+		title = v
+	}
+	return selectedID, title, nil
 }

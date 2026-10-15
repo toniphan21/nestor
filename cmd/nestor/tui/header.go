@@ -182,8 +182,8 @@ var (
 	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
 	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
 	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
-	actionCollapse          = action{keys: []string{pterm.Blue("space")}, desc: "collapse", priority: 1}
-	actionExpand            = action{keys: []string{pterm.Blue("space")}, desc: "expand", priority: 1}
+	actionCollapse          = action{keys: []string{pterm.Blue("z")}, desc: "collapse", priority: 0}
+	actionExpand            = action{keys: []string{pterm.Blue("z")}, desc: "expand", priority: 0}
 	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
 	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
 	actionGotoDir           = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}

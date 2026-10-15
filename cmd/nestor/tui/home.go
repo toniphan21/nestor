@@ -294,12 +294,12 @@ func (p *homePage) actions() tea.Cmd {
 	}
 
 	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
+		out = append(out, actionPrompt, actionLaunch)
 		if p.collapsed[m.key()] {
 			out = append(out, actionExpand)
 		} else {
 			out = append(out, actionCollapse)
 		}
-		out = append(out, actionPrompt, actionLaunch)
 	}
 
 	if sb, ok := p.rowHomeSandbox(); ok {
@@ -360,18 +360,18 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			}
 			return p, p.actions()
 
-		case "left":
-			return p.setCollapsed(true)
-
-		case "right":
-			return p.setCollapsed(false)
-
-		case "space":
+		case "z":
 			m, ok := p.rowHomeMount()
 			if !ok || len(m.sandboxes) == 0 {
 				return p, nil
 			}
 			return p.setCollapsed(!p.collapsed[m.key()])
+
+		case "left":
+			return p.setCollapsed(true)
+
+		case "right":
+			return p.setCollapsed(false)
 
 		case "g":
 			var dir, banner string
@@ -419,13 +419,16 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 
 		case "enter", "l":
-			sb, ok := p.rowHomeSandbox()
-			if !ok || !sb.isFree {
-				return p, nil
+			if sm, ok := p.rowHomeMount(); ok {
+				p.busy = true
+				return p, execSelfCommand(tabHome, "launch-spec", "tui", "launch-spec", "-s", sm.specName, "-p", sm.wsPath)
 			}
 
-			p.busy = true
-			return p, execSelfCommand(tabHome, "launch-sandbox", "tui", "launch-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
+			if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+				p.busy = true
+				return p, execSelfCommand(tabHome, "launch-sandbox", "tui", "launch-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
+			}
+			return p, nil
 		}
 
 	case execDoneMsg:

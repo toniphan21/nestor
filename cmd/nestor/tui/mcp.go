@@ -217,6 +217,7 @@ func (p *mcpPage) actions() tea.Cmd {
 
 	var out []action
 
+	out = append(out, actionEditConfiguration)
 	if s, ok := p.rowMCPServer(); ok {
 		out = append(out, actionTool)
 		if len(s.vars) > 0 {
@@ -236,7 +237,7 @@ func (p *mcpPage) actions() tea.Cmd {
 		}
 	}
 
-	out = append(out, actionEditConfiguration, actionMove, actionQuit)
+	out = append(out, actionMove, actionQuit)
 	return useActions(out...)
 }
 
@@ -300,7 +301,7 @@ func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		case "right":
 			return p.setCollapsed(false)
 
-		case "space":
+		case "z":
 			s, ok := p.rowMCPServer()
 			if !ok || len(s.vars) == 0 {
 				return p, nil

@@ -227,6 +227,7 @@ func (p *profilePage) actions() tea.Cmd {
 
 	var out []action
 
+	out = append(out, actionEditConfiguration)
 	if v, ok := p.rowProfileEntry(); ok && (len(v.settings) > 0 || len(v.options) > 0) {
 		if p.collapsed[v.name] {
 			out = append(out, actionExpand)
@@ -243,7 +244,7 @@ func (p *profilePage) actions() tea.Cmd {
 		}
 	}
 
-	out = append(out, actionEditConfiguration, actionMove, actionQuit)
+	out = append(out, actionMove, actionQuit)
 	return useActions(out...)
 }
 
@@ -307,7 +308,7 @@ func (p *profilePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		case "right":
 			return p.setCollapsed(false)
 
-		case "space":
+		case "z":
 			v, ok := p.rowProfileEntry()
 			if !ok || (len(v.settings) == 0 && len(v.options) == 0) {
 				return p, nil

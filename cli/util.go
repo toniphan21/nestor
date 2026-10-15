@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -101,8 +103,7 @@ func Select[T any](list []T, text string, option func(int, T) string) (*SelectRe
 func collectSpec(api nestor.API, filteredName string) (*nestor.SandboxSpec, error) {
 	allSpecs := api.Runtime().Registry.SandboxSpecs()
 	if len(allSpecs) == 0 {
-		fmt.Println(pterm.Yellow("no sandbox specs"))
-		return nil, nil
+		return nil, fmt.Errorf("%w: no sandbox specs", nestor.ErrNotFound)
 	}
 
 	if filteredName != "" {
@@ -135,6 +136,9 @@ func collectSpec(api nestor.API, filteredName string) (*nestor.SandboxSpec, erro
 
 func collectPath(spec nestor.SandboxSpec, filteredPath string) (*string, error) {
 	paths := spec.Paths()
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%w: no mounts in spec %q", nestor.ErrNotFound, spec.Name)
+	}
 
 	if filteredPath != "" {
 		for _, v := range paths {
@@ -144,11 +148,6 @@ func collectPath(spec nestor.SandboxSpec, filteredPath string) (*string, error) 
 			return &v, nil
 		}
 		return nil, fmt.Errorf("%w: path %q", nestor.ErrNotFound, filteredPath)
-	}
-
-	if len(paths) == 0 {
-		fmt.Println(pterm.Red("no sandbox mounts found"))
-		return nil, nil
 	}
 
 	var selectedPath string
@@ -167,8 +166,95 @@ func collectPath(spec nestor.SandboxSpec, filteredPath string) (*string, error) 
 	return &selectedPath, nil
 }
 
-// escapeCLIFlagValue quotes val so a POSIX shell (sh/bash/zsh) reads it as
-// exactly one word with no expansion.
+func collectSpecAndPath(api nestor.API, filteredSpec, filteredPath string) (nestor.SandboxSpec, string, error) {
+	var spec nestor.SandboxSpec
+	var path string
+
+	if v, err := collectSpec(api, filteredSpec); err != nil || v == nil {
+		return spec, path, err
+	} else {
+		spec = *v
+	}
+
+	if v, err := collectPath(spec, filteredPath); err != nil || v == nil {
+		return spec, path, err
+	} else {
+		path = *v
+	}
+	return spec, path, nil
+}
+
+func freeSandboxes(api nestor.API, spec nestor.SandboxSpec, path string) ([]nestor.Sandbox, error) {
+	allSandboxes, err := spec.ListSandboxes(api.Runtime())
+	if err != nil {
+		return nil, err
+	}
+
+	var sandboxes []nestor.Sandbox
+	for _, v := range allSandboxes {
+		if !v.IsFree(path) {
+			continue
+		}
+		sandboxes = append(sandboxes, v)
+	}
+
+	if len(sandboxes) == 0 {
+		return nil, fmt.Errorf("%w: no free sandbox", nestor.ErrNotAvailable)
+	}
+	return sandboxes, nil
+}
+
+func collectFreeSandboxes(api nestor.API, spec nestor.SandboxSpec, path string, filtered ...string) ([]nestor.Sandbox, error) {
+	sandboxes, err := freeSandboxes(api, spec, path)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(filtered) > 0 {
+		allowed := make(map[string]bool)
+		for _, v := range filtered {
+			if v != "" {
+				allowed[v] = true
+			}
+		}
+
+		if len(allowed) > 0 {
+			var out []nestor.Sandbox
+			for _, v := range sandboxes {
+				if allowed[v.ID()] {
+					out = append(out, v)
+				}
+			}
+
+			if len(out) == 0 {
+				return nil, fmt.Errorf("%w: no free sandbox matched filtered", nestor.ErrNotFound)
+			}
+			return out, nil
+		}
+	}
+
+	if len(sandboxes) == 1 {
+		return sandboxes, nil
+	}
+
+	options := []string{pterm.Cyan("any sandbox")}
+	for _, v := range sandboxes {
+		options = append(options, v.ID())
+	}
+
+	r, err := Select(options, "Select sandbox", func(i int, s string) string {
+		return fmt.Sprintf("%d. %s", i+1, s)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if r.Index == 0 {
+		return sandboxes, nil
+	}
+	return []nestor.Sandbox{sandboxes[r.Index-1]}, nil
+}
+
 func escapeCLIFlagValue(val string) string {
 	if val == "" {
 		return "''"
@@ -197,8 +283,6 @@ func escapeCLIFlagValue(val string) string {
 	return b.String()
 }
 
-// needsQuoting reports whether r is outside the set of characters that are
-// always literal in an unquoted shell word.
 func needsQuoting(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -209,4 +293,107 @@ func needsQuoting(r rune) bool {
 		return false
 	}
 	return true
+}
+
+type sessionOptionItem struct {
+	sandbox nestor.Sandbox
+	session nestor.HarnessSession
+	text    string
+}
+
+type sessionCollector struct {
+	path               string
+	sandboxes          []nestor.Sandbox
+	displaySandboxName bool
+	timeout            time.Duration
+	filtered           string
+	selectLabel        string
+	titleInputLabel    string
+}
+
+func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, title string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	if len(c.sandboxes) == 0 {
+		err = fmt.Errorf("%w: no sandboxes to pick session", nestor.ErrInvalid)
+		return
+	}
+
+	var items []sessionOptionItem
+	for _, v := range c.sandboxes {
+		sessions := v.Harness().ListSessions(ctx, c.path, v)
+		for _, vv := range sessions {
+			t := vv.Title
+			if t == "" {
+				t = "last opened: " + vv.UpdatedAt.Local().Format("2006-01-02 15:04")
+			}
+			var text string
+			if c.displaySandboxName {
+				text = fmt.Sprintf("sandbox %s - %s - %s", pterm.Green(v.ID()), vv.ID, t)
+			} else {
+				text = fmt.Sprintf("%s - %s", vv.ID, t)
+			}
+			items = append(items, sessionOptionItem{
+				sandbox: v,
+				session: vv,
+				text:    text,
+			})
+		}
+	}
+
+	if c.filtered != "" {
+		for _, v := range items {
+			if v.session.ID != c.filtered {
+				continue
+			}
+
+			sandbox = v.sandbox
+			sessionID = v.session.ID
+			title = v.session.Title
+			return
+		}
+
+		err = fmt.Errorf("%w: session %q", nestor.ErrNotFound, c.filtered)
+		return
+	}
+
+	if len(items) > 0 {
+		items = slices.Insert(items, 0, sessionOptionItem{
+			text: "New session",
+		})
+
+		printer := pterm.DefaultInteractiveSelect.
+			WithDefaultText(c.selectLabel).
+			WithMaxHeight(len(items) + 1)
+
+		var selectResult *SelectResult[sessionOptionItem]
+		selectResult, err = SingleSelect(items, printer, func(i int, s sessionOptionItem) string {
+			return fmt.Sprintf("%3d. %s", i+1, s.text)
+		})
+		if err != nil {
+			return
+		}
+
+		if selectResult.Index != 0 {
+			sandbox = selectResult.Value.sandbox
+			sessionID = selectResult.Value.session.ID
+			title = selectResult.Value.session.Title
+			return
+		}
+
+		sessionID = ""
+	}
+
+	sandbox = c.sandboxes[0]
+	if sessionID == "" {
+		t := c.titleInputLabel
+		var input string
+		input, err = pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
+		if err != nil {
+			return
+		}
+		title = input
+	}
+	return
 }

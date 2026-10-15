@@ -233,6 +233,7 @@ func (p *dockerPage) actions() tea.Cmd {
 		default:
 			out = append(out, actionContainerDown, actionContainerUp)
 		}
+		out = append(out, actionEditDockerfile, actionBuild)
 		if len(di.containers) > 0 {
 			if p.collapsed[di.spec] {
 				out = append(out, actionExpand)
@@ -240,7 +241,7 @@ func (p *dockerPage) actions() tea.Cmd {
 				out = append(out, actionCollapse)
 			}
 		}
-		out = append(out, actionEditDockerfile, actionBuild, actionMove, actionQuit)
+		out = append(out, actionMove, actionQuit)
 
 		return useActions(out...)
 	}
@@ -310,7 +311,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		case "right":
 			return p.setCollapsed(false)
 
-		case "space":
+		case "z":
 			di, ok := p.rowDockerImage()
 			if !ok || len(di.containers) == 0 {
 				return p, nil

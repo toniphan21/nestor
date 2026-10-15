@@ -227,6 +227,7 @@ func (p *specPage) actions() tea.Cmd {
 
 	var out []action
 
+	out = append(out, actionEditConfiguration)
 	if s, ok := p.rowSpecEntry(); ok && (len(s.mounts) > 0 || len(s.env) > 0) {
 		if p.collapsed[s.name] {
 			out = append(out, actionExpand)
@@ -243,7 +244,7 @@ func (p *specPage) actions() tea.Cmd {
 		}
 	}
 
-	out = append(out, actionEditConfiguration, actionMove, actionQuit)
+	out = append(out, actionMove, actionQuit)
 	return useActions(out...)
 }
 
@@ -308,7 +309,7 @@ func (p *specPage) Update(msg tea.Msg) (page, tea.Cmd) {
 		case "right":
 			return p.setCollapsed(false)
 
-		case "space":
+		case "z":
 			s, ok := p.rowSpecEntry()
 			if !ok || (len(s.mounts) == 0 && len(s.env) == 0) {
 				return p, nil

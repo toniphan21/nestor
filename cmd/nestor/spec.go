@@ -53,6 +53,10 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
 			session, err := cmd.Flags().GetString("session")
 			if err != nil {
 				return err
@@ -61,12 +65,14 @@ func newSpecCmd() *specCmd {
 			return cli.Launch(api, cli.LaunchArgs{
 				SandboxSpec: strings.TrimSpace(spec),
 				Path:        strings.TrimSpace(path),
+				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
 			})
 		}),
 	}
 	launch.Flags().StringP("spec", "s", "", "name of the sandbox spec")
 	launch.Flags().StringP("path", "p", "", "path")
+	launch.Flags().StringP("name", "n", "", "sandbox name")
 	launch.Flags().StringP("session", "r", "", "session id to resume")
 
 	prompt := &cobra.Command{
