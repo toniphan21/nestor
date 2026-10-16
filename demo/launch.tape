@@ -16,7 +16,7 @@ Type "j"
 Sleep 1s
 Type "l"
 Sleep 1s
-Down
+Enter
 Sleep 1s
 Enter
 Sleep 1s
