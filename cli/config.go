@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -136,4 +137,16 @@ func defaultShell() string {
 		}
 	}
 	return "sh"
+}
+
+func defaultEditor() string {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		for _, v := range []string{"nvim", "vim", "vi", "nano"} {
+			if _, err := exec.LookPath(v); err == nil {
+				return v
+			}
+		}
+	}
+	return editor
 }

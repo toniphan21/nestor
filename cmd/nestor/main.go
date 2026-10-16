@@ -19,7 +19,7 @@ var shortDesc = map[string]string{
 	"spec":         "Manage sandbox specs",
 	"spec-build":   "Build a sandbox image from a spec",
 	"spec-launch":  "Start an interactive harness session in a sandbox",
-	"spec-prompt":  "Run a headless prompt in a sandbox (demo of library usage)",
+	"spec-prompt":  "Run a prompt in headless mode in a specific sandbox (fire-and-forget)",
 	"spec-release": "Release the lease held on a sandbox",
 
 	"sandbox":        "Manage sandboxes",
@@ -30,9 +30,10 @@ var shortDesc = map[string]string{
 
 	"tui":                  "Commands for TUI",
 	"tui-rename-workspace": "Rename a workspace",
-	"tui-launch-spec":      "Launch any sandbox in spec",
-	"tui-prompt-sandbox":   "Write a prompt in $EDITOR and execute in background in a specific sandbox",
+	"tui-launch-spec":      "Launch any sandbox of a spec",
+	"tui-prompt-spec":      "Run a prompt in headless mode in any sandbox of a spec",
 	"tui-launch-sandbox":   "Launch in a specific sandbox",
+	"tui-prompt-sandbox":   "Run a prompt in headless mode in a specific sandbox",
 
 	"version":     "Print the nestor version",
 	"self-update": "Download and install the latest nestor release",

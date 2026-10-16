@@ -45,6 +45,7 @@ type Headless struct {
 	Instructions []string
 	Stdout       io.Writer
 	Stderr       io.Writer
+	OnFinished   func(sessionID string)
 }
 
 func (h Headless) validate() error {
@@ -376,6 +377,9 @@ func (l *Lease) Run(ctx context.Context, param RunParam) (result RunResult, err 
 		l.save(metaFP, meta)
 		code, err := l.runHeadless(ctx, &v, meta, &run)
 		l.save(metaFP, meta)
+		if v.OnFinished != nil {
+			v.OnFinished(l.sessionID)
+		}
 		return RunResult{ExitCode: code, Duration: time.Since(start)}, err
 
 	case Interactive:

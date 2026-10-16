@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
-	"slices"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,102 +18,114 @@ import (
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli/claude"
 	"nhatp.com/go/nestor/cli/opencode"
+	"nhatp.com/go/nestor/infra/fs"
 )
-
-type promptInfo struct {
-	spec  string
-	path  string
-	model string
-	run   bool
-}
-
-func collectPromptInfo(api nestor.API, args PromptArgs) (*promptInfo, error) {
-	var spec nestor.SandboxSpec
-	if v, err := collectSpec(api, args.SandboxSpec); err != nil || v == nil {
-		return nil, err
-	} else {
-		spec = *v
-	}
-
-	var selectedPath string
-	if v, err := collectPath(spec, args.Path); err != nil || v == nil {
-		return nil, err
-	} else {
-		selectedPath = *v
-	}
-
-	profile, have := api.Runtime().Registry.Profile(spec.Profile)
-	if !have {
-		return &promptInfo{run: false}, nil
-	}
-
-	models := profile.SupportedModelsWithoutDefault()
-	var selectedModel string
-	if len(models) == 0 {
-		selectedModel = profile.DefaultModel
-		fmt.Printf("use model %s\n", pterm.Cyan(selectedModel))
-	} else {
-		models = slices.Insert(models, 0, profile.DefaultModel)
-
-		if args.Model != "" {
-			for _, v := range models {
-				if v != args.Model {
-					continue
-				}
-				selectedModel = v
-			}
-
-			if selectedModel == "" {
-				return nil, fmt.Errorf("%w: model %q", nestor.ErrNotFound, args.Model)
-			}
-		} else {
-			dt := fmt.Sprintf("Select model (%d available)", len(models))
-			r, err := Select(models, dt, func(i int, s string) string {
-				return fmt.Sprintf("%d. %s", i+1, s)
-			})
-			if err != nil {
-				return nil, err
-			}
-			selectedModel = r.Value
-		}
-	}
-
-	return &promptInfo{spec: spec.Name, path: selectedPath, model: selectedModel, run: true}, nil
-}
 
 type PromptArgs struct {
 	SandboxSpec string
 	Path        string
-	Model       string
+	Sandbox     string
 	Session     string
+	Model       string
+	DryRun      bool
 }
 
 func Prompt(api nestor.API, args PromptArgs) error {
-	fmt.Printf("\n%s %s\n\n", pterm.Yellow("Note: nestor prompt is only a demo of a headless call. Headless mode isn't practical from a standalone binary — the real use is"), pterm.Blue("nestor launch"))
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	info, err := collectPromptInfo(api, args)
+	spec, path, err := collectSpecAndPath(api, args.SandboxSpec, args.Path)
 	if err != nil {
 		return err
 	}
-	if !info.run {
-		fmt.Println(pterm.Yellow("nothing to prompt"))
-		fmt.Println(pterm.Green("done"))
-		return nil
+
+	model, err := collectModel(api, spec, "", args.Model)
+	if err != nil {
+		return err
 	}
 
-	spec := info.spec
-	path := info.path
-	model := info.model
+	var sandboxes []nestor.Sandbox
+	if args.Sandbox != "" {
+		sandboxes, err = collectFreeSandboxes(api, spec, path, args.Sandbox)
+	} else {
+		sandboxes, err = freeSandboxes(api, spec, path)
+	}
 
-	lease, err := api.Acquire(ctx, spec, path)
+	if err != nil {
+		return err
+	}
+
+	sc := sessionCollector{
+		sandboxes:          sandboxes,
+		path:               path,
+		displaySandboxName: true,
+		timeout:            30 * time.Second,
+		filtered:           args.Session,
+		selectLabel:        "Select session",
+		titleInputLabel:    "Session title (optional — leave blank for an auto-generated name)",
+	}
+	sandbox, sessionID, sessionTitle, err := sc.collect()
+	if err != nil {
+		return err
+	}
+
+	content, err := collectPromptFromEditor(sandbox, path)
+	if err != nil {
+		return err
+	}
+
+	if args.DryRun {
+		return promptDryRun(sandbox, path, model, sessionID, sessionTitle, content)
+	}
+	return prompt(api, sandbox, path, model, sessionID, sessionTitle, content)
+}
+
+type PromptDryRunData struct {
+	Spec         string `json:"spec"`
+	Path         string `json:"path"`
+	Model        string `json:"model"`
+	Sandbox      string `json:"sandbox"`
+	SessionID    string `json:"sessionId"`
+	SessionTitle string `json:"sessionTitle"`
+	PromptFile   string `json:"promptFile"`
+}
+
+func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt string) error {
+	f, err := os.CreateTemp("", "nestor-prompt-*.md")
+	if err != nil {
+		return err
+	}
+	fp := f.Name()
+	if err = fs.WriteFile(fp, []byte(prompt), 0o644); err != nil {
+		return err
+	}
+
+	data := PromptDryRunData{
+		Spec:         sandbox.Spec().Name,
+		Path:         path,
+		Model:        model,
+		Sandbox:      sandbox.ID(),
+		SessionID:    sessionID,
+		SessionTitle: sessionTitle,
+		PromptFile:   fp,
+	}
+	out, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(out))
+	return nil
+}
+
+func prompt(api nestor.API, sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	log := api.Runtime().Logger
+	lease, err := sandbox.Acquire(ctx, path)
 	if err != nil {
 		return fmt.Errorf("acquire lease: %w", err)
 	}
-	if err = lease.Extend(ctx); err != nil {
-		return fmt.Errorf("extend lease: %w", err)
+	if !lease.Sandbox().IsRunning(ctx) {
+		_ = lease.Sandbox().Start(ctx)
 	}
 
 	var stdout io.Writer
@@ -123,107 +138,68 @@ func Prompt(api nestor.API, args PromptArgs) error {
 		stdout = os.Stdout
 	}
 
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case <-t.C:
+				log.Debug("extend lease in headless mode", slog.String("lease", lease.ID()))
+				if err := lease.Extend(ctx); err != nil {
+					if !errors.Is(err, context.Canceled) {
+						log.Warn("cannot extend lease while running harness", slog.Any("error", err))
+					}
+				}
+			}
+		}
+	})
+
+	runningSessionID := sessionID
+
 	defer func() {
+		cancel()
+		wg.Wait()
+
 		if rErr := lease.Release(ctx); err != nil {
 			err = errors.Join(err, fmt.Errorf("release lease: %w", rErr))
 		} else if err == nil {
+			argv := []string{
+				"--spec=" + escapeCLIFlagValue(sandbox.Spec().Name),
+				"--path=" + escapeCLIFlagValue(path),
+				"--name=" + escapeCLIFlagValue(sandbox.ID()),
+				"--session=" + escapeCLIFlagValue(runningSessionID),
+			}
+
+			cmd := "  nestor launch " + strings.Join(argv, " ")
+
+			fmt.Printf("\nTo resume this session:\n\n%s\n\n", pterm.Blue(cmd))
+
 			fmt.Println(pterm.Green("done"))
 		}
 	}()
 
-	if !lease.Sandbox().IsRunning(ctx) {
-		_ = lease.Sandbox().Start(ctx)
+	if err = lease.Extend(ctx); err != nil {
+		return fmt.Errorf("extend lease: %w", err)
 	}
 
-	selectedSessionID, title, err := selectSession(ctx, lease, args.Session)
-	if err != nil {
-		return err
-	}
+	lease.OnAuthProxyStarted(func(addr string) { fmt.Printf("opened auth proxy %s\n", addr) })
+	lease.OnAuthProxyStopped(func(addr string) { fmt.Printf("closed auth proxy %s\n", addr) })
+	lease.OnProxyStarted(func(addr string) { fmt.Printf("opened proxy %s\n", addr) })
+	lease.OnProxyStopped(func(addr string) { fmt.Printf("closed proxy %s\n", addr) })
 
-	for {
-		select {
-		case <-ctx.Done():
-			return err
-
-		default:
-			prompt, err := Input("Prompt", "")
-			if err != nil {
-				if errors.Is(err, ErrInterrupted) {
-					return nil
-				}
-				return err
-			}
-
-			switch prompt {
-			case "":
-				continue
-			case "exit":
-				return err
-			default:
-				fmt.Println(pterm.Blue(fmt.Sprintf("running in container %s...", lease.Sandbox().Container())))
-
-				if err = lease.Extend(ctx); err != nil {
-					return fmt.Errorf("extend lease: %w", err)
-				}
-
-				_, err = lease.Run(ctx, nestor.Headless{
-					Prompt:    prompt,
-					SessionID: selectedSessionID,
-					Title:     title,
-					Stdout:    stdout,
-					Model:     model,
-				})
-				if err != nil {
-					return err
-				}
-				fmt.Println("")
-			}
-		}
-	}
-}
-
-func selectSession(ctx context.Context, lease *nestor.Lease, filteredSession string) (string, string, error) {
-	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	sessions := lease.ListSessions(sctx)
-	var selectedID, title string
-
-	if filteredSession != "" {
-		for _, v := range sessions {
-			if v.ID != filteredSession {
-				continue
-			}
-			return v.ID, v.Title, nil
-		}
-		return "", "", fmt.Errorf("%w: session %q", nestor.ErrNotFound, filteredSession)
-	}
-
-	if len(sessions) > 0 {
-		sessions = slices.Insert(sessions, 0, nestor.HarnessSession{
-			Title: "New session",
-		})
-		dt := fmt.Sprintf("Select sessions (%d available)", len(sessions))
-		r, err := Select(sessions, dt, func(i int, s nestor.HarnessSession) string {
-			if i == 0 {
-				return fmt.Sprintf("%d. %s", i+1, s.Title)
-			}
-			return fmt.Sprintf("%d. %s - %s", i+1, s.ID, s.Title)
-		})
-		if err != nil {
-			return selectedID, title, nil
-		}
-
-		selectedID = r.Value.ID
-	}
-
-	if selectedID == "" {
-		t := "Session title (optional — leave blank for an auto-generated name)"
-		v, err := pterm.DefaultInteractiveTextInput.WithDefaultText(t).Show()
-		if err != nil {
-			return "", "", nil
-		}
-		title = v
-	}
-	return selectedID, title, nil
+	_, err = lease.Run(ctx, nestor.Headless{
+		Prompt:    prompt,
+		SessionID: sessionID,
+		Title:     sessionTitle,
+		Model:     model,
+		Stdout:    stdout,
+		OnFinished: func(sess string) {
+			runningSessionID = sess
+		},
+	})
+	return err
 }

@@ -61,12 +61,17 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return err
+			}
 
 			return cli.Launch(api, cli.LaunchArgs{
 				SandboxSpec: strings.TrimSpace(spec),
 				Path:        strings.TrimSpace(path),
 				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
+				DryRun:      dryRun,
 			})
 		}),
 	}
@@ -74,6 +79,7 @@ func newSpecCmd() *specCmd {
 	launch.Flags().StringP("path", "p", "", "path")
 	launch.Flags().StringP("name", "n", "", "sandbox name")
 	launch.Flags().StringP("session", "r", "", "session id to resume")
+	launch.Flags().Bool("dry-run", false, "dry run")
 
 	prompt := &cobra.Command{
 		Use:   "prompt",
@@ -91,7 +97,15 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
 			session, err := cmd.Flags().GetString("session")
+			if err != nil {
+				return err
+			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
 			if err != nil {
 				return err
 			}
@@ -100,14 +114,18 @@ func newSpecCmd() *specCmd {
 				SandboxSpec: strings.TrimSpace(spec),
 				Path:        strings.TrimSpace(path),
 				Model:       strings.TrimSpace(model),
+				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
+				DryRun:      dryRun,
 			})
 		}),
 	}
 	prompt.Flags().StringP("spec", "s", "", "name of the sandbox spec")
 	prompt.Flags().StringP("path", "p", "", "path")
 	prompt.Flags().StringP("model", "m", "", "model")
+	prompt.Flags().StringP("name", "n", "", "sandbox name")
 	prompt.Flags().StringP("session", "r", "", "session id to resume")
+	prompt.Flags().Bool("dry-run", false, "dry run")
 
 	release := &cobra.Command{
 		Use:   "release",

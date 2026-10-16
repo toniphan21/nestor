@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ type LaunchArgs struct {
 	Path        string
 	Sandbox     string
 	Session     string
+	DryRun      bool
 }
 
 func Launch(api nestor.API, args LaunchArgs) error {
@@ -26,7 +28,13 @@ func Launch(api nestor.API, args LaunchArgs) error {
 		return err
 	}
 
-	sandboxes, err := collectFreeSandboxes(api, spec, path, args.Sandbox)
+	var sandboxes []nestor.Sandbox
+	if args.Sandbox != "" {
+		sandboxes, err = collectFreeSandboxes(api, spec, path, args.Sandbox)
+	} else {
+		sandboxes, err = freeSandboxes(api, spec, path)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -40,11 +48,31 @@ func Launch(api nestor.API, args LaunchArgs) error {
 		selectLabel:        "Select session",
 		titleInputLabel:    "Session title (optional — leave blank for an auto-generated name)",
 	}
-	sandbox, sessionID, title, err := sc.collect()
+	sandbox, sessionID, sessionTitle, err := sc.collect()
 	if err != nil {
 		return err
 	}
-	return launch(api, sandbox, path, sessionID, title)
+	if args.DryRun {
+		return launchDryRun(sandbox, path, sessionID, sessionTitle)
+	}
+	return launch(api, sandbox, path, sessionID, sessionTitle)
+}
+
+func launchDryRun(sandbox nestor.Sandbox, path, sessionID, sessionTitle string) error {
+	data := map[string]string{
+		"spec":         sandbox.Spec().Name,
+		"path":         path,
+		"sandbox":      sandbox.ID(),
+		"sessionID":    sessionID,
+		"sessionTitle": sessionTitle,
+	}
+	out, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(out))
+	return nil
 }
 
 func launch(api nestor.API, sandbox nestor.Sandbox, path, sessionID, sessionTitle string) error {
@@ -81,10 +109,7 @@ func launch(api nestor.API, sandbox nestor.Sandbox, path, sessionID, sessionTitl
 		}
 	})
 
-	var runningSessionID string
-	if sessionID != "" {
-		runningSessionID = sessionID
-	}
+	runningSessionID := sessionID
 
 	defer func() {
 		cancel()
@@ -108,10 +133,6 @@ func launch(api nestor.API, sandbox nestor.Sandbox, path, sessionID, sessionTitl
 		}
 	}()
 
-	if err != nil {
-		return err
-	}
-
 	if err = lease.Extend(ctx); err != nil {
 		return fmt.Errorf("extend lease: %w", err)
 	}
@@ -129,7 +150,6 @@ func launch(api nestor.API, sandbox nestor.Sandbox, path, sessionID, sessionTitl
 			if sess == "" {
 				return
 			}
-
 			runningSessionID = sess
 			fmt.Printf("started session %s\n", sess)
 		},

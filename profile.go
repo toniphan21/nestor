@@ -50,7 +50,7 @@ func (p *Profile) SupportedModelsWithoutDefault() []string {
 	return out
 }
 
-func (p *Profile) Model(alias string) string {
+func (p *Profile) ModelByAlias(alias string) (string, bool) {
 	if p.modelAliases == nil {
 		p.modelAliases = map[string]string{}
 		for m, aliases := range p.Models {
@@ -62,6 +62,11 @@ func (p *Profile) Model(alias string) string {
 	}
 
 	v, ok := p.modelAliases[alias]
+	return v, ok
+}
+
+func (p *Profile) Model(alias string) string {
+	v, ok := p.ModelByAlias(alias)
 	if !ok {
 		return p.DefaultModel
 	}

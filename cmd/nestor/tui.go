@@ -53,19 +53,25 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-
 			path, err := cmd.Flags().GetString("path")
 			if err != nil {
 				return err
 			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return err
+			}
+
 			return cli.LaunchSpec(api, cli.LaunchSpecArgs{
-				Spec: strings.TrimSpace(spec),
-				Path: strings.TrimSpace(path),
+				Spec:   strings.TrimSpace(spec),
+				Path:   strings.TrimSpace(path),
+				DryRun: dryRun,
 			})
 		}),
 	}
 	launchSpec.Flags().StringP("spec", "s", "", "sandbox spec name")
 	launchSpec.Flags().StringP("path", "p", "", "working path")
+	launchSpec.Flags().Bool("dry-run", false, "dry run")
 
 	launchSandbox := &cobra.Command{
 		Use:   "launch-sandbox",
@@ -75,13 +81,15 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-
 			path, err := cmd.Flags().GetString("path")
 			if err != nil {
 				return err
 			}
-
 			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
 			if err != nil {
 				return err
 			}
@@ -90,12 +98,14 @@ func newTUICmd() *tuiCmd {
 				Spec:    strings.TrimSpace(spec),
 				Path:    strings.TrimSpace(path),
 				Sandbox: strings.TrimSpace(name),
+				DryRun:  dryRun,
 			})
 		}),
 	}
 	launchSandbox.Flags().StringP("spec", "s", "", "sandbox spec name")
 	launchSandbox.Flags().StringP("path", "p", "", "working path")
 	launchSandbox.Flags().StringP("name", "n", "", "sandbox name")
+	launchSandbox.Flags().Bool("dry-run", false, "dry run")
 
 	root.AddCommand(renameWorkspace, launchSpec, launchSandbox)
 	return &tuiCmd{

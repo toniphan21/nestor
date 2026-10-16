@@ -12,6 +12,7 @@ type LaunchSandboxArgs struct {
 	Spec    string
 	Sandbox string
 	Path    string
+	DryRun  bool
 }
 
 func LaunchSandbox(api nestor.API, args LaunchSandboxArgs) error {
@@ -56,17 +57,20 @@ func LaunchSandbox(api nestor.API, args LaunchSandboxArgs) error {
 		selectLabel:        " Session",
 		titleInputLabel:    "Session (optional)",
 	}
-	_, sessionID, title, err := sc.collect()
+	_, sessionID, sessionTitle, err := sc.collect()
 	if err != nil {
 		return err
 	}
-
-	return launch(api, sandbox, path, sessionID, title)
+	if args.DryRun {
+		return launchDryRun(sandbox, path, sessionID, sessionTitle)
+	}
+	return launch(api, sandbox, path, sessionID, sessionTitle)
 }
 
 type LaunchSpecArgs struct {
-	Spec string
-	Path string
+	Spec   string
+	Path   string
+	DryRun bool
 }
 
 func LaunchSpec(api nestor.API, args LaunchSpecArgs) error {
@@ -99,10 +103,12 @@ func LaunchSpec(api nestor.API, args LaunchSpecArgs) error {
 		selectLabel:        " Session",
 		titleInputLabel:    "Session (optional)",
 	}
-	sandbox, sessionID, title, err := sc.collect()
+	sandbox, sessionID, sessionTitle, err := sc.collect()
 	if err != nil {
 		return err
 	}
-
-	return launch(api, sandbox, path, sessionID, title)
+	if args.DryRun {
+		return launchDryRun(sandbox, path, sessionID, sessionTitle)
+	}
+	return launch(api, sandbox, path, sessionID, sessionTitle)
 }

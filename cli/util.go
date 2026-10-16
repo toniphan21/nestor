@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 var ErrInterrupted = errors.New("interrupted")
@@ -255,6 +258,97 @@ func collectFreeSandboxes(api nestor.API, spec nestor.SandboxSpec, path string, 
 	return []nestor.Sandbox{sandboxes[r.Index-1]}, nil
 }
 
+func collectModel(api nestor.API, spec nestor.SandboxSpec, label, filteredModel string) (string, error) {
+	profile, have := api.Runtime().Registry.Profile(spec.Profile)
+	if !have {
+		return "", fmt.Errorf("%w: profile %q", nestor.ErrNotFound, spec.Profile)
+	}
+
+	models := profile.SupportedModelsWithoutDefault()
+	var selectedModel string
+	if len(models) == 0 {
+		selectedModel = profile.DefaultModel
+		fmt.Printf("use model %s\n", pterm.Cyan(selectedModel))
+		return selectedModel, nil
+	}
+
+	models = slices.Insert(models, 0, profile.DefaultModel)
+	if filteredModel != "" {
+		for _, v := range models {
+			check := filteredModel
+			mn, ok := profile.ModelByAlias(filteredModel)
+			if ok {
+				check = mn
+			}
+
+			if v != check {
+				continue
+			}
+			selectedModel = v
+		}
+
+		if selectedModel == "" {
+			return "", fmt.Errorf("%w: model %q", nestor.ErrNotFound, filteredModel)
+		}
+		return selectedModel, nil
+	}
+
+	if label == "" {
+		label = "Select model"
+	}
+	printer := pterm.DefaultInteractiveSelect.
+		WithDefaultText(label).
+		WithMaxHeight(len(models) + 1)
+
+	r, err := SingleSelect(models, printer, func(i int, s string) string {
+		return fmt.Sprintf("%d. %s", i+1, s)
+	})
+	if err != nil {
+		return "", err
+	}
+	selectedModel = r.Value
+
+	return selectedModel, nil
+}
+
+func collectPromptFromEditor(sandbox nestor.Sandbox, path string) (string, error) {
+	editor := defaultEditor()
+	if editor == "" {
+		return Input("Prompt", "")
+	}
+
+	_, hwd, have := sandbox.ResolveWorkDir(path)
+	if !have {
+		return Input("Prompt", "")
+	}
+
+	f, err := os.CreateTemp(path, "nestor-prompt-*.md")
+	if err != nil {
+		return "", err
+	}
+	fp := f.Name()
+
+	cmd := exec.Command("sh", "-c", editor+` "$@"`, "--", fp)
+	cmd.Dir = hwd
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil { // blocks until the editor exits
+		return "", fmt.Errorf("editor: %w", err)
+	}
+
+	b, err := fs.AtomicReadFile(fp)
+	if err != nil {
+		return "", err
+	}
+
+	if err = fs.RemoveFile(fp); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
 func escapeCLIFlagValue(val string) string {
 	if val == "" {
 		return "''"
@@ -359,9 +453,18 @@ func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, 
 	}
 
 	if len(items) > 0 {
-		items = slices.Insert(items, 0, sessionOptionItem{
-			text: "New session",
-		})
+		if c.displaySandboxName {
+			var nsi []sessionOptionItem
+			for _, v := range c.sandboxes {
+				newSessionText := fmt.Sprintf("sandbox %s - New session", pterm.Green(v.ID()))
+				nsi = append(nsi, sessionOptionItem{text: newSessionText, sandbox: v, session: nestor.HarnessSession{}})
+			}
+			items = slices.Insert(items, 0, nsi...)
+		} else {
+			items = slices.Insert(items, 0,
+				sessionOptionItem{text: "New session", sandbox: c.sandboxes[0], session: nestor.HarnessSession{}},
+			)
+		}
 
 		printer := pterm.DefaultInteractiveSelect.
 			WithDefaultText(c.selectLabel).
@@ -375,17 +478,11 @@ func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, 
 			return
 		}
 
-		if selectResult.Index != 0 {
-			sandbox = selectResult.Value.sandbox
-			sessionID = selectResult.Value.session.ID
-			title = selectResult.Value.session.Title
-			return
-		}
-
-		sessionID = ""
+		sandbox = selectResult.Value.sandbox
+		sessionID = selectResult.Value.session.ID
+		title = selectResult.Value.session.Title
 	}
 
-	sandbox = c.sandboxes[0]
 	if sessionID == "" {
 		t := c.titleInputLabel
 		var input string

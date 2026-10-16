@@ -10,29 +10,6 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-type releaseInfo struct {
-	spec string
-	path string
-	run  bool
-}
-
-func collectReleaseInfo(api nestor.API, args ReleaseArgs) (*releaseInfo, error) {
-	var spec nestor.SandboxSpec
-	if v, err := collectSpec(api, args.SandboxSpec); err != nil || v == nil {
-		return &releaseInfo{run: false}, err
-	} else {
-		spec = *v
-	}
-
-	var selectedPath string
-	if v, err := collectPath(spec, args.Path); err != nil || v == nil {
-		return &releaseInfo{run: false}, err
-	} else {
-		selectedPath = *v
-	}
-	return &releaseInfo{spec: spec.Name, path: selectedPath, run: true}, nil
-}
-
 type ReleaseArgs struct {
 	SandboxSpec string
 	Sandbox     string
@@ -40,19 +17,15 @@ type ReleaseArgs struct {
 }
 
 func Release(api nestor.API, args ReleaseArgs) error {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	info, err := collectReleaseInfo(api, args)
+	spec, path, err := collectSpecAndPath(api, args.SandboxSpec, args.Path)
 	if err != nil {
 		return err
 	}
-	if !info.run {
-		fmt.Println(pterm.Green("done"))
-		return nil
-	}
 
-	sandboxes, err := api.ListSandboxes(ctx, info.spec)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	sandboxes, err := api.ListSandboxes(ctx, spec.Name)
 	if err != nil {
 		return err
 	}
@@ -60,7 +33,7 @@ func Release(api nestor.API, args ReleaseArgs) error {
 	for _, sandbox := range sandboxes {
 		leases := sandbox.Leases()
 		for _, lease := range leases {
-			if lease.RequestedPath() != info.path {
+			if lease.RequestedPath() != path {
 				continue
 			}
 
@@ -69,5 +42,7 @@ func Release(api nestor.API, args ReleaseArgs) error {
 			}
 		}
 	}
+
+	fmt.Println(pterm.Green("done"))
 	return nil
 }
