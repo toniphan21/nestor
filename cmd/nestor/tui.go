@@ -57,21 +57,21 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-			dryRun, err := cmd.Flags().GetBool("dry-run")
+			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
 			}
 
-			return cli.LaunchSpec(api, cli.LaunchSpecArgs{
-				Spec:   strings.TrimSpace(spec),
-				Path:   strings.TrimSpace(path),
-				DryRun: dryRun,
+			return cli.LaunchSpec(api, cli.LaunchArgs{
+				SandboxSpec: strings.TrimSpace(spec),
+				Path:        strings.TrimSpace(path),
+				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
 	}
 	launchSpec.Flags().StringP("spec", "s", "", "sandbox spec name")
 	launchSpec.Flags().StringP("path", "p", "", "working path")
-	launchSpec.Flags().Bool("dry-run", false, "dry run")
+	launchSpec.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
 	launchSandbox := &cobra.Command{
 		Use:   "launch-sandbox",
@@ -89,25 +89,99 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-			dryRun, err := cmd.Flags().GetBool("dry-run")
+			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
 			}
 
-			return cli.LaunchSandbox(api, cli.LaunchSandboxArgs{
-				Spec:    strings.TrimSpace(spec),
-				Path:    strings.TrimSpace(path),
-				Sandbox: strings.TrimSpace(name),
-				DryRun:  dryRun,
+			return cli.LaunchSandbox(api, cli.LaunchArgs{
+				SandboxSpec: strings.TrimSpace(spec),
+				Path:        strings.TrimSpace(path),
+				Sandbox:     strings.TrimSpace(name),
+				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
 	}
 	launchSandbox.Flags().StringP("spec", "s", "", "sandbox spec name")
 	launchSandbox.Flags().StringP("path", "p", "", "working path")
 	launchSandbox.Flags().StringP("name", "n", "", "sandbox name")
-	launchSandbox.Flags().Bool("dry-run", false, "dry run")
+	launchSandbox.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
-	root.AddCommand(renameWorkspace, launchSpec, launchSandbox)
+	promptSpec := &cobra.Command{
+		Use:   "prompt-spec",
+		Short: shortDesc["tui-prompt-spec"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			spec, err := cmd.Flags().GetString("spec")
+			if err != nil {
+				return err
+			}
+			path, err := cmd.Flags().GetString("path")
+			if err != nil {
+				return err
+			}
+			promptFile, err := cmd.Flags().GetString("prompt-file")
+			if err != nil {
+				return err
+			}
+			dryRun, err := cmd.Flags().GetString("dry-run")
+			if err != nil {
+				return err
+			}
+
+			return cli.PromptSpec(api, cli.PromptArgs{
+				SandboxSpec: strings.TrimSpace(spec),
+				Path:        strings.TrimSpace(path),
+				PromptFile:  strings.TrimSpace(promptFile),
+				DryRun:      strings.TrimSpace(dryRun),
+			})
+		}),
+	}
+	promptSpec.Flags().StringP("spec", "s", "", "sandbox spec name")
+	promptSpec.Flags().StringP("path", "p", "", "working path")
+	promptSpec.Flags().StringP("prompt-file", "f", "", "prompt file")
+	promptSpec.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
+
+	promptSandbox := &cobra.Command{
+		Use:   "prompt-sandbox",
+		Short: shortDesc["tui-prompt-sandbox"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, argv []string) error {
+			spec, err := cmd.Flags().GetString("spec")
+			if err != nil {
+				return err
+			}
+			path, err := cmd.Flags().GetString("path")
+			if err != nil {
+				return err
+			}
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+			promptFile, err := cmd.Flags().GetString("prompt-file")
+			if err != nil {
+				return err
+			}
+			dryRun, err := cmd.Flags().GetString("dry-run")
+			if err != nil {
+				return err
+			}
+
+			return cli.PromptSandbox(api, cli.PromptArgs{
+				SandboxSpec: strings.TrimSpace(spec),
+				Path:        strings.TrimSpace(path),
+				Sandbox:     strings.TrimSpace(name),
+				PromptFile:  strings.TrimSpace(promptFile),
+				DryRun:      strings.TrimSpace(dryRun),
+			})
+		}),
+	}
+	promptSandbox.Flags().StringP("spec", "s", "", "sandbox spec name")
+	promptSandbox.Flags().StringP("path", "p", "", "working path")
+	promptSandbox.Flags().StringP("name", "n", "", "sandbox name")
+	promptSandbox.Flags().StringP("prompt-file", "f", "", "prompt file")
+	promptSandbox.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
+
+	root.AddCommand(renameWorkspace, launchSpec, launchSandbox, promptSpec, promptSandbox)
 	return &tuiCmd{
 		root: root,
 	}

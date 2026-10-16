@@ -12,6 +12,7 @@ import (
 
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type LaunchArgs struct {
@@ -19,7 +20,7 @@ type LaunchArgs struct {
 	Path        string
 	Sandbox     string
 	Session     string
-	DryRun      bool
+	DryRun      string
 }
 
 func Launch(api nestor.API, args LaunchArgs) error {
@@ -52,13 +53,13 @@ func Launch(api nestor.API, args LaunchArgs) error {
 	if err != nil {
 		return err
 	}
-	if args.DryRun {
-		return launchDryRun(sandbox, path, sessionID, sessionTitle)
+	if args.DryRun != "" {
+		return launchDryRun(sandbox, path, sessionID, sessionTitle, args.DryRun)
 	}
 	return launch(api, sandbox, path, sessionID, sessionTitle)
 }
 
-func launchDryRun(sandbox nestor.Sandbox, path, sessionID, sessionTitle string) error {
+func launchDryRun(sandbox nestor.Sandbox, path, sessionID, sessionTitle, outputFile string) error {
 	data := map[string]string{
 		"spec":         sandbox.Spec().Name,
 		"path":         path,
@@ -72,7 +73,7 @@ func launchDryRun(sandbox nestor.Sandbox, path, sessionID, sessionTitle string) 
 	}
 
 	fmt.Println(string(out))
-	return nil
+	return fs.WriteFile(outputFile, out, 0o644)
 }
 
 func launch(api nestor.API, sandbox nestor.Sandbox, path, sessionID, sessionTitle string) error {

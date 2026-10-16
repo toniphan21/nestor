@@ -176,7 +176,7 @@ var (
 	actionMove              = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
 	actionEditDockerfile    = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
 	actionBuild             = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
-	actionContainerDown     = action{keys: []string{pterm.Blue("D")}, desc: "down", priority: 1}
+	actionContainerDown     = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
 	actionContainerUp       = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
 	actionContainerShell    = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
 	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}

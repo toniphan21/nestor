@@ -91,6 +91,15 @@ func (v *homeMount) key() string {
 	return v.wsPath + "\x00" + v.specName
 }
 
+func (v *homeMount) hasFreeSandbox() bool {
+	for _, sb := range v.sandboxes {
+		if sb.isFree {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *homeMount) extraDisplay() string {
 	profile := v.profile
 	if profile == "" {
@@ -294,7 +303,9 @@ func (p *homePage) actions() tea.Cmd {
 	}
 
 	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
-		out = append(out, actionPrompt, actionLaunch)
+		if m.hasFreeSandbox() {
+			out = append(out, actionPrompt, actionLaunch)
+		}
 		if p.collapsed[m.key()] {
 			out = append(out, actionExpand)
 		} else {
@@ -306,9 +317,9 @@ func (p *homePage) actions() tea.Cmd {
 		if sb.isFree {
 			out = append(out, actionRename)
 		}
-		out = append(out, actionGotoDir, actionPrompt)
+		out = append(out, actionGotoDir)
 		if sb.isFree {
-			out = append(out, actionLaunch)
+			out = append(out, actionPrompt, actionLaunch)
 		}
 	}
 
@@ -419,7 +430,7 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 
 		case "enter", "l":
-			if sm, ok := p.rowHomeMount(); ok {
+			if sm, ok := p.rowHomeMount(); ok && sm.hasFreeSandbox() {
 				p.busy = true
 				return p, execSelfCommand(tabHome, "launch-spec", "tui", "launch-spec", "-s", sm.specName, "-p", sm.wsPath)
 			}
@@ -429,6 +440,9 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				return p, execSelfCommand(tabHome, "launch-sandbox", "tui", "launch-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
 			}
 			return p, nil
+
+		case "p":
+			return p.triggerPrompt()
 		}
 
 	case execDoneMsg:
@@ -448,6 +462,19 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 		p.busy = false
 		return p, nil
+	}
+	return p, nil
+}
+
+func (p *homePage) triggerPrompt() (page, tea.Cmd) {
+	if sm, ok := p.rowHomeMount(); ok && sm.hasFreeSandbox() {
+		p.busy = true
+		return p, execSelfCommand(tabHome, "prompt-spec", "tui", "prompt-spec", "-s", sm.specName, "-p", sm.wsPath)
+	}
+
+	if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+		p.busy = true
+		return p, execSelfCommand(tabHome, "prompt-sandbox", "tui", "prompt-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
 	}
 	return p, nil
 }

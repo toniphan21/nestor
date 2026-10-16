@@ -326,7 +326,7 @@ func (p *dockerPage) Update(msg tea.Msg) (page, tea.Cmd) {
 			p.busy = true
 			return p, openEditorWithPath(tabDocker, "edit-dockerfile", di.dockerfile)
 
-		case "D":
+		case "d":
 			di, ok := p.rowDockerImage()
 			if ok {
 				args := []string{"sandbox", "down"}

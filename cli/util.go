@@ -311,7 +311,19 @@ func collectModel(api nestor.API, spec nestor.SandboxSpec, label, filteredModel 
 	return selectedModel, nil
 }
 
-func collectPromptFromEditor(sandbox nestor.Sandbox, path string) (string, error) {
+func collectPrompt(sandbox nestor.Sandbox, path string, promptFile string) (string, error) {
+	if promptFile != "" {
+		b, err := fs.AtomicReadFile(promptFile)
+		if err != nil {
+			return "", err
+		}
+
+		if err = fs.RemoveFile(promptFile); err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+
 	editor := defaultEditor()
 	if editor == "" {
 		return Input("Prompt", "")

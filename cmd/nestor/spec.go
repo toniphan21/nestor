@@ -61,7 +61,7 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
-			dryRun, err := cmd.Flags().GetBool("dry-run")
+			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
 			}
@@ -71,7 +71,7 @@ func newSpecCmd() *specCmd {
 				Path:        strings.TrimSpace(path),
 				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
-				DryRun:      dryRun,
+				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
 	}
@@ -79,7 +79,7 @@ func newSpecCmd() *specCmd {
 	launch.Flags().StringP("path", "p", "", "path")
 	launch.Flags().StringP("name", "n", "", "sandbox name")
 	launch.Flags().StringP("session", "r", "", "session id to resume")
-	launch.Flags().Bool("dry-run", false, "dry run")
+	launch.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
 	prompt := &cobra.Command{
 		Use:   "prompt",
@@ -105,7 +105,11 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
-			dryRun, err := cmd.Flags().GetBool("dry-run")
+			promptFile, err := cmd.Flags().GetString("prompt-file")
+			if err != nil {
+				return err
+			}
+			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
 			}
@@ -116,7 +120,8 @@ func newSpecCmd() *specCmd {
 				Model:       strings.TrimSpace(model),
 				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
-				DryRun:      dryRun,
+				PromptFile:  strings.TrimSpace(promptFile),
+				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
 	}
@@ -125,7 +130,8 @@ func newSpecCmd() *specCmd {
 	prompt.Flags().StringP("model", "m", "", "model")
 	prompt.Flags().StringP("name", "n", "", "sandbox name")
 	prompt.Flags().StringP("session", "r", "", "session id to resume")
-	prompt.Flags().Bool("dry-run", false, "dry run")
+	prompt.Flags().StringP("prompt-file", "f", "", "prompt file")
+	prompt.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
 	release := &cobra.Command{
 		Use:   "release",

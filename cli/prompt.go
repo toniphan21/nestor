@@ -27,7 +27,8 @@ type PromptArgs struct {
 	Sandbox     string
 	Session     string
 	Model       string
-	DryRun      bool
+	PromptFile  string
+	DryRun      string
 }
 
 func Prompt(api nestor.API, args PromptArgs) error {
@@ -66,13 +67,13 @@ func Prompt(api nestor.API, args PromptArgs) error {
 		return err
 	}
 
-	content, err := collectPromptFromEditor(sandbox, path)
+	content, err := collectPrompt(sandbox, path, args.PromptFile)
 	if err != nil {
 		return err
 	}
 
-	if args.DryRun {
-		return promptDryRun(sandbox, path, model, sessionID, sessionTitle, content)
+	if args.DryRun != "" {
+		return promptDryRun(sandbox, path, model, sessionID, sessionTitle, content, args.DryRun)
 	}
 	return prompt(api, sandbox, path, model, sessionID, sessionTitle, content)
 }
@@ -87,7 +88,7 @@ type PromptDryRunData struct {
 	PromptFile   string `json:"promptFile"`
 }
 
-func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt string) error {
+func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt, outputFile string) error {
 	f, err := os.CreateTemp("", "nestor-prompt-*.md")
 	if err != nil {
 		return err
@@ -112,7 +113,7 @@ func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, 
 	}
 
 	fmt.Println(string(out))
-	return nil
+	return fs.WriteFile(outputFile, out, 0o644)
 }
 
 func prompt(api nestor.API, sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt string) error {

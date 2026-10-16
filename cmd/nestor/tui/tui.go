@@ -113,26 +113,26 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "q", "Q", "ctrl+c", "ctrl+d":
+		case "q", "ctrl+c", "ctrl+d":
 			return t, tea.Quit
 
-		case "h", "H":
+		case "H":
 			if t.header.ActiveTab() != tabHome {
 				return t, t.switchPage(tabHome)
 			}
 
-		case "d", "D":
+		case "D":
 			if t.header.ActiveTab() != tabDocker {
 				return t, t.switchPage(tabDocker)
 			}
 
-		case "s", "S":
+		case "S":
 			return t, t.switchPage(tabSpec)
 
-		case "p", "P":
+		case "P":
 			return t, t.switchPage(tabProfile)
 
-		case "m", "M":
+		case "M":
 			return t, t.switchPage(tabMCP)
 		}
 
