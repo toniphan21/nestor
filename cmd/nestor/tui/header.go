@@ -60,7 +60,8 @@ func (h *header) SetActions(actions []action) {
 }
 
 func (h *header) TabPosition(x, y int) *tabID {
-	if h.y+2 == y { // self takes 2 lines, tabs is the 3rd line
+	bannerH := heightOf(h.banner()) - 1 // banner always ends with an empty line
+	if h.y+bannerH == y {
 		tabs := h.tabs()
 		tabIDs := []tabID{tabHome, tabDocker, tabSpec, tabProfile, tabMCP}
 
@@ -84,6 +85,16 @@ func (h header) View() string {
 		return ""
 	}
 
+	tabs := h.tabs()
+	left := " " + strings.Join(tabs, " ")
+
+	width := h.width - widthOf(left) - 1
+	h.actionBar.SetWidth(width)
+
+	return h.banner() + left + fitLeft(h.actionBar.View(), width) + "\n"
+}
+
+func (h header) banner() string {
 	var update string
 	if h.latestVersion != "" {
 		update = fmt.Sprintf(
@@ -93,18 +104,10 @@ func (h header) View() string {
 		)
 	}
 
-	self := fmt.Sprintf(
+	return fmt.Sprintf(
 		"%s %s %s %s\n\n",
 		nestor.BinaryName, displayVersion(nestor.Version), pterm.Gray(nestor.GoOS+"/"+nestor.GoArch), update,
 	)
-
-	tabs := h.tabs()
-	left := " " + strings.Join(tabs, " ")
-
-	width := h.width - widthOf(left) - 1
-	h.actionBar.SetWidth(width)
-
-	return self + left + fitLeft(h.actionBar.View(), width) + "\n"
 }
 
 func (h header) tabs() []string {
@@ -172,24 +175,25 @@ type setActionsMsg struct {
 }
 
 var (
-	actionQuit              = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
-	actionMove              = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
-	actionEditDockerfile    = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
-	actionBuild             = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
-	actionContainerDown     = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
-	actionContainerUp       = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
-	actionContainerShell    = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
-	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
-	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
-	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
-	actionCollapse          = action{keys: []string{pterm.Blue("z")}, desc: "collapse", priority: 0}
-	actionExpand            = action{keys: []string{pterm.Blue("z")}, desc: "expand", priority: 0}
-	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
-	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
-	actionGotoDir           = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
-	actionRename            = action{keys: []string{pterm.Blue("r")}, desc: "rename", priority: 1}
-	actionPrompt            = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
-	actionLaunch            = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "launch", priority: 1}
+	actionQuit               = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
+	actionMove               = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
+	actionEditDockerfile     = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
+	actionBuild              = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
+	actionContainerDown      = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
+	actionContainerUp        = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
+	actionContainerShell     = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
+	actionViewSecret         = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
+	actionHideSecret         = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
+	actionTool               = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
+	actionCollapse           = action{keys: []string{pterm.Blue("z")}, desc: "collapse", priority: 0}
+	actionExpand             = action{keys: []string{pterm.Blue("z")}, desc: "expand", priority: 0}
+	actionEditConfiguration  = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
+	actionBackToEditor       = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
+	actionGotoDir            = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
+	actionRename             = action{keys: []string{pterm.Blue("r")}, desc: "rename", priority: 1}
+	actionPrompt             = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
+	actionLaunch             = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "launch", priority: 1}
+	actionViewPromptProgress = action{keys: []string{pterm.Blue("v")}, desc: "view progress", priority: 1}
 )
 
 func useActions(actions ...action) tea.Cmd {

@@ -35,8 +35,8 @@ type homeSandbox struct {
 	stateDir    string
 }
 
-func (v *homeSandbox) statusDisplay() string {
-	if v.isFree {
+func (v *homeSandbox) statusDisplay(p *homePage) string {
+	if p.isSandboxFree(v) {
 		return pterm.Green("free")
 	}
 	return pterm.Red("busy")
@@ -66,14 +66,14 @@ func (v *homeSandbox) extraDisplay(width int) string {
 	return extra
 }
 
-func (v *homeSandbox) toRows(isLast bool, cont string) []homeRow {
+func (v *homeSandbox) toRows(p *homePage, isLast bool, cont string) []homeRow {
 	prefix := pterm.Gray("├─ ")
 	if isLast {
 		prefix = pterm.Gray("└─ ")
 	}
 
 	return []homeRow{
-		{name: cont + prefix + v.id, status: v.statusDisplay(), kind: mountTypeDisplay(v.mountType), typ: "sandbox", data: v},
+		{name: cont + prefix + v.id, status: v.statusDisplay(p), kind: mountTypeDisplay(v.mountType), typ: "sandbox", data: v},
 	}
 }
 
@@ -113,7 +113,7 @@ func (v *homeMount) extraDisplay() string {
 	return strings.Join(facts, extraSep)
 }
 
-func (v *homeMount) toRows(isLast bool, collapsed bool) []homeRow {
+func (v *homeMount) toRows(p *homePage, isLast bool, collapsed bool) []homeRow {
 	prefix, cont := pterm.Gray("├─ "), pterm.Gray("│  ")
 	if isLast {
 		prefix, cont = pterm.Gray("└─ "), "   "
@@ -143,7 +143,7 @@ func (v *homeMount) toRows(isLast bool, collapsed bool) []homeRow {
 	}
 
 	for i, sb := range v.sandboxes {
-		rows = append(rows, sb.toRows(i == len(v.sandboxes)-1, cont)...)
+		rows = append(rows, sb.toRows(p, i == len(v.sandboxes)-1, cont)...)
 	}
 	return rows
 }
@@ -154,7 +154,7 @@ type homeWorkspace struct {
 	mounts    []homeMount
 }
 
-func (v *homeWorkspace) toRows(collapsed map[string]bool, uhome string) []homeRow {
+func (v *homeWorkspace) toRows(p *homePage, collapsed map[string]bool, uhome string) []homeRow {
 	extra := cutHome(v.workspace.Path(), uhome)
 	if v.branch != "" {
 		extra += ":" + pterm.Magenta(v.branch)
@@ -164,7 +164,7 @@ func (v *homeWorkspace) toRows(collapsed map[string]bool, uhome string) []homeRo
 		{name: v.workspace.Name(), extra: extra, typ: "workspace", data: v},
 	}
 	for i, m := range v.mounts {
-		rows = append(rows, m.toRows(i == len(v.mounts)-1, collapsed[m.key()])...)
+		rows = append(rows, m.toRows(p, i == len(v.mounts)-1, collapsed[m.key()])...)
 	}
 	return rows
 }
@@ -187,6 +187,8 @@ type homePage struct {
 	uhome      string
 	collapsed  map[string]bool
 	rows       []homeRow
+
+	jobs map[string]job
 }
 
 func (p *homePage) Focus() tea.Cmd {
@@ -202,7 +204,7 @@ func (p *homePage) buildRows() []homeRow {
 		{name: "NAME", status: "STATUS", kind: "TYPE", extra: "EXTRA", typ: "header"},
 	}
 	for _, v := range p.workspaces {
-		rows = append(rows, v.toRows(p.collapsed, p.uhome)...)
+		rows = append(rows, v.toRows(p, p.collapsed, p.uhome)...)
 	}
 	return rows
 }
@@ -314,11 +316,19 @@ func (p *homePage) actions() tea.Cmd {
 	}
 
 	if sb, ok := p.rowHomeSandbox(); ok {
-		if sb.isFree {
+		free := sb.isFree
+		_, have := p.hasPromptJob(sb)
+
+		if free {
 			out = append(out, actionRename)
 		}
+
+		if have {
+			out = append(out, actionViewPromptProgress)
+		}
+
 		out = append(out, actionGotoDir)
-		if sb.isFree {
+		if free {
 			out = append(out, actionPrompt, actionLaunch)
 		}
 	}
@@ -418,12 +428,22 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			p.busy = true
 			return p, gotoDir(tabHome, shell, dir, banner)
 
+		case "v":
+			if sb, ok := p.rowHomeSandbox(); ok {
+				j, have := p.hasPromptJob(sb)
+				if have {
+					p.busy = true
+					return p, tailFile(tabHome, "view-prompt", j.logPath)
+				}
+			}
+			return p, nil
+
 		case "r":
 			if w, ok := p.rowHomeWorkspace(); ok {
 				p.busy = true
 				return p, execSelfCommand(tabHome, "rename-workspace", "tui", "rename-workspace", "-p", w.workspace.Path())
 			}
-			if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+			if sb, ok := p.rowHomeSandbox(); ok && p.isSandboxFree(sb) {
 				p.busy = true
 				return p, execSelfCommand(tabHome, "rename-sandbox", "sandbox", "rename", "-s", sb.id)
 			}
@@ -435,7 +455,7 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 				return p, execSelfCommand(tabHome, "launch-spec", "tui", "launch-spec", "-s", sm.specName, "-p", sm.wsPath)
 			}
 
-			if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+			if sb, ok := p.rowHomeSandbox(); ok && p.isSandboxFree(sb) {
 				p.busy = true
 				return p, execSelfCommand(tabHome, "launch-sandbox", "tui", "launch-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
 			}
@@ -451,30 +471,76 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 		p.busy = false
 		switch msg.tag {
-		case "rename-workspace", "rename-sandbox", "launch-sandbox":
+		case "rename-workspace", "rename-sandbox", "launch-sandbox", "view-prompt":
 			return p, p.fetch()
 		}
 		return p, nil
 
-	case editorDoneMsg:
+	case initPromptDoneMsg:
 		if msg.tab != tabHome {
 			return p, nil
 		}
 		p.busy = false
-		return p, nil
+		return p, dispatchPrompt(tabHome, "prompt", msg.data)
+
+	case jobStartedMsg:
+		if msg.tab != tabHome || msg.tag != "prompt" {
+			return p, nil
+		}
+		if p.jobs == nil {
+			p.jobs = make(map[string]job)
+		}
+		p.jobs[msg.job.id] = msg.job
+		return p, p.fetch()
+
+	case jobExitedMsg:
+		if msg.tab != tabHome || msg.tag != "prompt" {
+			return p, nil
+		}
+		delete(p.jobs, msg.id)
+		return p, p.fetch()
 	}
 	return p, nil
+}
+
+func (p *homePage) isSandboxFree(sb *homeSandbox) bool {
+	_, hasJob := p.hasPromptJob(sb)
+
+	return sb.isFree && !hasJob
+}
+
+func (p *homePage) hasPromptJob(sb *homeSandbox) (job, bool) {
+	if p.jobs != nil {
+		for _, v := range p.jobs {
+			if v.metadata == nil {
+				continue
+			}
+
+			path, ok := v.metadata["path"]
+			if !ok || path != sb.wsPath {
+				continue
+			}
+
+			sandbox, ok := v.metadata["sandbox"]
+			if !ok || sb.id != sandbox {
+				continue
+			}
+
+			return v, true
+		}
+	}
+	return job{}, false
 }
 
 func (p *homePage) triggerPrompt() (page, tea.Cmd) {
 	if sm, ok := p.rowHomeMount(); ok && sm.hasFreeSandbox() {
 		p.busy = true
-		return p, execSelfCommand(tabHome, "prompt-spec", "tui", "prompt-spec", "-s", sm.specName, "-p", sm.wsPath)
+		return p, initPrompt(tabHome, "prompt-spec", "tui", "prompt-spec", "-s", sm.specName, "-p", sm.wsPath)
 	}
 
-	if sb, ok := p.rowHomeSandbox(); ok && sb.isFree {
+	if sb, ok := p.rowHomeSandbox(); ok && p.isSandboxFree(sb) {
 		p.busy = true
-		return p, execSelfCommand(tabHome, "prompt-sandbox", "tui", "prompt-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
+		return p, initPrompt(tabHome, "prompt-sandbox", "tui", "prompt-sandbox", "-s", sb.sandbox.Spec().Name, "-p", sb.wsPath, "-n", sb.id)
 	}
 	return p, nil
 }
@@ -563,5 +629,11 @@ func (p *homePage) View() string {
 		out.WriteString(spaces(2))
 		out.WriteRune('\n')
 	}
+
+	// out.WriteRune('\n')
+	// out.WriteRune('\n')
+	// out.WriteRune('\n')
+	// out.WriteString("  press N to set up a new workspace, or cd to your project directory and run `nestor setup`.")
+	// out.WriteRune('\n')
 	return out.String()
 }

@@ -413,18 +413,26 @@ type sessionCollector struct {
 	displaySandboxName bool
 	timeout            time.Duration
 	filtered           string
+	newSessionTitle    string
 	selectLabel        string
 	titleInputLabel    string
 }
 
 func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, title string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-
 	if len(c.sandboxes) == 0 {
 		err = fmt.Errorf("%w: no sandboxes to pick session", nestor.ErrInvalid)
 		return
 	}
+
+	if c.filtered == "-" {
+		sandbox = c.sandboxes[0]
+		sessionID = ""
+		title = c.newSessionTitle
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
 
 	var items []sessionOptionItem
 	for _, v := range c.sandboxes {

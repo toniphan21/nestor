@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,6 +17,8 @@ import (
 	"golang.org/x/term"
 
 	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/cli"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type editorDoneMsg struct {
@@ -22,6 +27,19 @@ type editorDoneMsg struct {
 	path    string
 	content string
 	err     error
+}
+
+type execDoneMsg struct {
+	tab tabID
+	tag string
+	err error
+}
+
+type initPromptDoneMsg struct {
+	tab  tabID
+	tag  string
+	data cli.PromptDryRunData
+	err  error
 }
 
 func openEditorWithInitial(tab tabID, tag, template, initial string) tea.Cmd {
@@ -79,11 +97,7 @@ func openEditorWithPath(tab tabID, tag string, path string) tea.Cmd {
 	})
 }
 
-type execDoneMsg struct {
-	tab tabID
-	tag string
-	err error
-}
+type altScreenMod func(*altScreenCmd)
 
 func execCommand(tab tabID, tag string, cmd string, args ...string) tea.Cmd {
 	return tea.Exec(altScreenCmd{cmd: exec.Command(cmd, args...)}, func(err error) tea.Msg {
@@ -101,28 +115,122 @@ func gotoDir(tab tabID, shell, dir, banner string) tea.Cmd {
 	})
 }
 
-func runExecSelfCommand(tab tabID, tag string, args []string, wait bool) tea.Cmd {
+func runExecSelfCommand(tab tabID, tag string, args []string, mod altScreenMod) tea.Cmd {
 	self, err := os.Executable()
 	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{tab: tab, tag: tag, err: err} }
+		return func() tea.Msg { return execDoneMsg{tab: tab, tag: tag, err: err} }
 	}
 
 	self, err = filepath.EvalSymlinks(self) // handle installed via a symlink
 	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{tab: tab, tag: tag, err: err} }
+		return func() tea.Msg { return execDoneMsg{tab: tab, tag: tag, err: err} }
 	}
 
-	return tea.Exec(altScreenCmd{cmd: exec.Command(self, args...), wait: wait}, func(err error) tea.Msg {
+	asc := altScreenCmd{cmd: exec.Command(self, args...)}
+	if mod != nil {
+		mod(&asc)
+	}
+	return tea.Exec(asc, func(err error) tea.Msg {
 		return execDoneMsg{tab: tab, tag: tag, err: err}
 	})
 }
 
 func execSelfCommand(tab tabID, tag string, args ...string) tea.Cmd {
-	return runExecSelfCommand(tab, tag, args, false)
+	return runExecSelfCommand(tab, tag, args, func(v *altScreenCmd) {
+		v.wait = false
+	})
 }
 
 func execSelfCommandDelayed(tab tabID, tag string, args ...string) tea.Cmd {
-	return runExecSelfCommand(tab, tag, args, false)
+	return runExecSelfCommand(tab, tag, args, func(v *altScreenCmd) {
+		v.wait = true
+	})
+}
+
+// initPrompt perform first step of prompting - collect running information
+func initPrompt(tab tabID, tag string, args ...string) tea.Cmd {
+	f, err := os.CreateTemp("", "nestor-prompt-dry-run-*.json")
+	if err != nil {
+		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	argv := slices.Clone(args)
+	argv = append(argv, "--dry-run", f.Name())
+
+	self, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	self, err = filepath.EvalSymlinks(self) // handle installed via a symlink
+	if err != nil {
+		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	asc := altScreenCmd{
+		cmd: exec.Command(self, argv...),
+	}
+	return tea.Exec(asc, func(err error) tea.Msg {
+		if err != nil {
+			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
+		}
+
+		var b []byte
+		b, err = fs.AtomicReadFile(f.Name())
+		if err != nil {
+			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
+		}
+
+		var pd cli.PromptDryRunData
+		if err = json.Unmarshal(b, &pd); err != nil {
+			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
+		}
+
+		if err = fs.RemoveFile(f.Name()); err != nil {
+			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
+		}
+		return initPromptDoneMsg{tab: tab, tag: tag, data: pd, err: err}
+	})
+}
+
+func dispatchPrompt(tab tabID, tag string, data cli.PromptDryRunData) tea.Cmd {
+	timestamp := strconv.FormatInt(time.Now().UTC().UnixMilli(), 10)
+	id := nestor.HashPath(data.Path, 5) + "-" + data.Sandbox + timestamp
+	logPath := filepath.Join(os.TempDir(), "nestor-prompt-"+id+".log")
+
+	metadata := map[string]string{
+		"path":    data.Path,
+		"sandbox": data.Sandbox,
+	}
+
+	cmd, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return jobStartFailedMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	cmd, err = filepath.EvalSymlinks(cmd) // handle installed via a symlink
+	if err != nil {
+		return func() tea.Msg { return jobStartFailedMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	args := []string{
+		"prompt",
+		"-s", data.Spec,
+		"-p", data.Path,
+		"-m", data.Model,
+		"-n", data.Sandbox,
+		"-r", data.SessionID,
+		"-t", data.SessionTitle,
+		"-f", data.PromptFile,
+	}
+	return startJob(tab, tag, id, logPath, cmd, metadata, args...)
+}
+
+func tailFile(tab tabID, tag string, file string) tea.Cmd {
+	args := []string{"+F", file}
+	return tea.Exec(altScreenCmd{cmd: exec.Command("less", args...)}, func(err error) tea.Msg {
+		return execDoneMsg{tab: tab, tag: tag, err: err}
+	})
 }
 
 const (
@@ -140,9 +248,10 @@ const minDisplay = 3 * time.Second
 // fast to read. When banner is non-empty, it's printed once the alt screen
 // is entered, before the command runs.
 type altScreenCmd struct {
-	cmd    *exec.Cmd
-	wait   bool
-	banner string
+	cmd           *exec.Cmd
+	wait          bool
+	pressToReturn bool
+	banner        string
 }
 
 func (c altScreenCmd) SetStdin(r io.Reader)  { c.cmd.Stdin = r }
@@ -170,15 +279,15 @@ func (c altScreenCmd) Run() error {
 	start := time.Now()
 	err := c.cmd.Run()
 	if err != nil {
-		if c.wait {
+		if c.wait || c.pressToReturn {
 			_, _ = fmt.Fprintf(out, "\nerror: %v\npress any key to return…", err)
 			waitKey(in, 0) // errors: wait until the user has read it
 		}
 		return err
 	}
 
-	if c.wait {
-		if remaining := minDisplay - time.Since(start); remaining > 0 {
+	if c.wait || c.pressToReturn {
+		if remaining := minDisplay - time.Since(start); remaining > 0 || c.pressToReturn {
 			_, _ = fmt.Fprint(out, "\npress any key to return")
 			waitKey(in, remaining)
 		}

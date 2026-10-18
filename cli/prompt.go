@@ -26,6 +26,7 @@ type PromptArgs struct {
 	Path        string
 	Sandbox     string
 	Session     string
+	Title       string
 	Model       string
 	PromptFile  string
 	DryRun      string
@@ -59,6 +60,7 @@ func Prompt(api nestor.API, args PromptArgs) error {
 		displaySandboxName: true,
 		timeout:            30 * time.Second,
 		filtered:           args.Session,
+		newSessionTitle:    args.Title,
 		selectLabel:        "Select session",
 		titleInputLabel:    "Session title (optional — leave blank for an auto-generated name)",
 	}
@@ -96,6 +98,9 @@ func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, 
 	fp := f.Name()
 	if err = fs.WriteFile(fp, []byte(prompt), 0o644); err != nil {
 		return err
+	}
+	if sessionID == "" {
+		sessionID = "-"
 	}
 
 	data := PromptDryRunData{

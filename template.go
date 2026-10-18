@@ -96,12 +96,12 @@ func (t *Template) genSandboxID() string {
 		if part == SandboxSlugsKeyword && t.sandboxSlugsPicker != nil {
 			return t.sandboxSlugsPicker.Pick()
 		}
-		return t.genRand(t.SandboxID, DefaultSandboxIDLength)
+		return t.Rand(t.SandboxID, DefaultSandboxIDLength)
 	}
-	return t.genRand(t.SandboxID, DefaultSandboxIDLength)
+	return t.Rand(t.SandboxID, DefaultSandboxIDLength)
 }
 
-func (t *Template) genRand(template string, defaultLen int) string {
+func (t *Template) Rand(template string, defaultLen int) string {
 	parts := strings.Split(template, ":")
 	if len(parts) != 2 {
 		return t.rand(defaultLen, DefaultIDLetters)
@@ -214,7 +214,7 @@ func (t *Template) MakeInteractiveConfirmPrompt(authProxy string, proxy string) 
 }
 
 func (t *Template) MakeAgentID() string {
-	id := t.genRand(t.AgentSuffix, DefaultSandboxIDLength)
+	id := t.Rand(t.AgentSuffix, DefaultSandboxIDLength)
 	alias := t.agentNamePicker.Pick()
 	return t.fillTemplate(t.AgentID, map[string]string{
 		"[id]":    id,
@@ -243,12 +243,7 @@ func (t *Template) rand(n int, letters string) string {
 }
 
 func (t *Template) hashPath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = filepath.Clean(path)
-	}
-	sum := sha256.Sum256([]byte(abs))
-	return strings.ToLower(b32.EncodeToString(sum[:5])) // 8 chars, 40 bits
+	return HashPath(path, 5) // 8 chars, 40 bits
 }
 
 func (t *Template) sanitize(s string) string {
@@ -293,4 +288,13 @@ func (t *Template) LoadSandboxSlugs(txt io.Reader) error {
 
 func (t *Template) PickAgentAlias() string {
 	return t.agentNamePicker.Pick()
+}
+
+func HashPath(path string, bytes int) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = filepath.Clean(path)
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return strings.ToLower(b32.EncodeToString(sum[:bytes]))
 }

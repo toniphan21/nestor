@@ -10,11 +10,11 @@ import (
 	"nhatp.com/go/nestor"
 )
 
-const bgInterval = 5 * time.Minute
+const cronInterval = 5 * time.Minute
 
-type bgJobTickMsg struct{}
+type cronTickMsg struct{}
 
-type bgJobDataMsg struct {
+type cronDataMsg struct {
 	lastestVersion string
 }
 
@@ -39,22 +39,22 @@ type page interface {
 	View() string
 }
 
-func (t TUI) bgJobTick() tea.Cmd {
-	return tea.Tick(bgInterval, func(time.Time) tea.Msg {
-		return bgJobTickMsg{}
+func (t TUI) cronTick() tea.Cmd {
+	return tea.Tick(cronInterval, func(time.Time) tea.Msg {
+		return cronTickMsg{}
 	})
 }
 
-func (t TUI) bgJob() tea.Cmd {
+func (t TUI) cronJob() tea.Cmd {
 	return func() tea.Msg {
 		if nestor.Version == "dev" {
-			return bgJobDataMsg{}
+			return cronDataMsg{}
 		}
 		latestVersion, isNew := nestor.CheckUpdate(nestor.LatestReleaseURL)
 		if !isNew {
 			latestVersion = ""
 		}
-		return bgJobDataMsg{latestVersion}
+		return cronDataMsg{latestVersion}
 	}
 }
 
@@ -63,6 +63,20 @@ func (t TUI) Init() tea.Cmd {
 }
 
 func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	passMsgToAllChildren := func(cmd ...tea.Cmd) (tea.Model, tea.Cmd) {
+		cmds := append([]tea.Cmd(nil), cmd...)
+		for k, v := range t.pages {
+			var c tea.Cmd
+			t.pages[k], c = v.Update(msg)
+			cmds = append(cmds, c)
+
+			if k == t.header.ActiveTab() {
+				t.body.SetContent(t.pages[k].View())
+			}
+		}
+		return t, tea.Batch(cmds...)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		t.width, t.height = msg.Width, msg.Height
@@ -75,14 +89,14 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
-	case bgJobTickMsg:
-		return t, t.bgJob()
+	case cronTickMsg:
+		return t, t.cronJob()
 
-	case bgJobDataMsg:
+	case cronDataMsg:
 		if msg.lastestVersion != "" {
 			t.header.SetLatestVersion(msg.lastestVersion)
 		}
-		return t, t.bgJobTick()
+		return t, t.cronTick()
 
 	case tea.MouseWheelMsg:
 		if t.isBusy() {
@@ -139,21 +153,16 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case setActionsMsg:
 		t.header.SetActions(msg.actions)
 		return t, nil
+
+	case jobStartFailedMsg:
+	case jobStartedMsg:
+		return passMsgToAllChildren(waitJob(msg.job))
+	case jobExitedMsg:
+		return passMsgToAllChildren()
 	}
 
 	// everything else -> all children
-	var cmds []tea.Cmd
-	for k, v := range t.pages {
-		var c tea.Cmd
-		t.pages[k], c = v.Update(msg)
-		cmds = append(cmds, c)
-
-		if k == t.header.ActiveTab() {
-			t.body.SetContent(v.View())
-		}
-	}
-
-	return t, tea.Batch(cmds...)
+	return passMsgToAllChildren()
 }
 
 func (t TUI) View() tea.View {
@@ -214,7 +223,7 @@ func Run(provider *APIProvider, upgradeCommand string) error {
 		},
 	}
 	t.header.upgradeCommand = upgradeCommand
-	t.initCmd = tea.Batch(t.pages[t.header.ActiveTab()].Focus(), t.bgJob())
+	t.initCmd = tea.Batch(t.pages[t.header.ActiveTab()].Focus(), t.cronJob())
 
 	if _, err := tea.NewProgram(t).Run(); err != nil {
 		return err

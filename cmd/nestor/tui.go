@@ -119,10 +119,6 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-			promptFile, err := cmd.Flags().GetString("prompt-file")
-			if err != nil {
-				return err
-			}
 			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
@@ -131,14 +127,12 @@ func newTUICmd() *tuiCmd {
 			return cli.PromptSpec(api, cli.PromptArgs{
 				SandboxSpec: strings.TrimSpace(spec),
 				Path:        strings.TrimSpace(path),
-				PromptFile:  strings.TrimSpace(promptFile),
 				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
 	}
 	promptSpec.Flags().StringP("spec", "s", "", "sandbox spec name")
 	promptSpec.Flags().StringP("path", "p", "", "working path")
-	promptSpec.Flags().StringP("prompt-file", "f", "", "prompt file")
 	promptSpec.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
 	promptSandbox := &cobra.Command{
@@ -157,10 +151,6 @@ func newTUICmd() *tuiCmd {
 			if err != nil {
 				return err
 			}
-			promptFile, err := cmd.Flags().GetString("prompt-file")
-			if err != nil {
-				return err
-			}
 			dryRun, err := cmd.Flags().GetString("dry-run")
 			if err != nil {
 				return err
@@ -170,7 +160,6 @@ func newTUICmd() *tuiCmd {
 				SandboxSpec: strings.TrimSpace(spec),
 				Path:        strings.TrimSpace(path),
 				Sandbox:     strings.TrimSpace(name),
-				PromptFile:  strings.TrimSpace(promptFile),
 				DryRun:      strings.TrimSpace(dryRun),
 			})
 		}),
@@ -178,7 +167,6 @@ func newTUICmd() *tuiCmd {
 	promptSandbox.Flags().StringP("spec", "s", "", "sandbox spec name")
 	promptSandbox.Flags().StringP("path", "p", "", "working path")
 	promptSandbox.Flags().StringP("name", "n", "", "sandbox name")
-	promptSandbox.Flags().StringP("prompt-file", "f", "", "prompt file")
 	promptSandbox.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
 	root.AddCommand(renameWorkspace, launchSpec, launchSandbox, promptSpec, promptSandbox)

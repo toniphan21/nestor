@@ -105,6 +105,10 @@ func newSpecCmd() *specCmd {
 			if err != nil {
 				return err
 			}
+			title, err := cmd.Flags().GetString("title")
+			if err != nil {
+				return err
+			}
 			promptFile, err := cmd.Flags().GetString("prompt-file")
 			if err != nil {
 				return err
@@ -120,6 +124,7 @@ func newSpecCmd() *specCmd {
 				Model:       strings.TrimSpace(model),
 				Sandbox:     strings.TrimSpace(name),
 				Session:     strings.TrimSpace(session),
+				Title:       strings.TrimSpace(title),
 				PromptFile:  strings.TrimSpace(promptFile),
 				DryRun:      strings.TrimSpace(dryRun),
 			})
@@ -130,6 +135,7 @@ func newSpecCmd() *specCmd {
 	prompt.Flags().StringP("model", "m", "", "model")
 	prompt.Flags().StringP("name", "n", "", "sandbox name")
 	prompt.Flags().StringP("session", "r", "", "session id to resume")
+	prompt.Flags().StringP("title", "t", "", "session title (for new session)")
 	prompt.Flags().StringP("prompt-file", "f", "", "prompt file")
 	prompt.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
