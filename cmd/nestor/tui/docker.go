@@ -241,22 +241,16 @@ func (p *dockerPage) actions() tea.Cmd {
 				out = append(out, actionCollapse)
 			}
 		}
-		out = append(out, actionMove, actionQuit)
+		out = append(out, actionMove)
 
-		return useActions(out...)
+		return p.useActions(out...)
 	}
 
 	if dc, isDC := p.rowDockerContainer(); isDC {
 		if dc.isRunning {
-			return useActions(
-				actionContainerShell, actionContainerDown,
-				actionMove, actionQuit,
-			)
+			return p.useActions(actionContainerShell, actionContainerDown, actionMove)
 		}
-		return useActions(
-			actionContainerUp,
-			actionMove, actionQuit,
-		)
+		return p.useActions(actionContainerUp, actionMove)
 	}
 	return nil
 }

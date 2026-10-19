@@ -149,14 +149,6 @@ func execSelfCommandDelayed(tab tabID, tag string, args ...string) tea.Cmd {
 
 // initPrompt perform first step of prompting - collect running information
 func initPrompt(tab tabID, tag string, args ...string) tea.Cmd {
-	f, err := os.CreateTemp("", "nestor-prompt-dry-run-*.json")
-	if err != nil {
-		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
-	}
-
-	argv := slices.Clone(args)
-	argv = append(argv, "--dry-run", f.Name())
-
 	self, err := os.Executable()
 	if err != nil {
 		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
@@ -167,10 +159,21 @@ func initPrompt(tab tabID, tag string, args ...string) tea.Cmd {
 		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
 	}
 
+	f, err := os.CreateTemp("", "nestor-prompt-dry-run-*.json")
+	if err != nil {
+		return func() tea.Msg { return initPromptDoneMsg{tab: tab, tag: tag, err: err} }
+	}
+
+	argv := slices.Clone(args)
+	argv = append(argv, "--dry-run", f.Name())
 	asc := altScreenCmd{
 		cmd: exec.Command(self, argv...),
 	}
 	return tea.Exec(asc, func(err error) tea.Msg {
+		defer func() {
+			_ = fs.RemoveFile(f.Name())
+		}()
+
 		if err != nil {
 			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
 		}
@@ -185,17 +188,13 @@ func initPrompt(tab tabID, tag string, args ...string) tea.Cmd {
 		if err = json.Unmarshal(b, &pd); err != nil {
 			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
 		}
-
-		if err = fs.RemoveFile(f.Name()); err != nil {
-			return initPromptDoneMsg{tab: tab, tag: tag, err: err}
-		}
 		return initPromptDoneMsg{tab: tab, tag: tag, data: pd, err: err}
 	})
 }
 
 func dispatchPrompt(tab tabID, tag string, data cli.PromptDryRunData) tea.Cmd {
 	timestamp := strconv.FormatInt(time.Now().UTC().UnixMilli(), 10)
-	id := nestor.HashPath(data.Path, 5) + "-" + data.Sandbox + timestamp
+	id := nestor.HashPath(data.Path, 5) + "-" + data.Sandbox + "-" + timestamp
 	logPath := filepath.Join(os.TempDir(), "nestor-prompt-"+id+".log")
 
 	metadata := map[string]string{

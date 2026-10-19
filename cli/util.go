@@ -424,7 +424,7 @@ func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, 
 		return
 	}
 
-	if c.filtered == "-" {
+	if c.filtered == NewSessionPlaceholder {
 		sandbox = c.sandboxes[0]
 		sessionID = ""
 		title = c.newSessionTitle

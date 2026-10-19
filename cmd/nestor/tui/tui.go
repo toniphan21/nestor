@@ -128,7 +128,11 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "q", "ctrl+c", "ctrl+d":
-			return t, tea.Quit
+			if !t.header.HasJobs() {
+				return t, tea.Quit
+			}
+			t.header.SetJobsWarning(true)
+			return t, nil
 
 		case "H":
 			if t.header.ActiveTab() != tabHome {
@@ -154,10 +158,13 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.header.SetActions(msg.actions)
 		return t, nil
 
-	case jobStartFailedMsg:
 	case jobStartedMsg:
+		t.header.SetJobStarted(msg.job)
 		return passMsgToAllChildren(waitJob(msg.job))
+
 	case jobExitedMsg:
+		t.header.SetJobEnded(msg.id)
+		t.header.SetJobsWarning(false)
 		return passMsgToAllChildren()
 	}
 

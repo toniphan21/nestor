@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unicode"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
@@ -23,12 +22,14 @@ const (
 )
 
 type header struct {
-	active         tabID
-	actionBar      actionBar
-	width          int
-	y              int
-	latestVersion  string
-	upgradeCommand string
+	active          tabID
+	actionBar       actionBar
+	width           int
+	y               int
+	latestVersion   string
+	upgradeCommand  string
+	jobs            map[string]job
+	showJobsWarning bool
 }
 
 func (h header) ActiveTab() tabID {
@@ -56,7 +57,32 @@ func (h *header) SetLatestVersion(v string) {
 }
 
 func (h *header) SetActions(actions []action) {
+	if !h.HasJobs() {
+		quit := actionQuit
+		quit.order = len(actions)
+
+		actions = append(actions, quit)
+	}
 	h.actionBar = actionBar{actions: actions}
+}
+
+func (h *header) SetJobStarted(j job) {
+	if h.jobs == nil {
+		h.jobs = make(map[string]job)
+	}
+	h.jobs[j.id] = j
+}
+
+func (h *header) SetJobEnded(id string) {
+	delete(h.jobs, id)
+}
+
+func (h *header) HasJobs() bool {
+	return len(h.jobs) != 0
+}
+
+func (h *header) SetJobsWarning(v bool) {
+	h.showJobsWarning = v
 }
 
 func (h *header) TabPosition(x, y int) *tabID {
@@ -95,19 +121,21 @@ func (h header) View() string {
 }
 
 func (h header) banner() string {
-	var update string
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s %s %s", nestor.BinaryName, displayVersion(nestor.Version), pterm.Gray(nestor.GoOS+"/"+nestor.GoArch))
+
 	if h.latestVersion != "" {
-		update = fmt.Sprintf(
-			"- %s, run %s to upgrade",
-			pterm.Yellow(displayVersion(h.latestVersion)+" available"),
-			pterm.Blue(h.upgradeCommand),
+		fmt.Fprintf(&out, " - %s, run %s to upgrade",
+			pterm.Yellow(displayVersion(h.latestVersion)+" available"), pterm.Blue(h.upgradeCommand),
 		)
 	}
+	out.WriteString("\n\n")
 
-	return fmt.Sprintf(
-		"%s %s %s %s\n\n",
-		nestor.BinaryName, displayVersion(nestor.Version), pterm.Gray(nestor.GoOS+"/"+nestor.GoArch), update,
-	)
+	if h.showJobsWarning && h.HasJobs() {
+		out.WriteString(pterm.Yellow(" A background job is still running. Wait for it to finish or kill it before quitting."))
+		out.WriteString("\n\n")
+	}
+	return out.String()
 }
 
 func (h header) tabs() []string {
@@ -175,36 +203,27 @@ type setActionsMsg struct {
 }
 
 var (
-	actionQuit               = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
-	actionMove               = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
-	actionEditDockerfile     = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
-	actionBuild              = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
-	actionContainerDown      = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
-	actionContainerUp        = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
-	actionContainerShell     = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
-	actionViewSecret         = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
-	actionHideSecret         = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
-	actionTool               = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
-	actionCollapse           = action{keys: []string{pterm.Blue("z")}, desc: "collapse", priority: 0}
-	actionExpand             = action{keys: []string{pterm.Blue("z")}, desc: "expand", priority: 0}
-	actionEditConfiguration  = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
-	actionBackToEditor       = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
-	actionGotoDir            = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
-	actionRename             = action{keys: []string{pterm.Blue("r")}, desc: "rename", priority: 1}
-	actionPrompt             = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
-	actionLaunch             = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "launch", priority: 1}
-	actionViewPromptProgress = action{keys: []string{pterm.Blue("v")}, desc: "view progress", priority: 1}
+	actionQuit              = action{keys: []string{pterm.Red("q")}, desc: "quit", priority: -1}
+	actionMove              = action{keys: []string{pterm.Blue("j"), pterm.Blue("k")}, desc: "move", priority: 0}
+	actionEditDockerfile    = action{keys: []string{pterm.Blue("e")}, desc: "edit dockerfile", priority: 1}
+	actionBuild             = action{keys: []string{pterm.Blue("b")}, desc: "build", priority: 1}
+	actionContainerDown     = action{keys: []string{pterm.Blue("d")}, desc: "down", priority: 1}
+	actionContainerUp       = action{keys: []string{pterm.Blue("u")}, desc: "up", priority: 1}
+	actionContainerShell    = action{keys: []string{pterm.Blue("enter")}, desc: "shell", priority: 1}
+	actionViewSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "view", priority: 1}
+	actionHideSecret        = action{keys: []string{pterm.Blue("enter")}, desc: "hide", priority: 1}
+	actionTool              = action{keys: []string{pterm.Blue("t")}, desc: "tools", priority: 1}
+	actionCollapse          = action{keys: []string{pterm.Blue("z")}, desc: "collapse", priority: 0}
+	actionExpand            = action{keys: []string{pterm.Blue("z")}, desc: "expand", priority: 0}
+	actionEditConfiguration = action{keys: []string{pterm.Blue("e")}, desc: "edit config file", priority: 1}
+	actionBackToEditor      = action{keys: []string{pterm.Blue("enter")}, desc: "back to editor", priority: 1}
+	actionGotoDir           = action{keys: []string{pterm.Blue("g")}, desc: "goto dir", priority: 1}
+	actionRename            = action{keys: []string{pterm.Blue("r")}, desc: "rename", priority: 1}
+	actionPrompt            = action{keys: []string{pterm.Blue("p")}, desc: "prompt", priority: 1}
+	actionLaunch            = action{keys: []string{pterm.Blue("enter"), pterm.Blue("l")}, desc: "launch", priority: 1}
+	actionViewPromptProcess = action{keys: []string{pterm.Blue("v")}, desc: "view process", priority: 1}
+	actionKillPromptProcess = action{keys: []string{pterm.Red("X")}, desc: "kill process", priority: 1}
 )
-
-func useActions(actions ...action) tea.Cmd {
-	var out []action
-	for i, v := range actions {
-		v.order = i
-		v.keySeparator = pterm.Gray("/")
-		out = append(out, v)
-	}
-	return send(setActionsMsg{actions: out})
-}
 
 type actionBar struct {
 	width     int

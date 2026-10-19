@@ -212,7 +212,7 @@ func (p mcpPage) fetchTools(s *mcpServer) tea.Cmd {
 
 func (p *mcpPage) actions() tea.Cmd {
 	if p.pendingEditErr != nil {
-		return useActions(actionBackToEditor, actionQuit)
+		return p.useActions(actionBackToEditor)
 	}
 
 	var out []action
@@ -237,8 +237,8 @@ func (p *mcpPage) actions() tea.Cmd {
 		}
 	}
 
-	out = append(out, actionMove, actionQuit)
-	return useActions(out...)
+	out = append(out, actionMove)
+	return p.useActions(out...)
 }
 
 func (p *mcpPage) Update(msg tea.Msg) (page, tea.Cmd) {

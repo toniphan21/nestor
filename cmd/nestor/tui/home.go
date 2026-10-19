@@ -317,14 +317,14 @@ func (p *homePage) actions() tea.Cmd {
 
 	if sb, ok := p.rowHomeSandbox(); ok {
 		free := sb.isFree
-		_, have := p.hasPromptJob(sb)
+		_, hasJob := p.hasPromptJob(sb)
 
-		if free {
+		if free && !hasJob {
 			out = append(out, actionRename)
 		}
 
-		if have {
-			out = append(out, actionViewPromptProgress)
+		if hasJob {
+			out = append(out, actionViewPromptProcess, actionKillPromptProcess)
 		}
 
 		out = append(out, actionGotoDir)
@@ -333,8 +333,8 @@ func (p *homePage) actions() tea.Cmd {
 		}
 	}
 
-	out = append(out, actionMove, actionQuit)
-	return useActions(out...)
+	out = append(out, actionMove)
+	return p.useActions(out...)
 }
 
 func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
@@ -438,6 +438,15 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			}
 			return p, nil
 
+		case "X":
+			if sb, ok := p.rowHomeSandbox(); ok {
+				j, have := p.hasPromptJob(sb)
+				if have && j.state == jobRunning {
+					return p, stopJob(j, 10*time.Second)
+				}
+			}
+			return p, nil
+
 		case "r":
 			if w, ok := p.rowHomeWorkspace(); ok {
 				p.busy = true
@@ -477,7 +486,7 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, nil
 
 	case initPromptDoneMsg:
-		if msg.tab != tabHome {
+		if msg.tab != tabHome || msg.err != nil {
 			return p, nil
 		}
 		p.busy = false
@@ -492,6 +501,16 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 		p.jobs[msg.job.id] = msg.job
 		return p, p.fetch()
+
+	case jobStopDeadlineMsg:
+		if msg.tab != tabHome || msg.tag != "prompt" {
+			return p, nil
+		}
+		j, ok := p.jobs[msg.id]
+		if !ok {
+			return p, nil
+		}
+		return p, killJob(j)
 
 	case jobExitedMsg:
 		if msg.tab != tabHome || msg.tag != "prompt" {

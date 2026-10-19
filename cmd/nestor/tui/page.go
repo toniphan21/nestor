@@ -1,5 +1,10 @@
 package tui
 
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/pterm/pterm"
+)
+
 type basePage struct {
 	busy    bool
 	focused bool
@@ -29,4 +34,14 @@ func (p *basePage) SetSize(w int, h int) {
 
 func (p *basePage) ignore(gen int) bool {
 	return gen != p.gen || !p.focused
+}
+
+func (p *basePage) useActions(actions ...action) tea.Cmd {
+	var out []action
+	for i, v := range actions {
+		v.order = i
+		v.keySeparator = pterm.Gray("/")
+		out = append(out, v)
+	}
+	return send(setActionsMsg{actions: out})
 }

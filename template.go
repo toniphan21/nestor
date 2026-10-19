@@ -290,11 +290,11 @@ func (t *Template) PickAgentAlias() string {
 	return t.agentNamePicker.Pick()
 }
 
-func HashPath(path string, bytes int) string {
+func HashPath(path string, n int) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = filepath.Clean(path)
 	}
 	sum := sha256.Sum256([]byte(abs))
-	return strings.ToLower(b32.EncodeToString(sum[:bytes]))
+	return strings.ToLower(b32.EncodeToString(sum[:n]))
 }

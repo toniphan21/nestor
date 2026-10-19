@@ -42,8 +42,6 @@ type job struct {
 	logPath  string
 	metadata map[string]string
 	state    jobState
-	err      error
-	stopping bool      // stop requested; decides "cancelled" vs "failed"
 	cmd      *exec.Cmd // nil once the process has been waited for
 }
 

@@ -90,6 +90,8 @@ type PromptDryRunData struct {
 	PromptFile   string `json:"promptFile"`
 }
 
+const NewSessionPlaceholder = "-"
+
 func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, prompt, outputFile string) error {
 	f, err := os.CreateTemp("", "nestor-prompt-*.md")
 	if err != nil {
@@ -100,7 +102,7 @@ func promptDryRun(sandbox nestor.Sandbox, path, model, sessionID, sessionTitle, 
 		return err
 	}
 	if sessionID == "" {
-		sessionID = "-"
+		sessionID = NewSessionPlaceholder
 	}
 
 	data := PromptDryRunData{
