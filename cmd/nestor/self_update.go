@@ -6,12 +6,15 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,7 +22,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"nhatp.com/go/nestor"
-	"nhatp.com/go/nestor/infra/fs"
 )
 
 const upgradeCommand = "nestor self-update"
@@ -77,11 +79,12 @@ func selfUpdate(baseURL string) error {
 		target = resolved
 	}
 
-	if err := fs.AtomicWriteFile(target, binary, 0o755); err != nil {
+	newVersion, err := replaceBinary(context.Background(), target, binary, 0o755)
+	if err != nil {
 		return err
 	}
 
-	fmt.Printf("updated %s\n", target)
+	fmt.Printf("updated %s v%s -> v%s\n", target, nestor.Version, newVersion)
 	return nil
 }
 
@@ -90,7 +93,9 @@ func fetch(client *http.Client, url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
@@ -118,7 +123,9 @@ func extractBinary(archive []byte, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer gz.Close()
+	defer func() {
+		_ = gz.Close()
+	}()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -134,4 +141,67 @@ func extractBinary(archive []byte, name string) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("%s not found in archive", name)
+}
+
+func replaceBinary(ctx context.Context, path string, data []byte, perm os.FileMode) (version string, err error) {
+	dir := filepath.Dir(path)
+
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp*")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			_ = f.Close() // harmless if already closed
+			_ = os.Remove(tmp)
+		}
+	}()
+
+	if _, err = f.Write(data); err != nil {
+		return "", err
+	}
+	if err = f.Sync(); err != nil {
+		return "", err
+	}
+	if err = f.Close(); err != nil {
+		return "", err
+	}
+	if err = os.Chmod(tmp, perm); err != nil {
+		return "", err
+	}
+
+	if version, err = probeVersion(ctx, tmp); err != nil {
+		return "", fmt.Errorf("verify new binary: %w", err)
+	}
+
+	if err = os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	return version, nil
+}
+
+func probeVersion(ctx context.Context, bin string) (string, error) {
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, abs, "version").Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("%w: %s", err, bytes.TrimSpace(ee.Stderr))
+		}
+		return "", err
+	}
+
+	v := strings.TrimSpace(string(out))
+	if v == "" {
+		return "", errors.New("empty version output")
+	}
+	return v, nil
 }
