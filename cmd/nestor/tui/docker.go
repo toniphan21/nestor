@@ -162,7 +162,7 @@ func (p dockerPage) fetch() tea.Cmd {
 		defer cancel()
 
 		for _, spec := range specs {
-			h, profile, err := spec.FindHarnessAndProfile(runtime)
+			_, _, profile, err := spec.Resolve(runtime)
 			if err != nil {
 				continue
 			}
@@ -172,7 +172,7 @@ func (p dockerPage) fetch() tea.Cmd {
 			image := dockerImage{
 				spec:       spec.Name,
 				image:      img,
-				dockerfile: profile.Dockerfile(h, runtime),
+				dockerfile: profile.Dockerfile(),
 				imageID:    runtime.Docker().ImageID(ctx, img),
 			}
 

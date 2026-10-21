@@ -11,6 +11,7 @@ import (
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/infra/fs"
+	"nhatp.com/go/nestor/internal/nx"
 )
 
 type specTickMsg struct{ gen int }
@@ -88,9 +89,9 @@ func (v *specEntry) toRows(uhome string, collapsed bool) []specRow {
 			readOnly = "read-only"
 		}
 
-		value := cutHome(m.path, uhome)
+		value := nx.CutHome(m.path, uhome)
 		if m.at != "" && m.at != m.path {
-			value += " → " + cutHome(m.at, uhome)
+			value += " → " + nx.CutHome(m.at, uhome)
 		}
 
 		children = append(children, specRow{

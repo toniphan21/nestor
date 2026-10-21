@@ -55,6 +55,8 @@ type Harness interface {
 	ProxyRoute(lease *Lease) *ProxyRoute
 
 	ListSessions(ctx context.Context, path string, sandboxes ...Sandbox) []HarnessSession
+
+	ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error)
 }
 
 type ProxyRoute struct {
@@ -76,4 +78,8 @@ type HarnessSession struct {
 	Directory string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type ResolvedProfile interface {
+	Dockerfile() string
 }

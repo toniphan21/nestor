@@ -11,6 +11,7 @@ import (
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli"
+	"nhatp.com/go/nestor/internal/nx"
 )
 
 type homeTickMsg struct{ gen int }
@@ -43,8 +44,8 @@ func (v *homeSandbox) statusDisplay(p *homePage) string {
 }
 
 func (v *homeSandbox) extraDisplay(width int) string {
-	full := cutHome(v.hostWorkDir, v.uhome)
-	short := replacePathPrefix(v.hostWorkDir, v.stateDir, "$NESTOR_SANDBOX")
+	full := nx.CutHome(v.hostWorkDir, v.uhome)
+	short := nx.ReplacePathPrefix(v.hostWorkDir, v.stateDir, "$NESTOR_SANDBOX")
 	if v.mountType == nestor.MountTypeGitWorktree && v.branch != "" {
 		full += ":" + pterm.Cyan(v.branch)
 		short += ":" + pterm.Cyan(v.branch)
@@ -61,7 +62,7 @@ func (v *homeSandbox) extraDisplay(width int) string {
 	}
 
 	if v.workDir != v.hostWorkDir {
-		extra += " → " + cutHome(v.workDir, v.uhome)
+		extra += " → " + nx.CutHome(v.workDir, v.uhome)
 	}
 	return extra
 }
@@ -155,7 +156,7 @@ type homeWorkspace struct {
 }
 
 func (v *homeWorkspace) toRows(p *homePage, collapsed map[string]bool, uhome string) []homeRow {
-	extra := cutHome(v.workspace.Path(), uhome)
+	extra := nx.CutHome(v.workspace.Path(), uhome)
 	if v.branch != "" {
 		extra += ":" + pterm.Magenta(v.branch)
 	}

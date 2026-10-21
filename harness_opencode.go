@@ -299,6 +299,11 @@ func (h *harnessOpenCode) ListSessions(ctx context.Context, path string, sandbox
 	return result
 }
 
+func (h *harnessOpenCode) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
+	// TODO: implement
+	return nil, nil
+}
+
 var _ Harness = (*harnessOpenCode)(nil)
 
 type harnessOpenCodeSyncer struct {

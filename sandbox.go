@@ -30,6 +30,7 @@ type Sandbox interface {
 	Container() string
 	Harness() Harness
 	Profile() Profile
+	ResolvedProfile() ResolvedProfile
 	Worktrees() []SandboxWorktree
 	Paths() []string
 	Mounts() []SandboxMount
@@ -68,7 +69,7 @@ type SandboxMount struct {
 }
 
 func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*sandboxImpl, error) {
-	h, p, err := spec.FindHarnessAndProfile(runtime)
+	h, p, rp, err := spec.Resolve(runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -78,15 +79,16 @@ func makeSandboxImpl(data *sandboxData, runtime Runtime, spec SandboxSpec) (*san
 	rt.Logger = log
 
 	sb := &sandboxImpl{
-		data:     data,
-		runtime:  rt,
-		spec:     spec,
-		harness:  h,
-		profile:  p,
-		git:      rt.newGitFunc(log),
-		docker:   rt.newDockerFunc(log),
-		log:      log,
-		leaseLog: runtime.Logger.With("layer", "lease"),
+		data:            data,
+		runtime:         rt,
+		spec:            spec,
+		harness:         h,
+		profile:         p,
+		resolvedProfile: rp,
+		git:             rt.newGitFunc(log),
+		docker:          rt.newDockerFunc(log),
+		log:             log,
+		leaseLog:        runtime.Logger.With("layer", "lease"),
 	}
 	return sb, nil
 }
@@ -150,15 +152,16 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 }
 
 type sandboxImpl struct {
-	data     *sandboxData
-	runtime  Runtime
-	spec     SandboxSpec
-	harness  Harness
-	profile  Profile
-	git      Git
-	docker   Docker
-	log      *slog.Logger
-	leaseLog *slog.Logger
+	data            *sandboxData
+	runtime         Runtime
+	spec            SandboxSpec
+	harness         Harness
+	profile         Profile
+	resolvedProfile ResolvedProfile
+	git             Git
+	docker          Docker
+	log             *slog.Logger
+	leaseLog        *slog.Logger
 }
 
 func (s *sandboxImpl) ID() string {
@@ -213,6 +216,10 @@ func (s *sandboxImpl) Harness() Harness {
 
 func (s *sandboxImpl) Profile() Profile {
 	return s.profile
+}
+
+func (s *sandboxImpl) ResolvedProfile() ResolvedProfile {
+	return s.resolvedProfile
 }
 
 func (s *sandboxImpl) Worktrees() []SandboxWorktree {
@@ -441,7 +448,7 @@ func (s *sandboxImpl) ContainerHomeDir() string {
 }
 
 func (s *sandboxImpl) ResolveWorkDir(path string) (string, string, bool) {
-	sm, rel := s.spec.Resolve(path)
+	sm, rel := s.spec.ResolveMountedPath(path)
 	switch {
 	case sm == nil:
 		return "", "", false

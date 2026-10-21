@@ -10,12 +10,72 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
 )
+
+var _ ResolvedProfile = (*harnessClaudeProfile)(nil)
+
+type harnessClaudeMode int
+
+const (
+	harnessClaudeModeSubscription harnessClaudeMode = iota
+	harnessClaudeModeAPIKey
+)
+
+type harnessClaudeProfile struct {
+	dockerfile       string
+	claudeDir        string
+	claudeConfigFile string
+	containerHomeDir string
+	mode             harnessClaudeMode
+	secret           string
+}
+
+func (h *harnessClaudeProfile) Dockerfile() string {
+	return h.dockerfile
+}
+
+func harnessClaudeResolveProfile(runtime Runtime, profile Profile) (*harnessClaudeProfile, error) {
+	out := &harnessClaudeProfile{}
+	out.dockerfile = profile.GetOption(ProfileOptionDockerfile, func() string {
+		return runtime.Platform.ConfigDir("claude", "Dockerfile")
+	})
+	out.claudeDir = profile.GetOption(ClaudeDir, func() string {
+		return path.Join(runtime.Platform.UserHomeDir(), ".claude")
+	})
+	out.claudeConfigFile = profile.GetOption(ClaudeConfigFile, func() string {
+		return path.Join(runtime.Platform.UserHomeDir(), ".claude.json")
+	})
+	out.containerHomeDir = profile.GetOption(ProfileOptionContainerHomeDir, func() string {
+		return DefaultContainerHomeDir
+	})
+
+	apiKey, haveAPIKey := profile.GetSetting(AnthropicAPIKeyName)
+	oauthToken, haveOAuthToken := profile.GetSetting(ClaudeCodeOAuthTokenName)
+	switch {
+	case !haveAPIKey && !haveOAuthToken:
+		return out, fmt.Errorf("%w: missing settings %q/%q", ErrInvalid, AnthropicAPIKeyName, ClaudeCodeOAuthTokenName)
+
+	case !haveAPIKey:
+		out.secret = oauthToken
+		out.mode = harnessClaudeModeSubscription
+
+	case !haveOAuthToken:
+		out.secret = apiKey
+		out.mode = harnessClaudeModeAPIKey
+
+	default:
+		// oauth token out weight api key
+		out.secret = oauthToken
+		out.mode = harnessClaudeModeSubscription
+	}
+	return out, nil
+}
 
 func newHarnessClaude() Harness {
 	return &harnessClaude{
@@ -249,6 +309,10 @@ func (h *harnessClaude) ListSessions(_ context.Context, path string, sandboxes .
 		}
 	}
 	return out
+}
+
+func (h *harnessClaude) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
+	return harnessClaudeResolveProfile(runtime, profile)
 }
 
 var _ Harness = (*harnessClaude)(nil)

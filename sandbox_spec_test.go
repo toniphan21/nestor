@@ -172,7 +172,7 @@ func TestSandboxSpec_Resolve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &SandboxSpec{Mounts: tt.mounts}
 
-			mount, rel := s.Resolve(tt.path)
+			mount, rel := s.ResolveMountedPath(tt.path)
 			if rel != tt.wantRel {
 				t.Errorf("rel = %v, want %v", rel, tt.wantRel)
 			}

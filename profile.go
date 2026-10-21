@@ -73,10 +73,24 @@ func (p *Profile) Model(alias string) string {
 	return v
 }
 
-func (p *Profile) Dockerfile(h Harness, r Runtime) string {
-	v, ok := p.Options[ProfileOptionDockerfile]
-	if !ok {
-		return h.DefaultDockerfile(r)
+func (p *Profile) GetOption(name string, fn func() string) string {
+	if p.Options == nil {
+		if fn != nil {
+			return fn()
+		}
+		return ""
+	}
+	v, ok := p.Options[name]
+	if !ok && fn != nil {
+		return fn()
 	}
 	return v
+}
+
+func (p *Profile) GetSetting(name string) (string, bool) {
+	if p.Settings == nil {
+		return "", false
+	}
+	v, ok := p.Settings[name]
+	return v, ok
 }

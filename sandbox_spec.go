@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -74,7 +73,7 @@ type SandboxSpec struct {
 }
 
 func (s *SandboxSpec) Validate(runtime Runtime) error {
-	_, p, err := s.FindHarnessAndProfile(runtime)
+	_, p, _, err := s.Resolve(runtime)
 	if err != nil {
 		return err
 	}
@@ -99,7 +98,7 @@ func (s *SandboxSpec) Validate(runtime Runtime) error {
 	return nil
 }
 
-func (s *SandboxSpec) Resolve(path string) (*SandboxSpecMount, string) {
+func (s *SandboxSpec) ResolveMountedPath(path string) (*SandboxSpecMount, string) {
 	for _, m := range s.Mounts {
 		rel, err := filepath.Rel(m.Path, path)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -145,12 +144,12 @@ func (s *SandboxSpec) Paths() []string {
 }
 
 func (s *SandboxSpec) Build(ctx context.Context, runtime Runtime, docker Docker, opt DockerBuildOption) error {
-	h, p, err := s.FindHarnessAndProfile(runtime)
+	_, _, rp, err := s.Resolve(runtime)
 	if err != nil {
 		return err
 	}
 
-	dockerfile := p.Dockerfile(h, runtime)
+	dockerfile := rp.Dockerfile()
 	opt.Dockerfile = dockerfile
 	opt.Target = s.Target
 	opt.Tag = s.DockerImageName(runtime.Template)
@@ -159,35 +158,22 @@ func (s *SandboxSpec) Build(ctx context.Context, runtime Runtime, docker Docker,
 	return err
 }
 
-func (s *SandboxSpec) FindHarnessAndProfile(runtime Runtime) (Harness, Profile, error) {
+func (s *SandboxSpec) Resolve(runtime Runtime) (Harness, Profile, ResolvedProfile, error) {
 	h, have := runtime.Registry.Harness(string(s.Harness))
 	if !have {
-		return nil, Profile{}, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
+		return nil, Profile{}, nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
 	}
 
-	pn := s.Profile
-	if pn == "" {
-		pn = string(s.Harness)
-	}
-	p, have := runtime.Registry.Profile(pn)
+	p, have := runtime.Registry.Profile(s.Profile)
 	if !have {
-		return nil, Profile{}, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
+		return nil, Profile{}, nil, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
 	}
 
-	po := make(map[string]string)
-	if p.Options != nil {
-		maps.Copy(po, p.Options)
+	rp, err := h.ResolveProfile(runtime, p)
+	if err != nil {
+		return nil, Profile{}, nil, err
 	}
-
-	defaultOptions := h.DefaultOptions(runtime)
-	for k, v := range defaultOptions {
-		if _, have = po[k]; !have {
-			po[k] = v
-		}
-	}
-
-	p.Options = po
-	return h, p, nil
+	return h, p, rp, nil
 }
 
 func (s *SandboxSpec) ListSandboxes(runtime Runtime) ([]Sandbox, error) {
