@@ -36,11 +36,11 @@ type Harness interface {
 
 	DisplayName() string
 
-	DefaultOptions(runtime Runtime) map[string]string
-
 	DefaultDockerfile(runtime Runtime) string
 
 	Init(runtime Runtime) error
+
+	ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error)
 
 	Syncers(sandbox Sandbox) []Syncer
 
@@ -48,15 +48,13 @@ type Harness interface {
 
 	StartEnv(sandbox Sandbox) map[string]string
 
-	Exec(lease *Lease, req ExecRequest) HarnessExec
+	Exec(lease *Lease, req ExecRequest) (HarnessExec, error)
 
 	CaptureSessionID(line []byte) (string, bool)
 
 	ProxyRoute(lease *Lease) *ProxyRoute
 
 	ListSessions(ctx context.Context, path string, sandboxes ...Sandbox) []HarnessSession
-
-	ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error)
 }
 
 type ProxyRoute struct {
@@ -82,4 +80,6 @@ type HarnessSession struct {
 
 type ResolvedProfile interface {
 	Dockerfile() string
+
+	Model(request string) string
 }

@@ -148,7 +148,7 @@ func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
 	}
 }
 
-func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
+func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) (HarnessExec, error) {
 	out := HarnessExec{
 		Env:     map[string]string{},
 		Command: []string{"opencode"},
@@ -211,7 +211,7 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) HarnessExec {
 	if !req.Interactive && req.PromptFilePath != "" {
 		out.Command = append(out.Command, "<", req.PromptFilePath)
 	}
-	return out
+	return out, nil
 }
 
 func (h *harnessOpenCode) ProxyRoute(lease *Lease) *ProxyRoute {

@@ -19,9 +19,16 @@ const (
 )
 
 type Profile struct {
-	Name          string              `yaml:"-"`
-	Auth          auth                `yaml:"auth"`
-	Proxy         bool                `yaml:"proxy"`
+	Name string `yaml:"-"`
+	// Auth method
+	//
+	// Deprecated: no need
+	Auth auth `yaml:"auth"`
+	// Proxy
+	//
+	// Deprecated: no need
+	Proxy bool `yaml:"proxy"`
+
 	Settings      map[string]string   `yaml:"settings,omitempty"`
 	Targets       []string            `yaml:"targets"`
 	Models        map[string][]string `yaml:"models"` // name -> aliases
@@ -82,6 +89,9 @@ func (p *Profile) GetOption(name string, fn func() string) string {
 	}
 	v, ok := p.Options[name]
 	if !ok && fn != nil {
+		return fn()
+	}
+	if v == "" && fn != nil {
 		return fn()
 	}
 	return v

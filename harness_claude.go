@@ -1,15 +1,12 @@
 package nestor
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -34,14 +31,72 @@ type harnessClaudeProfile struct {
 	containerHomeDir string
 	mode             harnessClaudeMode
 	secret           string
+	profile          Profile
 }
 
 func (h *harnessClaudeProfile) Dockerfile() string {
 	return h.dockerfile
 }
 
-func harnessClaudeResolveProfile(runtime Runtime, profile Profile) (*harnessClaudeProfile, error) {
-	out := &harnessClaudeProfile{}
+func (h *harnessClaudeProfile) Model(request string) string {
+	return h.profile.Model(request)
+}
+
+func newHarnessClaude() Harness {
+	return &harnessClaude{
+		assets: embedAssets{
+			"assets/claude.dockerfile": {dst: "Dockerfile", file: true},
+		},
+	}
+}
+
+const (
+	ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
+	AnthropicAPIKeyName      = "ANTHROPIC_API_KEY"
+	AnthropicAuthTokenName   = "ANTHROPIC_AUTH_TOKEN"
+	AnthropicBaseURLName     = "ANTHROPIC_BASE_URL"
+	ClaudeDir                = ".claude"
+	ClaudeConfigFile         = ".claude.json"
+	ClaudeCredentialsFile    = ".credentials.json"
+)
+
+type harnessClaude struct {
+	assets embedAssets
+}
+
+func (h *harnessClaude) Name() string {
+	return string(HarnessClaudeCode)
+}
+
+func (h *harnessClaude) DisplayName() string {
+	return "Claude Code"
+}
+
+func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
+	return runtime.Platform.ConfigDir("claude", "Dockerfile")
+}
+
+func (h *harnessClaude) Init(runtime Runtime) error {
+	log := runtime.Logger
+	cp := runtime.Platform.ConfigDir("claude")
+	have, err := h.assets.save(cp)
+	if err != nil {
+		return err
+	}
+
+	if have {
+		log.Info("claude harness already exists, skip", slog.String("path", cp))
+	} else {
+		log.Info("saved builtin harness claude", slog.String("path", cp))
+	}
+	return nil
+}
+
+func (h *harnessClaude) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
+	out := &harnessClaudeProfile{
+		profile: profile,
+	}
+
 	out.dockerfile = profile.GetOption(ProfileOptionDockerfile, func() string {
 		return runtime.Platform.ConfigDir("claude", "Dockerfile")
 	})
@@ -77,116 +132,47 @@ func harnessClaudeResolveProfile(runtime Runtime, profile Profile) (*harnessClau
 	return out, nil
 }
 
-func newHarnessClaude() Harness {
-	return &harnessClaude{
-		assets: embedAssets{
-			"assets/claude.dockerfile": {dst: "Dockerfile", file: true},
-		},
-	}
-}
-
-const (
-	ClaudeCodeOAuthTokenName = "CLAUDE_CODE_OAUTH_TOKEN"
-	AnthropicAPIKeyName      = "ANTHROPIC_API_KEY"
-	AnthropicAuthTokenName   = "ANTHROPIC_AUTH_TOKEN"
-	AnthropicBaseURLName     = "ANTHROPIC_BASE_URL"
-	ClaudeDir                = ".claude"
-	ClaudeConfigFile         = ".claude.json"
-	ClaudeCredentialsFile    = ".credentials.json"
-)
-
-type harnessClaude struct {
-	assets embedAssets
-}
-
-func (h *harnessClaude) Name() string {
-	return string(HarnessClaudeCode)
-}
-
-func (h *harnessClaude) DisplayName() string {
-	return "Claude Code"
-}
-
-func (h *harnessClaude) defaultContainerHomeDir() string {
-	return DefaultContainerHomeDir
-}
-
-func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
-	return runtime.Platform.ConfigDir("claude", "Dockerfile")
-}
-
-func (h *harnessClaude) DefaultOptions(runtime Runtime) map[string]string {
-	options := make(map[string]string)
-	options[ProfileOptionDockerfile] = h.DefaultDockerfile(runtime)
-	options[ClaudeDir] = runtime.Platform.HarnessDefaultOption(h.Name(), ClaudeDir)
-	options[ClaudeConfigFile] = runtime.Platform.HarnessDefaultOption(h.Name(), ClaudeConfigFile)
-	options[ProfileOptionContainerHomeDir] = h.defaultContainerHomeDir()
-	return options
-}
-
-func (h *harnessClaude) Init(runtime Runtime) error {
-	log := runtime.Logger
-	cp := runtime.Platform.ConfigDir("claude")
-	have, err := h.assets.save(cp)
-	if err != nil {
-		return err
-	}
-
-	if have {
-		log.Info("claude harness already exists, skip", slog.String("path", cp))
-	} else {
-		log.Info("saved builtin harness claude", slog.String("path", cp))
-	}
-	return nil
-}
-
 func (h *harnessClaude) Syncers(sandbox Sandbox) []Syncer {
-	runtime, profile := sandbox.Runtime(), sandbox.Profile()
-	s := &harnessClaudeSyncer{
-		auth:       profile.Auth,
-		claudeDir:  profile.Options[ClaudeDir],
-		claudeJSON: profile.Options[ClaudeConfigFile],
-		os:         runtime.Platform.OS(),
+	profile, ok := sandbox.ResolvedProfile().(*harnessClaudeProfile)
+	if !ok {
+		return nil
 	}
-	return []Syncer{s}
+	return []Syncer{&harnessClaudeSyncer{profile: profile}}
 }
 
 func (h *harnessClaude) Mounts(sandbox Sandbox) (map[string]SandboxMount, error) {
 	// .claude and .claude.json is copied from profile options to the sandbox.Dir() in Syncer
-	profile := sandbox.Profile()
-	ch := profile.Options[ProfileOptionContainerHomeDir]
-	if ch == "" {
-		ch = h.defaultContainerHomeDir()
+	profile, ok := sandbox.ResolvedProfile().(*harnessClaudeProfile)
+	if !ok {
+		return nil, nil
 	}
 
 	cd := sandbox.StateDir(ClaudeDir)
 	cj := sandbox.StateDir(ClaudeConfigFile)
 	mounts := map[string]SandboxMount{
-		cd: {Host: cd, Target: filepath.Join(ch, ClaudeDir)},
-		cj: {Host: cj, Target: filepath.Join(ch, ClaudeConfigFile)},
+		cd: {Host: cd, Target: filepath.Join(profile.containerHomeDir, ClaudeDir)},
+		cj: {Host: cj, Target: filepath.Join(profile.containerHomeDir, ClaudeConfigFile)},
 	}
 	return mounts, nil
 }
 
 func (h *harnessClaude) StartEnv(sandbox Sandbox) map[string]string {
+	profile, ok := sandbox.ResolvedProfile().(*harnessClaudeProfile)
+	if !ok {
+		return nil
+	}
+
 	env := make(map[string]string)
-	profile := sandbox.Profile()
-	switch profile.Auth {
-	case AuthCredentials:
-		if tok, ok := profile.Settings[ClaudeCodeOAuthTokenName]; ok {
-			env[ClaudeCodeOAuthTokenName] = tok
-		}
-	case AuthAPIKey:
-		if !profile.Proxy {
-			if apiKey, ok := profile.Settings[AnthropicAPIKeyName]; ok {
-				env[AnthropicAPIKeyName] = apiKey
-			}
-		}
+	switch profile.mode {
+	case harnessClaudeModeSubscription:
+		env[ClaudeCodeOAuthTokenName] = profile.secret
+	case harnessClaudeModeAPIKey:
+		// mode APIKey will use proxy, no need to set env
 	}
 	return env
 }
 
-func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
+func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) (HarnessExec, error) {
 	out := HarnessExec{
 		Env: make(map[string]string),
 		Command: []string{
@@ -200,16 +186,18 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 		out.Command = append(out.Command, "--verbose")
 	}
 
-	profile := lease.Sandbox().Profile()
-	switch profile.Auth {
-	case AuthAPIKey:
-		if profile.Proxy {
-			ap := lease.AuthProxyAddr()
+	profile, ok := lease.Sandbox().ResolvedProfile().(*harnessClaudeProfile)
+	if !ok {
+		return out, fmt.Errorf("%w: resolved profile is not *harnessClaudeProfile", ErrInvalid)
+	}
 
-			out.Env[EnvVarAuthProxyAddress] = ap
-			out.Env[AnthropicBaseURLName] = ap
-			out.Env[AnthropicAuthTokenName] = "dummy"
-		}
+	switch profile.mode {
+	case harnessClaudeModeAPIKey:
+		ap := lease.AuthProxyAddr()
+
+		out.Env[EnvVarAuthProxyAddress] = ap
+		out.Env[AnthropicBaseURLName] = ap
+		out.Env[AnthropicAuthTokenName] = "dummy"
 	}
 
 	if mcpProxyURL, have := lease.MCPProxyURL(); have {
@@ -257,24 +245,23 @@ func (h *harnessClaude) Exec(lease *Lease, req ExecRequest) HarnessExec {
 			out.Command = append(out.Command, "<", req.PromptFilePath)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (h *harnessClaude) ProxyRoute(lease *Lease) *ProxyRoute {
-	profile := lease.Sandbox().Profile()
-	if !profile.Proxy || profile.Auth == AuthCredentials {
+	profile, ok := lease.Sandbox().ResolvedProfile().(*harnessClaudeProfile)
+	if !ok {
 		return nil
 	}
 
-	apiKey, have := profile.Settings[AnthropicAPIKeyName]
-	if !have {
+	if profile.mode != harnessClaudeModeAPIKey {
 		return nil
 	}
 
 	return &ProxyRoute{
 		Target: "https://api.anthropic.com",
 		Apply: func(h http.Header) {
-			h.Set("x-api-key", apiKey)
+			h.Set("x-api-key", profile.secret)
 			h.Del("Authorization")
 		},
 	}
@@ -311,128 +298,28 @@ func (h *harnessClaude) ListSessions(_ context.Context, path string, sandboxes .
 	return out
 }
 
-func (h *harnessClaude) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
-	return harnessClaudeResolveProfile(runtime, profile)
-}
-
 var _ Harness = (*harnessClaude)(nil)
 
 type harnessClaudeSyncer struct {
-	auth       auth
-	claudeDir  string
-	claudeJSON string
-	os         OSKind
+	profile *harnessClaudeProfile
 }
 
 func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 	targetDir := sandbox.StateDir()
 	var err error
-	err = fs.MergeDir(h.claudeDir, filepath.Join(targetDir, ClaudeDir))
+	err = fs.MergeDir(h.profile.claudeDir, filepath.Join(targetDir, ClaudeDir))
 	if err != nil {
 		return err
 	}
 
-	err = fs.CopyFile(h.claudeJSON, filepath.Join(targetDir, ClaudeConfigFile))
+	err = fs.CopyFile(h.profile.claudeConfigFile, filepath.Join(targetDir, ClaudeConfigFile))
 	if err != nil {
 		return err
-	}
-
-	switch h.auth {
-	case AuthCredentials:
-		_, have := sandbox.Profile().Settings[ClaudeCodeOAuthTokenName]
-		if !have && h.os == OSMacOS {
-			return h.saveCredentialsFromSecurity(ctx, targetDir)
-		}
 	}
 	return nil
-}
-
-func (h *harnessClaudeSyncer) saveCredentialsFromSecurity(ctx context.Context, targetDir string) error {
-	cc, err := loadClaudeCredentials(ctx)
-	if err != nil {
-		return err
-	}
-	if cc.OAuth.RefreshTokenExpired(1 * time.Hour) {
-		return errors.New("refresh token expired")
-	}
-
-	dst := filepath.Join(targetDir, ClaudeDir, ClaudeCredentialsFile)
-	return cc.Save(dst)
 }
 
 var _ Syncer = (*harnessClaudeSyncer)(nil)
-
-type harnessClaudeCredentials struct {
-	OAuth harnessClaudeOAuth `json:"claudeAiOauth"`
-}
-
-type harnessClaudeOAuth struct {
-	AccessToken           string   `json:"accessToken"`
-	RefreshToken          string   `json:"refreshToken"`
-	ExpiresAt             int64    `json:"expiresAt"`             // unix millis
-	RefreshTokenExpiresAt int64    `json:"refreshTokenExpiresAt"` // unix millis
-	Scopes                []string `json:"scopes"`
-	SubscriptionType      string   `json:"subscriptionType"`
-	RateLimitTier         string   `json:"rateLimitTier"`
-}
-
-func (o harnessClaudeOAuth) RefreshTokenExpiry() time.Time {
-	if o.RefreshTokenExpiresAt == 0 {
-		return time.Time{}
-	}
-	return time.UnixMilli(o.RefreshTokenExpiresAt)
-}
-
-func (o harnessClaudeOAuth) RefreshTokenExpired(leeway time.Duration) bool {
-	exp := o.RefreshTokenExpiry()
-	if exp.IsZero() {
-		return true
-	}
-	return time.Now().After(exp.Add(-leeway))
-}
-
-const claudeKeychainService = "Claude Code-credentials"
-
-func loadClaudeCredentials(ctx context.Context) (*harnessClaudeCredentials, error) {
-	cmd := exec.CommandContext(ctx, "security",
-		"find-generic-password", "-s", claudeKeychainService, "-w")
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("read keychain item %q: %w: %s",
-			claudeKeychainService, err, bytes.TrimSpace(stderr.Bytes()))
-	}
-
-	var creds harnessClaudeCredentials
-	if err := json.Unmarshal(stdout.Bytes(), &creds); err != nil {
-		return nil, fmt.Errorf("parse keychain item %q: %w", claudeKeychainService, err)
-	}
-	if creds.OAuth.AccessToken == "" {
-		return nil, fmt.Errorf("keychain item %q has no access token", claudeKeychainService)
-	}
-	return &creds, nil
-}
-
-func (c *harnessClaudeCredentials) Save(path string) (err error) {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal credentials: %w", err)
-	}
-
-	err = fs.WriteFile(path, data, 0o644)
-	if err != nil {
-		return fmt.Errorf("save credentials: %w", err)
-	}
-
-	err = fs.MakePrivate(path)
-	if err != nil {
-		return fmt.Errorf("save credentials: %w", err)
-	}
-	return nil
-}
 
 type claudeSession struct {
 	Dir            string // project dir name (slug, opaque)

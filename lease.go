@@ -475,7 +475,11 @@ func (l *Lease) runHeadless(ctx context.Context, param *Headless, meta *leaseMet
 	}
 
 	// collect harness exec info
-	he := l.sandbox.harness.Exec(l, req)
+	he, err := l.sandbox.harness.Exec(l, req)
+	if err != nil {
+		return -1, err
+	}
+
 	command := []string{
 		"setsid",
 		"-w",
@@ -560,7 +564,10 @@ func (l *Lease) runInteractive(ctx context.Context, param *Interactive, meta *le
 	}
 
 	// collect harness exec info
-	he := l.sandbox.harness.Exec(l, req)
+	he, err := l.sandbox.harness.Exec(l, req)
+	if err != nil {
+		return -1, err
+	}
 
 	// execute the prompt
 	l.log.Info("run lease interactive",
