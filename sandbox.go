@@ -609,8 +609,8 @@ func (s *sandboxImpl) save(ctx context.Context) error {
 	return s.data.save(ctx, s.Dir())
 }
 
-func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) error {
-	if sessionId == "" {
+func (s *sandboxImpl) addSession(ctx context.Context, path, sessionID string) error {
+	if sessionID == "" {
 		return nil
 	}
 
@@ -620,22 +620,22 @@ func (s *sandboxImpl) addSession(ctx context.Context, path, sessionId string) er
 
 	session, ok := s.data.Sessions[path]
 	if !ok {
-		s.data.Sessions[path] = []string{sessionId}
-		if err := s.addSessionToSharedScope(ctx, path, sessionId); err != nil {
+		s.data.Sessions[path] = []string{sessionID}
+		if err := s.addSessionToSharedScope(ctx, path, sessionID); err != nil {
 			return err
 		}
 		return s.save(ctx)
 	}
-	session = append(session, sessionId)
+	session = append(session, sessionID)
 	s.data.Sessions[path] = nx.Dedup(session)
 
-	if err := s.addSessionToSharedScope(ctx, path, sessionId); err != nil {
+	if err := s.addSessionToSharedScope(ctx, path, sessionID); err != nil {
 		return err
 	}
 	return s.save(ctx)
 }
 
-func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, sessionId string) error {
+func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, sessionID string) error {
 	sd, err := readSandboxSharedData(s.ShareDir())
 	if err != nil {
 		return err
@@ -647,10 +647,10 @@ func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, session
 
 	session, ok := sd.Sessions[path]
 	if !ok {
-		sd.Sessions[path] = []string{sessionId}
+		sd.Sessions[path] = []string{sessionID}
 		return sd.save(ctx, s.ShareDir())
 	}
-	session = append(session, sessionId)
+	session = append(session, sessionID)
 	sd.Sessions[path] = nx.Dedup(session)
 
 	return sd.save(ctx, s.ShareDir())

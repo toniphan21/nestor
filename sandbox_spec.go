@@ -159,14 +159,20 @@ func (s *SandboxSpec) Build(ctx context.Context, runtime Runtime, docker Docker,
 }
 
 func (s *SandboxSpec) Resolve(runtime Runtime) (Harness, Profile, ResolvedProfile, error) {
-	h, have := runtime.Registry.Harness(string(s.Harness))
-	if !have {
-		return nil, Profile{}, nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
-	}
-
 	p, have := runtime.Registry.Profile(s.Profile)
 	if !have {
-		return nil, Profile{}, nil, fmt.Errorf("%w: profile %q", ErrNotFound, h.Name())
+		return nil, Profile{}, nil, fmt.Errorf("%w: profile %q", ErrNotFound, p.Name)
+	}
+
+	h, have := runtime.Registry.Harness(string(s.Harness))
+	if !have {
+		chs := runtime.CompatibleHarnesses(p)
+		switch len(chs) {
+		case 1:
+			h = chs[0]
+		default:
+			return nil, Profile{}, nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
+		}
 	}
 
 	rp, err := h.ResolveProfile(runtime, p)

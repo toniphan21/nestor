@@ -6,8 +6,6 @@ import (
 	"sort"
 )
 
-type auth string
-
 const (
 	ProfileOptionDockerfile       = "dockerfile"
 	ProfileOptionContainerHomeDir = "container-home-dir"

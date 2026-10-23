@@ -28,3 +28,14 @@ func (r *Runtime) Docker() Docker {
 	}
 	return r.docker
 }
+
+func (r *Runtime) CompatibleHarnesses(profile Profile) []Harness {
+	var out []Harness
+	for _, v := range r.Registry.Harnesses() {
+		rp, err := v.ResolveProfile(*r, profile)
+		if rp != nil && err == nil {
+			out = append(out, v)
+		}
+	}
+	return out
+}

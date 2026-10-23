@@ -2,7 +2,6 @@ version: "1"
 type: "sandbox-spec"
 data:
 #  claude-go:
-#    harness: "claude"
 #    profile: "claude-subscription"
 #    mcp: ["local-name", "remote-name", "see mcp.yml"]
 #    target: "go"
