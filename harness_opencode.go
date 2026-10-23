@@ -8,12 +8,42 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"nhatp.com/go/nestor/infra/fs"
 )
+
+var _ ResolvedProfile = (*harnessOpenCodeProfile)(nil)
+
+type harnessOpenCodeSecretType int
+
+const (
+	harnessOpenCodeSecretTypeBearer harnessOpenCodeSecretType = iota
+	harnessOpenCodeSecretTypeXAPIKey
+	harnessOpenCodeSecretTypeXGoogAPIKey
+)
+
+type harnessOpenCodeProfile struct {
+	dockerfile       string
+	containerHomeDir string
+	configDir        string
+	provider         string
+	upstream         string
+	secret           string
+	secretType       harnessOpenCodeSecretType
+	profile          Profile
+}
+
+func (h *harnessOpenCodeProfile) Dockerfile() string {
+	return h.dockerfile
+}
+
+func (h *harnessOpenCodeProfile) Model(request string) string {
+	return h.profile.Model(request)
+}
 
 func newHarnessOpenCode() Harness {
 	return &harnessOpenCode{
@@ -50,22 +80,6 @@ func (h *harnessOpenCode) DisplayName() string {
 	return "OpenCode"
 }
 
-func (h *harnessOpenCode) defaultContainerHomeDir() string {
-	return DefaultContainerHomeDir
-}
-
-func (h *harnessOpenCode) DefaultOptions(runtime Runtime) map[string]string {
-	options := make(map[string]string)
-	options[ProfileOptionDockerfile] = h.DefaultDockerfile(runtime)
-	options[OpenCodeConfigDir] = runtime.Platform.HarnessDefaultOption(h.Name(), OpenCodeConfigDir)
-	options[ProfileOptionContainerHomeDir] = h.defaultContainerHomeDir()
-	return options
-}
-
-func (h *harnessOpenCode) DefaultDockerfile(runtime Runtime) string {
-	return runtime.Platform.ConfigDir("opencode", "Dockerfile")
-}
-
 func (h *harnessOpenCode) Init(runtime Runtime) error {
 	log := runtime.Logger
 	cp := runtime.Platform.ConfigDir("opencode")
@@ -82,20 +96,69 @@ func (h *harnessOpenCode) Init(runtime Runtime) error {
 	return nil
 }
 
-func (h *harnessOpenCode) Syncers(sandbox Sandbox) []Syncer {
-	profile := sandbox.Profile()
-	s := &harnessOpenCodeSyncer{
-		auth:      profile.Auth,
-		configDir: profile.Options[OpenCodeConfigDir],
+func (h *harnessOpenCode) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
+	out := &harnessOpenCodeProfile{
+		profile: profile,
 	}
-	return []Syncer{s}
+
+	out.dockerfile = profile.GetOption(ProfileOptionDockerfile, func() string {
+		return runtime.Platform.ConfigDir("opencode", "Dockerfile")
+	})
+	out.configDir = profile.GetOption(OpenCodeConfigDir, func() string {
+		return path.Join(runtime.Platform.UserHomeDir(), ".config", "opencode")
+	})
+	out.containerHomeDir = profile.GetOption(ProfileOptionContainerHomeDir, func() string {
+		return DefaultContainerHomeDir
+	})
+
+	provider, haveProvider := profile.GetSetting(OpenCodeSettingProvider)
+	upstream, haveUpstream := profile.GetSetting(OpenCodeSettingUpstream)
+	if !haveProvider && !haveUpstream {
+		return nil, fmt.Errorf("%w: missing %q and %q in profile %s settings", ErrInvalid, OpenCodeSettingProvider, OpenCodeSettingUpstream, profile.Name)
+	}
+	out.provider = provider
+	out.upstream = upstream
+
+	ab, haveAB := profile.GetSetting(OpenCodeSettingProxyAuthorizationBearer)
+	ak, haveAK := profile.GetSetting(OpenCodeSettingProxyXAPIKey)
+	gk, haveGK := profile.GetSetting(OpenCodeSettingProxyXGoogAPIKey)
+	switch {
+	case !haveAB && !haveAK && !haveGK:
+		err := fmt.Errorf(
+			"%w: require at least one of %s/%s/%s in profile %s settings",
+			ErrInvalid,
+			OpenCodeSettingProxyAuthorizationBearer, OpenCodeSettingProxyXAPIKey, OpenCodeSettingProxyXGoogAPIKey,
+			profile.Name,
+		)
+		return nil, err
+
+	case haveAB:
+		out.secret = ab
+		out.secretType = harnessOpenCodeSecretTypeBearer
+
+	case haveAK:
+		out.secret = ak
+		out.secretType = harnessOpenCodeSecretTypeXAPIKey
+
+	case haveGK:
+		out.secret = gk
+		out.secretType = harnessOpenCodeSecretTypeXGoogAPIKey
+	}
+	return out, nil
+}
+
+func (h *harnessOpenCode) Syncers(sandbox Sandbox) []Syncer {
+	profile, ok := sandbox.ResolvedProfile().(*harnessOpenCodeProfile)
+	if !ok {
+		return nil
+	}
+	return []Syncer{&harnessOpenCodeSyncer{profile: profile}}
 }
 
 func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, error) {
-	profile := sandbox.Profile()
-	ch := profile.Options[ProfileOptionContainerHomeDir]
-	if ch == "" {
-		ch = h.defaultContainerHomeDir()
+	profile, ok := sandbox.ResolvedProfile().(*harnessOpenCodeProfile)
+	if !ok {
+		return nil, nil
 	}
 
 	cfp := sandbox.StateDir(OpenCodeSandboxConfigDirName)
@@ -107,7 +170,7 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 		}
 	}
 
-	provider := profile.Settings[OpenCodeSettingProvider]
+	provider := profile.provider
 	config := map[string]any{
 		"provider": map[string]any{
 			provider: map[string]map[string]string{
@@ -129,22 +192,21 @@ func (h *harnessOpenCode) Mounts(sandbox Sandbox) (map[string]SandboxMount, erro
 	}
 
 	mounts := map[string]SandboxMount{
-		cfp:            {Host: cfp, Target: filepath.Join(ch, ".config", "opencode")},
-		dlp:            {Host: dlp, Target: filepath.Join(ch, ".local")},
-		configFilePath: {Host: configFilePath, Target: filepath.Join(ch, OpenCodeConfigFileName), ReadOnly: true},
+		cfp:            {Host: cfp, Target: filepath.Join(profile.containerHomeDir, ".config", "opencode")},
+		dlp:            {Host: dlp, Target: filepath.Join(profile.containerHomeDir, ".local")},
+		configFilePath: {Host: configFilePath, Target: filepath.Join(profile.containerHomeDir, OpenCodeConfigFileName), ReadOnly: true},
 	}
 	return mounts, nil
 }
 
 func (h *harnessOpenCode) StartEnv(sandbox Sandbox) map[string]string {
-	profile := sandbox.Profile()
-	ch := profile.Options[ProfileOptionContainerHomeDir]
-	if ch == "" {
-		ch = h.defaultContainerHomeDir()
+	profile, ok := sandbox.ResolvedProfile().(*harnessOpenCodeProfile)
+	if !ok {
+		return nil
 	}
 
 	return map[string]string{
-		"OPENCODE_CONFIG": filepath.Join(ch, OpenCodeConfigFileName),
+		"OPENCODE_CONFIG": filepath.Join(profile.containerHomeDir, OpenCodeConfigFileName),
 	}
 }
 
@@ -177,9 +239,12 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) (HarnessExec, erro
 	}
 	out.Command = append(out.Command, "--dangerously-skip-permissions")
 
-	profile := lease.Sandbox().Profile()
+	profile, ok := lease.Sandbox().ResolvedProfile().(*harnessOpenCodeProfile)
+	if !ok {
+		return out, fmt.Errorf("%w: resolved profile is not *harnessOpenCodeProfile", ErrInvalid)
+	}
 	if model := profile.Model(req.Model); model != "" {
-		provider := profile.Settings[OpenCodeSettingProvider]
+		provider := profile.provider
 		if provider != "" {
 			name := fmt.Sprintf("%s/%s", provider, model)
 			out.Command = append(out.Command, "--model", name)
@@ -215,37 +280,24 @@ func (h *harnessOpenCode) Exec(lease *Lease, req ExecRequest) (HarnessExec, erro
 }
 
 func (h *harnessOpenCode) ProxyRoute(lease *Lease) *ProxyRoute {
-	profile := lease.Sandbox().Profile()
-	if !profile.Proxy || profile.Auth == AuthCredentials {
-		return nil
-	}
-
-	upstream, have := profile.Settings[OpenCodeSettingUpstream]
-	if !have {
-		return nil
-	}
-
-	ab, haveAB := profile.Settings[OpenCodeSettingProxyAuthorizationBearer]
-	ak, haveAK := profile.Settings[OpenCodeSettingProxyXAPIKey]
-	gk, haveGK := profile.Settings[OpenCodeSettingProxyXGoogAPIKey]
-	if !haveAB && !haveAK && !haveGK {
+	profile, ok := lease.Sandbox().ResolvedProfile().(*harnessOpenCodeProfile)
+	if !ok {
 		return nil
 	}
 
 	return &ProxyRoute{
-		Target: upstream,
+		Target: profile.upstream,
 		Apply: func(h http.Header) {
-			if haveAK {
-				h.Set("x-api-key", ak)
-			}
-
-			if haveGK {
-				h.Set("x-goog-api-key", gk)
-			}
-
-			if haveAB {
+			switch profile.secretType {
+			case harnessOpenCodeSecretTypeBearer:
 				h.Del("Authorization")
-				h.Set("Authorization", "Bearer "+ab)
+				h.Set("Authorization", "Bearer "+profile.secret)
+
+			case harnessOpenCodeSecretTypeXAPIKey:
+				h.Set("x-api-key", profile.secret)
+
+			case harnessOpenCodeSecretTypeXGoogAPIKey:
+				h.Set("x-goog-api-key", profile.secret)
 			}
 		},
 	}
@@ -299,25 +351,16 @@ func (h *harnessOpenCode) ListSessions(ctx context.Context, path string, sandbox
 	return result
 }
 
-func (h *harnessOpenCode) ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error) {
-	// TODO: implement
-	return nil, nil
-}
-
 var _ Harness = (*harnessOpenCode)(nil)
 
 type harnessOpenCodeSyncer struct {
-	auth      auth
-	configDir string
+	profile *harnessOpenCodeProfile
 }
 
 func (h *harnessOpenCodeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 	targetDir := sandbox.StateDir()
-	err := fs.MergeDir(h.configDir, filepath.Join(targetDir, OpenCodeSandboxConfigDirName))
-	if err != nil {
-		return err
-	}
-	return nil
+
+	return fs.MergeDir(h.profile.configDir, filepath.Join(targetDir, OpenCodeSandboxConfigDirName))
 }
 
 type opencodeSession struct {

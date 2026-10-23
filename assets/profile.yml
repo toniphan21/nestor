@@ -2,7 +2,6 @@ version: "1"
 type: "profile"
 data:
   claude-subscription:
-    auth: credentials
     settings:
       CLAUDE_CODE_OAUTH_TOKEN: "your oauth token" # run 'claude setup-token' to get one
     default_target: base
@@ -18,8 +17,6 @@ data:
       claude-haiku-4-5: ["haiku", "haiku:latest", "haiku:4", "haiku:4.5"]
 
   claude-api:
-    auth: api_key
-    proxy: true
     settings:
       ANTHROPIC_API_KEY: "your api key" # create one in the Anthropic Console
     default_target: base
@@ -35,8 +32,6 @@ data:
       claude-haiku-4-5: ["haiku", "haiku:latest", "haiku:4", "haiku:4.5"]
 
   opencode:
-    auth: api_key # opencode only accepts auth = api_key
-    proxy: true   # opencode only accepts proxy = true
     default_target: base
     default_model: kimi-k2.7-code
     settings:

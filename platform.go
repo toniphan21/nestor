@@ -3,7 +3,6 @@ package nestor
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -46,8 +45,6 @@ type Platform interface {
 	SandboxSlugsFile() string
 
 	OS() OSKind
-
-	HarnessDefaultOption(harness string, name string) string
 
 	Clone(configDir, dataDir, stateDir string) Platform
 }
@@ -132,25 +129,6 @@ func (p *platform) SandboxYmlFile() string {
 
 func (p *platform) SandboxSlugsFile() string {
 	return p.ConfigDir("sandbox-slugs.txt")
-}
-
-func (p *platform) HarnessDefaultOption(harness string, name string) string {
-	if p.OS() == OSWindows {
-		panic(fmt.Sprintf("nestor: unsupported platform %q - please write your own Platform", p.OS()))
-	}
-
-	switch harness {
-	case string(HarnessOpenCode):
-		switch name {
-		case OpenCodeConfigDir:
-			return path.Join(p.UserHomeDir(), ".config", "opencode")
-		default:
-			return ""
-		}
-
-	default:
-		return ""
-	}
 }
 
 func (p *platform) OS() OSKind {

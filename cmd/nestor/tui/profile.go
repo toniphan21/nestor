@@ -23,8 +23,6 @@ type profileDataMsg struct {
 
 type profileEntry struct {
 	name          string
-	proxy         bool
-	auth          string
 	models        int
 	targets       []string
 	defaultTarget string
@@ -66,16 +64,8 @@ func (v *profileEntry) targetsDisplay() string {
 	return strings.Join(out, ", ")
 }
 
-func (v *profileEntry) proxyDisplay() string {
-	if v.proxy {
-		return pterm.Green("yes")
-	}
-	return pterm.Yellow("no ")
-}
-
 func (v *profileEntry) extraDisplay() string {
-	return "proxy: " + v.proxyDisplay() +
-		extraSep + "targets: " + v.targetsDisplay() +
+	return "targets: " + v.targetsDisplay() +
 		extraSep + "models: " + strconv.Itoa(v.models) + ", default: " + v.defaultModel
 }
 
@@ -90,7 +80,7 @@ func (v *profileEntry) toRows(collapsed bool) []profileRow {
 	}
 
 	rows := []profileRow{
-		{name: name, kind: v.auth, extra: v.extraDisplay(), typ: "profile", data: v},
+		{name: name, extra: v.extraDisplay(), typ: "profile", data: v},
 	}
 	if collapsed {
 		return rows
@@ -195,8 +185,6 @@ func (p profilePage) fetch() tea.Cmd {
 		for _, pr := range api.Runtime().Registry.Profiles() {
 			profiles = append(profiles, profileEntry{
 				name:          pr.Name,
-				proxy:         pr.Proxy,
-				auth:          string(pr.Auth),
 				models:        len(pr.Models),
 				targets:       pr.Targets,
 				defaultTarget: pr.DefaultTarget,

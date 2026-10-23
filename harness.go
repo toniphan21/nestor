@@ -36,8 +36,6 @@ type Harness interface {
 
 	DisplayName() string
 
-	DefaultDockerfile(runtime Runtime) string
-
 	Init(runtime Runtime) error
 
 	ResolveProfile(runtime Runtime, profile Profile) (ResolvedProfile, error)

@@ -9,26 +9,12 @@ import (
 type auth string
 
 const (
-	AuthCredentials = auth("credentials")
-	AuthAPIKey      = auth("api_key")
-)
-
-const (
 	ProfileOptionDockerfile       = "dockerfile"
 	ProfileOptionContainerHomeDir = "container-home-dir"
 )
 
 type Profile struct {
-	Name string `yaml:"-"`
-	// Auth method
-	//
-	// Deprecated: no need
-	Auth auth `yaml:"auth"`
-	// Proxy
-	//
-	// Deprecated: no need
-	Proxy bool `yaml:"proxy"`
-
+	Name          string              `yaml:"-"`
 	Settings      map[string]string   `yaml:"settings,omitempty"`
 	Targets       []string            `yaml:"targets"`
 	Models        map[string][]string `yaml:"models"` // name -> aliases

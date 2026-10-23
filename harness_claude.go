@@ -72,10 +72,6 @@ func (h *harnessClaude) DisplayName() string {
 	return "Claude Code"
 }
 
-func (h *harnessClaude) DefaultDockerfile(runtime Runtime) string {
-	return runtime.Platform.ConfigDir("claude", "Dockerfile")
-}
-
 func (h *harnessClaude) Init(runtime Runtime) error {
 	log := runtime.Logger
 	cp := runtime.Platform.ConfigDir("claude")
@@ -114,7 +110,7 @@ func (h *harnessClaude) ResolveProfile(runtime Runtime, profile Profile) (Resolv
 	oauthToken, haveOAuthToken := profile.GetSetting(ClaudeCodeOAuthTokenName)
 	switch {
 	case !haveAPIKey && !haveOAuthToken:
-		return out, fmt.Errorf("%w: missing settings %q/%q", ErrInvalid, AnthropicAPIKeyName, ClaudeCodeOAuthTokenName)
+		return out, fmt.Errorf("%w: missing %q/%q in profile %s settings", ErrInvalid, AnthropicAPIKeyName, ClaudeCodeOAuthTokenName, profile.Name)
 
 	case !haveAPIKey:
 		out.secret = oauthToken
