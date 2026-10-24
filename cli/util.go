@@ -18,6 +18,16 @@ import (
 
 var ErrInterrupted = errors.New("interrupted")
 
+type ptermTheme struct{}
+
+func (p *ptermTheme) Info(s string) string        { return pterm.FgBlue.Sprint(s) }
+func (p *ptermTheme) Recommended(s string) string { return pterm.FgGreen.Sprint(s) }
+func (p *ptermTheme) Warn(s string) string        { return pterm.FgYellow.Sprint(s) }
+func (p *ptermTheme) Aware(s string) string       { return pterm.FgRed.Sprint(s) }
+func (p *ptermTheme) Important(s string) string   { return pterm.FgMagenta.Sprint(s) }
+
+var _ nestor.Theme = (*ptermTheme)(nil)
+
 func Input(label string, initial string) (string, error) {
 	if label == "" {
 		label = "Input text"

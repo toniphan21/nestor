@@ -16,7 +16,7 @@ data:
       claude-sonnet-4-6: ["sonnet:4", "sonnet:4.6"]
       claude-haiku-4-5: ["haiku", "haiku:latest", "haiku:4", "haiku:4.5"]
 
-  claude-api:
+  claude-with-api:
     settings:
       ANTHROPIC_API_KEY: "your api key" # create one in the Anthropic Console
     default_target: base

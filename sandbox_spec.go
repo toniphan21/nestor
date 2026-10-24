@@ -170,6 +170,7 @@ func (s *SandboxSpec) Resolve(runtime Runtime) (Harness, Profile, ResolvedProfil
 		switch len(chs) {
 		case 1:
 			h = chs[0]
+			s.Harness = harness(h.Name())
 		default:
 			return nil, Profile{}, nil, fmt.Errorf("%w: harness %q", ErrNotFound, s.Harness)
 		}

@@ -42,6 +42,21 @@ func (h *harnessClaudeProfile) Model(request string) string {
 	return h.profile.Model(request)
 }
 
+func (h *harnessClaudeProfile) SetupString() string {
+	var mode, cost, privacy string
+	switch h.mode {
+	case harnessClaudeModeSubscription:
+		mode = "Claude Subscription"
+		cost = theme.Recommended("personal, cheap")
+		privacy = theme.Warn("(OAuth token is set inside the sandbox; Anthropic is reported to ban accounts that use it as an API key)")
+	case harnessClaudeModeAPIKey:
+		mode = "Claude API Key"
+		cost = theme.Aware("expensive")
+		privacy = theme.Recommended("(key stays on the host; the sandbox never sees it)")
+	}
+	return fmt.Sprintf("%s - %s - %s %s", theme.Info(h.profile.Name), mode, cost, privacy)
+}
+
 func newHarnessClaude() Harness {
 	return &harnessClaude{
 		assets: embedAssets{

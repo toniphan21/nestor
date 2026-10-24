@@ -45,6 +45,12 @@ func (h *harnessOpenCodeProfile) Model(request string) string {
 	return h.profile.Model(request)
 }
 
+func (h *harnessOpenCodeProfile) SetupString() string {
+	provider := h.provider
+	privacy := theme.Recommended("(key stays on the host; the sandbox never sees it)")
+	return fmt.Sprintf("%s - %s %s", theme.Info(h.profile.Name), provider, privacy)
+}
+
 func newHarnessOpenCode() Harness {
 	return &harnessOpenCode{
 		assets: embedAssets{

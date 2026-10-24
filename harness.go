@@ -80,4 +80,6 @@ type ResolvedProfile interface {
 	Dockerfile() string
 
 	Model(request string) string
+
+	SetupString() string
 }
