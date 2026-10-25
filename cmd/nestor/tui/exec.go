@@ -141,6 +141,13 @@ func execSelfCommand(tab tabID, tag string, args ...string) tea.Cmd {
 	})
 }
 
+func execSelfCommandPressToReturn(tab tabID, tag string, args ...string) tea.Cmd {
+	return runExecSelfCommand(tab, tag, args, func(v *altScreenCmd) {
+		v.wait = false
+		v.pressToReturn = true
+	})
+}
+
 func execSelfCommandDelayed(tab tabID, tag string, args ...string) tea.Cmd {
 	return runExecSelfCommand(tab, tag, args, func(v *altScreenCmd) {
 		v.wait = true

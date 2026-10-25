@@ -21,6 +21,7 @@ type cronDataMsg struct {
 type TUI struct {
 	header header
 	body   body
+	footer footer
 
 	pages map[tabID]page
 
@@ -83,9 +84,12 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.header.SetWidth(t.width)
 
 		hh := t.header.Height()
-		t.body.SetSize(t.width, t.height-hh)
+		fh := t.footer.Height()
+		bh := t.height - hh - fh
+
+		t.body.SetSize(t.width, bh)
 		for _, v := range t.pages {
-			v.SetSize(t.width-2, t.height-hh) // scroll take 2 on the right
+			v.SetSize(t.width-2, bh) // scroll take 2 on the right
 		}
 		return t, nil
 
@@ -158,6 +162,9 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.header.SetActions(msg.actions)
 		return t, nil
 
+	case setFooterMsg:
+		t.footer.SetMessage(msg.message)
+
 	case jobStartedMsg:
 		t.header.SetJobStarted(msg.job)
 		return passMsgToAllChildren(waitJob(msg.job))
@@ -177,7 +184,7 @@ func (t TUI) View() tea.View {
 		return tea.NewView("")
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, t.header.View(), t.body.View())
+	content := lipgloss.JoinVertical(lipgloss.Left, t.header.View(), t.body.View(), t.footer.View())
 
 	v := tea.NewView(content)
 	v.AltScreen = true
@@ -215,12 +222,14 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 
 	t.body.SetContent(p.View())
 	t.body.GotoTop()
+	t.footer.SetMessage("")
 
 	return cmd
 }
 
 func Run(provider *APIProvider, upgradeCommand string) error {
 	t := &TUI{
+		footer: footer{margin: 1, message: "  test"},
 		pages: map[tabID]page{
 			tabHome:    &homePage{basePage: &basePage{}, provider: provider},
 			tabDocker:  &dockerPage{basePage: &basePage{}, provider: provider},

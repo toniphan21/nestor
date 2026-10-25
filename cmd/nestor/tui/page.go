@@ -45,3 +45,7 @@ func (p *basePage) useActions(actions ...action) tea.Cmd {
 	}
 	return send(setActionsMsg{actions: out})
 }
+
+func (p *basePage) setFooterMessage(msg string) tea.Cmd {
+	return send(setFooterMsg{message: msg})
+}

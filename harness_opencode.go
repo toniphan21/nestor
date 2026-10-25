@@ -78,6 +78,10 @@ type harnessOpenCode struct {
 	assets embedAssets
 }
 
+func (h *harnessOpenCode) ID() harness {
+	return HarnessOpenCode
+}
+
 func (h *harnessOpenCode) Name() string {
 	return string(HarnessOpenCode)
 }

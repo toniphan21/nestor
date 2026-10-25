@@ -32,6 +32,8 @@ func (f *InstructionFiles) HasFiles() bool {
 }
 
 type Harness interface {
+	ID() harness
+
 	Name() string
 
 	DisplayName() string

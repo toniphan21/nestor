@@ -34,6 +34,7 @@ var shortDesc = map[string]string{
 	"tui-prompt-spec":      "Run a prompt in headless mode in any sandbox of a spec",
 	"tui-launch-sandbox":   "Launch in a specific sandbox",
 	"tui-prompt-sandbox":   "Run a prompt in headless mode in a specific sandbox",
+	"tui-setup-workspace":  "Setup new workspace",
 
 	"version":     "Print the nestor version",
 	"self-update": "Download and install the latest nestor release",

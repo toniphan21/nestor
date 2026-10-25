@@ -362,7 +362,12 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		if p.index <= 0 || p.index >= len(rows) {
 			p.index = 1
 		}
-		return p, tea.Batch(p.tick(), p.actions())
+
+		fmsg := fmt.Sprintf(
+			"  press %s to set up a new workspace, or cd to your project directory and run %s.",
+			pterm.Magenta("N"), pterm.Cyan("nestor setup"),
+		)
+		return p, tea.Batch(p.tick(), p.actions(), p.setFooterMessage(fmsg))
 
 	case tea.KeyPressMsg:
 		if !p.focused {
@@ -473,6 +478,9 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 
 		case "p":
 			return p.triggerPrompt()
+
+		case "N":
+			return p, execSelfCommandPressToReturn(tabHome, "setup-workspace", "tui", "setup-workspace")
 		}
 
 	case execDoneMsg:
@@ -482,6 +490,10 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		p.busy = false
 		switch msg.tag {
 		case "rename-workspace", "rename-sandbox", "launch-sandbox", "view-prompt":
+			return p, p.fetch()
+
+		case "setup-workspace":
+			p.provider.Reset() // reset API instance to get new specs
 			return p, p.fetch()
 		}
 		return p, nil
@@ -650,10 +662,5 @@ func (p *homePage) View() string {
 		out.WriteRune('\n')
 	}
 
-	// out.WriteRune('\n')
-	// out.WriteRune('\n')
-	// out.WriteRune('\n')
-	// out.WriteString("  press N to set up a new workspace, or cd to your project directory and run `nestor setup`.")
-	// out.WriteRune('\n')
 	return out.String()
 }

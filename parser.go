@@ -97,19 +97,6 @@ func ParseSandboxSpecs(runtime Runtime, yml io.Reader) ([]SandboxSpec, error) {
 	})
 }
 
-func MarshallSandboxSpecs(specs []SandboxSpec) ([]byte, error) {
-	data := make(map[string]SandboxSpec)
-	for _, spec := range specs {
-		data[spec.Name] = spec
-	}
-	f := &ymlFile[map[string]SandboxSpec]{
-		Version: defaultVersion,
-		Type:    sandboxSpecType,
-		Data:    data,
-	}
-	return yaml.Marshal(f)
-}
-
 const mcpType = "mcp"
 
 type mcpServer struct {

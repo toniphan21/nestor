@@ -56,9 +56,11 @@ func Workspaces(ctx context.Context, api nestor.API) []Workspace {
 	platform := api.Runtime().Platform
 	cfg := LoadConfig(platform)
 
+	var saveCf bool
+
 	if !fs.HasFile(platform.ConfigDir("tui.yml")) {
 		cfg.Workspaces = defaultConfigWorkspaces(nws)
-		_ = cfg.Save(platform)
+		saveCf = true
 	}
 
 	byPath := make(map[string]ConfigWorkspace, len(cfg.Workspaces))
@@ -73,9 +75,16 @@ func Workspaces(ctx context.Context, api nestor.API) []Workspace {
 	workspaces := make([]Workspace, len(nws))
 	for i := range nws {
 		w := Workspace{Workspace: &nws[i]}
-		if cw, ok := byPath[nws[i].Path()]; ok {
+		cw, have := byPath[nws[i].Path()]
+		if have {
 			w.name = cw.Name
 			w.order = cw.Order
+		} else {
+			cfg.Workspaces = append(cfg.Workspaces, ConfigWorkspace{
+				Path: nws[i].Path(),
+				Name: nws[i].Name(),
+			})
+			saveCf = true
 		}
 		workspaces[i] = w
 	}
@@ -87,6 +96,9 @@ func Workspaces(ctx context.Context, api nestor.API) []Workspace {
 		return strings.Compare(a.Name(), b.Name())
 	})
 
+	if saveCf {
+		_ = cfg.Save(platform)
+	}
 	return workspaces
 }
 

@@ -33,10 +33,12 @@ type leaseData struct {
 	CreatedAt   time.Time `yaml:"created_at"`
 }
 
-const sandboxType = "sandbox"
-const sandboxDataFileName = "data.yml"
+const (
+	sandboxType         = "sandbox"
+	sandboxDataFileName = "data.yml"
+)
 
-func (s *sandboxData) save(ctx context.Context, dir string) error {
+func (s *sandboxData) save(_ context.Context, dir string) error {
 	return writeDataFile(dir, sandboxType, sandboxDataFileName, s)
 }
 
@@ -44,14 +46,16 @@ func readSandboxData(dir string) (*sandboxData, error) {
 	return readDataFile[sandboxData](dir, sandboxType, sandboxDataFileName)
 }
 
-const sandboxSharedType = "sandbox-shared"
-const sandboxSharedDataFileName = "sandboxes.yml"
+const (
+	sandboxSharedType         = "sandbox-shared"
+	sandboxSharedDataFileName = "sandboxes.yml"
+)
 
 type sandboxSharedData struct {
 	Sessions map[string][]string
 }
 
-func (s *sandboxSharedData) save(ctx context.Context, dir string) error {
+func (s *sandboxSharedData) save(_ context.Context, dir string) error {
 	return writeDataFile(dir, sandboxSharedType, sandboxSharedDataFileName, s)
 }
 
@@ -83,7 +87,7 @@ func writeDataFile[T any](dir string, typ string, fn string, data *T) error {
 	if err != nil {
 		return err
 	}
-	return fs.AtomicWriteFile(filepath.Join(dir, fn), b, 0644)
+	return fs.AtomicWriteFile(filepath.Join(dir, fn), b, 0o644)
 }
 
 func readDataFile[T any](dir string, typ string, fn string) (*T, error) {

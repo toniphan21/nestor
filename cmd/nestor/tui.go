@@ -1,8 +1,14 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/cli"
@@ -169,8 +175,76 @@ func newTUICmd() *tuiCmd {
 	promptSandbox.Flags().StringP("name", "n", "", "sandbox name")
 	promptSandbox.Flags().String("dry-run", "", "dry run, writing the result as JSON to this file")
 
-	root.AddCommand(renameWorkspace, launchSpec, launchSandbox, promptSpec, promptSandbox)
+	setupWorkspace := &cobra.Command{
+		Use:   "setup-workspace",
+		Short: shortDesc["tui-setup-workspace"],
+		RunE: run(func(api nestor.API, cmd *cobra.Command, _ []string) error {
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(pterm.Blue("Setup new workspace\n"))
+			p, err := askWorkspacePath()
+			if err != nil {
+				return err
+			}
+
+			return cli.SetupWorkspace(api, cli.SetupWorkspaceArgs{
+				Path:          p,
+				DisplayedPath: p,
+				DryRun:        dryRun,
+			})
+		}),
+	}
+	setupWorkspace.Flags().Bool("dry-run", false, "dry run")
+
+	root.AddCommand(renameWorkspace, launchSpec, launchSandbox, promptSpec, promptSandbox, setupWorkspace)
 	return &tuiCmd{
 		root: root,
 	}
+}
+
+func askWorkspacePath() (string, error) {
+	input := pterm.DefaultInteractiveTextInput
+	for {
+		s, err := input.Show("Enter path")
+		if err != nil {
+			return "", err
+		}
+
+		r, err := validateDir(s)
+		if err != nil {
+			pterm.Error.Println(err.Error())
+			continue
+		}
+		return r, nil
+	}
+}
+
+func validateDir(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", errors.New("path is empty")
+	}
+	if s == "~" || strings.HasPrefix(s, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home: %w", err)
+		}
+		s = filepath.Join(home, s[1:])
+	}
+
+	info, err := os.Stat(s) // follows symlinks
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", fmt.Errorf("%s does not exist", s)
+	case errors.Is(err, fs.ErrPermission):
+		return "", fmt.Errorf("%s: permission denied", s)
+	case err != nil:
+		return "", err
+	case !info.IsDir():
+		return "", fmt.Errorf("%s is not a directory", s)
+	}
+	return s, nil
 }

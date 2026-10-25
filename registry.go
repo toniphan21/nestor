@@ -1,5 +1,7 @@
 package nestor
 
+import "gopkg.in/yaml.v3"
+
 func newRegistry() Registry {
 	return &registry{
 		sandboxSpecs: make(map[string]SandboxSpec),
@@ -36,6 +38,8 @@ type Registry interface {
 	Harness(name string) (Harness, bool)
 
 	Harnesses() []Harness
+
+	SandboxSpecYMLContent() ([]byte, error)
 }
 
 type registry struct {
@@ -115,6 +119,19 @@ func (r *registry) Harnesses() []Harness {
 		out = append(out, v)
 	}
 	return out
+}
+
+func (r *registry) SandboxSpecYMLContent() ([]byte, error) {
+	data := make(map[string]SandboxSpec)
+	for _, spec := range r.sandboxSpecs {
+		data[spec.Name] = spec
+	}
+	f := &ymlFile[map[string]SandboxSpec]{
+		Version: defaultVersion,
+		Type:    sandboxSpecType,
+		Data:    data,
+	}
+	return yaml.Marshal(f)
 }
 
 var _ Registry = (*registry)(nil)

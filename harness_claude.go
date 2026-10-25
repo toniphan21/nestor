@@ -79,6 +79,10 @@ type harnessClaude struct {
 	assets embedAssets
 }
 
+func (h *harnessClaude) ID() harness {
+	return HarnessClaudeCode
+}
+
 func (h *harnessClaude) Name() string {
 	return string(HarnessClaudeCode)
 }
@@ -390,7 +394,7 @@ func readSessionFile(dir, file string) (*claudeSession, error) {
 	if err != nil {
 		return s, err
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 
 	var timestamp *time.Time
 	hasCustomTitle := false

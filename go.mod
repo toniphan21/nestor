@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/muesli/cancelreader v0.2.2
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/pterm/pterm v0.12.83
 	github.com/rs/xid v1.6.0
 	github.com/spf13/cobra v1.10.2

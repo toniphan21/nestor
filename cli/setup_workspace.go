@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pmezard/go-difflib/difflib"
 	"github.com/pterm/pterm"
 	"nhatp.com/go/nestor"
 	"nhatp.com/go/nestor/infra/fs"
@@ -122,7 +123,101 @@ func SetupWorkspace(api nestor.API, args SetupWorkspaceArgs) error {
 		}
 	}
 
-	fmt.Println(data)
+	return runSetupWorkspace(api, args, data)
+}
+
+func runSetupWorkspace(api nestor.API, args SetupWorkspaceArgs, data *setupWorkspaceData) error {
+	var before, after []byte
+	var err error
+
+	if args.DryRun {
+		before, err = api.Runtime().Registry.SandboxSpecYMLContent()
+		if err != nil {
+			return err
+		}
+	}
+
+	if data.spec == nil { // create new sandbox spec
+		var mounts []nestor.SandboxSpecMount
+		if data.useWorktree {
+			mounts = append(mounts, nestor.SandboxSpecMount{Type: nestor.MountTypeGitWorktree, Path: data.path})
+		} else {
+			mounts = append(mounts, nestor.SandboxSpecMount{Type: nestor.MountTypeDirect, Path: data.path})
+		}
+
+		newSpec := nestor.SandboxSpec{
+			Name:         data.specName,
+			MaxInstances: data.maxInstances,
+			Harness:      data.harness.ID(),
+			Profile:      data.profile.Name,
+			Target:       data.target,
+			Mounts:       mounts,
+		}
+
+		api.Runtime().Registry.RegisterSandboxSpec(newSpec)
+	} else { // apply to current spec
+		if data.useWorktree {
+			data.spec.Mounts = append(data.spec.Mounts, nestor.SandboxSpecMount{Type: nestor.MountTypeGitWorktree, Path: data.path})
+		} else {
+			data.spec.Mounts = append(data.spec.Mounts, nestor.SandboxSpecMount{Type: nestor.MountTypeDirect, Path: data.path})
+		}
+
+		api.Runtime().Registry.RegisterSandboxSpec(*data.spec)
+	}
+
+	after, err = api.Runtime().Registry.SandboxSpecYMLContent()
+	if err != nil {
+		return nil
+	}
+
+	if args.DryRun {
+		removed := pterm.NewStyle(pterm.FgRed)
+		added := pterm.NewStyle(pterm.FgGreen)
+		a := difflib.SplitLines(string(before))
+		b := difflib.SplitLines(string(after))
+
+		w := len(strconv.Itoa(max(len(a), len(b))))
+		w = max(w, 4) // 4 = len("file")
+
+		p := max(4-w, 0)
+		fmt.Println()
+		fmt.Println("--- diff")
+		fmt.Printf("%*sfile: %s\n", p, "", api.Runtime().Platform.SandboxYmlFile())
+
+		line := func(n int, mark, s string) string {
+			return fmt.Sprintf("%*d. %s %s", w, n, mark, s)
+		}
+
+		for _, op := range difflib.NewMatcher(a, b).GetOpCodes() {
+			switch op.Tag {
+			case 'e':
+				for i, l := range b[op.J1:op.J2] {
+					fmt.Print(line(op.J1+i+1, " ", l))
+				}
+			case 'd', 'r':
+				for i, l := range a[op.I1:op.I2] {
+					fmt.Print(removed.Sprint(line(op.I1+i+1, "-", l)))
+				}
+			}
+			if op.Tag == 'i' || op.Tag == 'r' {
+				for i, l := range b[op.J1:op.J2] {
+					fmt.Print(added.Sprint(line(op.J1+i+1, "+", l)))
+				}
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("--- new content; file: ", api.Runtime().Platform.SandboxYmlFile())
+		fmt.Println(string(after))
+	} else {
+		err = fs.AtomicWriteFile(api.Runtime().Platform.SandboxYmlFile(), after, 0o644)
+		if err != nil {
+			return err
+		}
+	}
+
+	fmt.Println()
+	fmt.Println(pterm.Green("done"))
 	return nil
 }
 
@@ -252,8 +347,7 @@ func askInt(prompt string, def, lo, hi int) (int, error) {
 }
 
 func askSpecNameForSetup(suggestedName string, unavailables map[string]bool) (string, error) {
-	printer := pterm.DefaultInteractiveTextInput
-	input := printer.WithDefaultValue(suggestedName)
+	input := pterm.DefaultInteractiveTextInput.WithDefaultValue(suggestedName)
 	for {
 		s, err := input.Show("Sandbox spec name")
 		if err != nil {

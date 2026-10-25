@@ -378,7 +378,7 @@ func (a *api) ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, er
 	return a.listSandboxesLocked(ctx, specs...)
 }
 
-func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandbox, error) {
+func (a *api) listSandboxesLocked(_ context.Context, specs ...string) ([]Sandbox, error) {
 	if !fs.HasDir(a.platform.SandboxDir()) {
 		return nil, nil
 	}
