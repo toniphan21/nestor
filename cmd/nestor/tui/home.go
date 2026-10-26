@@ -489,7 +489,7 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		}
 		p.busy = false
 		switch msg.tag {
-		case "rename-workspace", "rename-sandbox", "launch-sandbox", "view-prompt":
+		case "rename-workspace", "rename-sandbox", "launch-sandbox", "view-prompt", "goto-dir":
 			return p, p.fetch()
 
 		case "setup-workspace":

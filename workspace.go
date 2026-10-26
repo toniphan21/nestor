@@ -1,6 +1,7 @@
 package nestor
 
 import (
+	"context"
 	"slices"
 )
 
@@ -38,7 +39,7 @@ func (s WorkspaceSandbox) Sandbox() Sandbox    { return s.sandbox }
 func (s WorkspaceSandbox) WorkDir() string     { return s.workDir }
 func (s WorkspaceSandbox) HostWorkDir() string { return s.hostWorkDir }
 
-func collectWorkspaces(api API) []Workspace {
+func collectWorkspaces(ctx context.Context, api API) []Workspace {
 	var result []Workspace
 
 	paths := make(map[string][]SandboxSpec)
@@ -67,7 +68,7 @@ func collectWorkspaces(api API) []Workspace {
 					typ:       m.Type,
 					readOnly:  m.ReadOnly,
 					target:    m.At,
-					sandboxes: collectWorkspaceSandboxes(runtime, spec, path),
+					sandboxes: collectWorkspaceSandboxes(ctx, runtime, spec, path),
 				})
 			}
 		}
@@ -77,8 +78,8 @@ func collectWorkspaces(api API) []Workspace {
 	return result
 }
 
-func collectWorkspaceSandboxes(runtime Runtime, spec SandboxSpec, path string) []WorkspaceSandbox {
-	sandboxes, err := spec.ListSandboxes(runtime)
+func collectWorkspaceSandboxes(ctx context.Context, runtime Runtime, spec SandboxSpec, path string) []WorkspaceSandbox {
+	sandboxes, err := spec.ListSandboxes(ctx, runtime)
 	if err != nil {
 		return nil
 	}

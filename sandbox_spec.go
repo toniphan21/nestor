@@ -183,7 +183,7 @@ func (s *SandboxSpec) Resolve(runtime Runtime) (Harness, Profile, ResolvedProfil
 	return h, p, rp, nil
 }
 
-func (s *SandboxSpec) ListSandboxes(runtime Runtime) ([]Sandbox, error) {
+func (s *SandboxSpec) ListSandboxes(ctx context.Context, runtime Runtime) ([]Sandbox, error) {
 	var result []Sandbox
 	dirs, err := fs.ListDirs(runtime.Platform.SandboxDir())
 	if err != nil {
@@ -204,6 +204,13 @@ func (s *SandboxSpec) ListSandboxes(runtime Runtime) ([]Sandbox, error) {
 		}
 
 		if sb.Spec().Name == s.Name {
+			if csb, ok := sb.(*sandboxImpl); ok {
+				if err = csb.syncSpec(ctx); err != nil {
+					runtime.Logger.Warn("cannot sync spec to sandbox", slog.String("dir", dir), slog.Any("error", err))
+					continue
+				}
+			}
+
 			result = append(result, sb)
 		}
 	}

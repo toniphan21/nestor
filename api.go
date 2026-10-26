@@ -378,7 +378,7 @@ func (a *api) ListSandboxes(ctx context.Context, specs ...string) ([]Sandbox, er
 	return a.listSandboxesLocked(ctx, specs...)
 }
 
-func (a *api) listSandboxesLocked(_ context.Context, specs ...string) ([]Sandbox, error) {
+func (a *api) listSandboxesLocked(ctx context.Context, specs ...string) ([]Sandbox, error) {
 	if !fs.HasDir(a.platform.SandboxDir()) {
 		return nil, nil
 	}
@@ -399,7 +399,7 @@ func (a *api) listSandboxesLocked(_ context.Context, specs ...string) ([]Sandbox
 	var result []Sandbox
 	runtime := a.Runtime()
 	for _, v := range selected {
-		sandboxes, err := v.ListSandboxes(runtime)
+		sandboxes, err := v.ListSandboxes(ctx, runtime)
 		if err != nil {
 			return nil, err
 		}
@@ -511,11 +511,11 @@ func (a *api) Workspaces(ctx context.Context) []Workspace {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	return a.workspacesLocked()
+	return a.workspacesLocked(ctx)
 }
 
-func (a *api) workspacesLocked() []Workspace {
-	return collectWorkspaces(a)
+func (a *api) workspacesLocked(ctx context.Context) []Workspace {
+	return collectWorkspaces(ctx, a)
 }
 
 var _ API = (*api)(nil)

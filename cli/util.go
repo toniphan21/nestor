@@ -198,7 +198,8 @@ func collectSpecAndPath(api nestor.API, filteredSpec, filteredPath string) (nest
 }
 
 func freeSandboxes(api nestor.API, spec nestor.SandboxSpec, path string) ([]nestor.Sandbox, error) {
-	allSandboxes, err := spec.ListSandboxes(api.Runtime())
+	ctx := context.Background()
+	allSandboxes, err := spec.ListSandboxes(ctx, api.Runtime())
 	if err != nil {
 		return nil, err
 	}

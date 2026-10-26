@@ -138,12 +138,12 @@ func newSandbox(ctx context.Context, runtime Runtime, spec SandboxSpec) (Sandbox
 		return nil, err
 	}
 
-	if err = sandbox.makeWorktree(ctx); err != nil {
+	if err = sandbox.Sync(ctx); err != nil {
 		_ = sandbox.clear(ctx)
 		return nil, err
 	}
 
-	if err = sandbox.Sync(ctx); err != nil {
+	if err = sandbox.syncSpec(ctx); err != nil {
 		_ = sandbox.clear(ctx)
 		return nil, err
 	}
@@ -392,11 +392,7 @@ func (s *sandboxImpl) Sync(ctx context.Context) error {
 			return err
 		}
 	}
-
-	if err := s.collectMounts(); err != nil {
-		return err
-	}
-	return s.save(ctx)
+	return nil
 }
 
 func (s *sandboxImpl) Delete(ctx context.Context) error {
@@ -578,7 +574,7 @@ func (s *sandboxImpl) rename(ctx context.Context, newName string) error {
 
 	// update worktree in sandbox.yml
 	s.data.Worktree = worktrees
-	if err = s.collectMounts(); err != nil {
+	if _, err = s.collectMounts(); err != nil {
 		return fmt.Errorf("cannot collect mounts: %w", err)
 	}
 
@@ -656,16 +652,46 @@ func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, session
 	return sd.save(ctx, s.ShareDir())
 }
 
-func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
-	worktrees := make(map[string]SandboxWorktree)
+func (s *sandboxImpl) syncSpec(ctx context.Context) error {
+	mountsChanged, err := s.collectMounts()
+	if err != nil {
+		return err
+	}
+
+	worktreeChanged, err := s.makeWorktree(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !mountsChanged && !worktreeChanged {
+		return nil
+	}
+	return s.save(ctx)
+}
+
+func (s *sandboxImpl) makeWorktree(ctx context.Context) (bool, error) {
+	if s.data.Worktree == nil {
+		s.data.Worktree = make(map[string]SandboxWorktree)
+	}
+
 	cleanUp := func() {
 		for _, v := range s.data.Worktree {
 			_ = s.git.RemoveWorktree(ctx, v.Repository, v.Dir, v.InitialBranch)
 		}
 	}
 
+	hasWorktree := func(repo string) bool {
+		for _, v := range s.data.Worktree {
+			if v.Repository == repo {
+				return true
+			}
+		}
+		return false
+	}
+
+	var changed bool
 	for _, m := range s.spec.Mounts {
-		if m.Type == MountTypeGitWorktree {
+		if m.Type == MountTypeGitWorktree && !hasWorktree(m.Path) {
 			id := s.runtime.Template.MakeWorktreeID(m.Path)
 			wtDir := s.Dir(id)
 
@@ -676,17 +702,28 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) error {
 				InitialBranch: s.runtime.Template.MakeInitialBranch(s.ID(), wtDir),
 			}
 
-			err := s.git.AddWorktree(ctx, wt.Repository, wt.Dir, wt.InitialBranch)
-			if err != nil {
-				cleanUp()
-				return fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
+			var hasGitWorktreee bool
+			if listWTs, err := s.git.ListWorktrees(ctx, m.Path); err == nil {
+				for _, v := range listWTs {
+					if v.Path == m.Path {
+						hasGitWorktreee = true
+						break
+					}
+				}
 			}
-			worktrees[wt.ID] = wt
+
+			if !hasGitWorktreee {
+				err := s.git.AddWorktree(ctx, wt.Repository, wt.Dir, wt.InitialBranch)
+				if err != nil {
+					cleanUp()
+					return false, fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
+				}
+			}
+			s.data.Worktree[wt.ID] = wt
+			changed = true
 		}
 	}
-
-	s.data.Worktree = worktrees
-	return s.save(ctx)
+	return changed, nil
 }
 
 func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
@@ -697,17 +734,12 @@ func (s *sandboxImpl) removeAllWorktrees(ctx context.Context) error {
 	return nil
 }
 
-func (s *sandboxImpl) collectMounts() error {
-	hm, err := s.harness.Mounts(s)
-	if err != nil {
-		return err
-	}
-
+func (s *sandboxImpl) collectMounts() (bool, error) {
 	mounts := make(map[string]SandboxMount)
 	for _, m := range s.spec.Mounts {
 		target, err := m.Target()
 		if err != nil {
-			return err
+			return false, err
 		}
 		mounts[m.Path] = SandboxMount{Host: m.Path, Target: target, ReadOnly: m.ReadOnly}
 
@@ -722,9 +754,22 @@ func (s *sandboxImpl) collectMounts() error {
 		}
 	}
 
-	s.data.Mounts = mounts
-	s.data.HarnessMounts = hm
-	return nil
+	hm, err := s.harness.Mounts(s)
+	if err != nil {
+		return false, err
+	}
+
+	var changed bool
+	if !maps.Equal(s.data.Mounts, mounts) {
+		changed = true
+		s.data.Mounts = mounts
+	}
+
+	if !maps.Equal(s.data.HarnessMounts, hm) {
+		changed = true
+		s.data.HarnessMounts = hm
+	}
+	return changed, nil
 }
 
 func (s *sandboxImpl) newLease(ctx context.Context, requestedPath, workDir, hostWorkDir string) (*Lease, error) {
