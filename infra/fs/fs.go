@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	iofs "io/fs"
@@ -9,7 +10,7 @@ import (
 )
 
 func MkdirAll(dir string) error {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("cannot make dir: %w", err)
 	}
 	return nil
@@ -126,6 +127,9 @@ func CopyFile(src, dst string) error {
 func ListDirs(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		if errors.Is(err, iofs.ErrNotExist) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

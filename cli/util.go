@@ -204,6 +204,14 @@ func freeSandboxes(api nestor.API, spec nestor.SandboxSpec, path string) ([]nest
 		return nil, err
 	}
 
+	if len(allSandboxes) == 0 {
+		sandbox, err := api.CreateSandbox(ctx, spec.Name)
+		if err != nil {
+			return nil, err
+		}
+		allSandboxes = append(allSandboxes, sandbox)
+	}
+
 	var sandboxes []nestor.Sandbox
 	for _, v := range allSandboxes {
 		if !v.IsFree(path) {
@@ -434,9 +442,9 @@ func (c *sessionCollector) collect() (sandbox nestor.Sandbox, sessionID string, 
 		err = fmt.Errorf("%w: no sandboxes to pick session", nestor.ErrInvalid)
 		return
 	}
+	sandbox = c.sandboxes[0]
 
 	if c.filtered == NewSessionPlaceholder {
-		sandbox = c.sandboxes[0]
 		sessionID = ""
 		title = c.newSessionTitle
 		return

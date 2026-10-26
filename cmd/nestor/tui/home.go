@@ -98,7 +98,7 @@ func (v *homeMount) hasFreeSandbox() bool {
 			return true
 		}
 	}
-	return false
+	return len(v.sandboxes) < v.maxInstances
 }
 
 func (v *homeMount) extraDisplay() string {
@@ -305,14 +305,16 @@ func (p *homePage) actions() tea.Cmd {
 		out = append(out, actionRename, actionGotoDir)
 	}
 
-	if m, ok := p.rowHomeMount(); ok && len(m.sandboxes) > 0 {
+	if m, ok := p.rowHomeMount(); ok {
 		if m.hasFreeSandbox() {
 			out = append(out, actionPrompt, actionLaunch)
 		}
-		if p.collapsed[m.key()] {
-			out = append(out, actionExpand)
-		} else {
-			out = append(out, actionCollapse)
+		if len(m.sandboxes) > 0 {
+			if p.collapsed[m.key()] {
+				out = append(out, actionExpand)
+			} else {
+				out = append(out, actionCollapse)
+			}
 		}
 	}
 
@@ -488,6 +490,9 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 			return p, nil
 		}
 		p.busy = false
+		if msg.err != nil {
+			return p, nil
+		}
 		switch msg.tag {
 		case "rename-workspace", "rename-sandbox", "launch-sandbox", "view-prompt", "goto-dir":
 			return p, p.fetch()
@@ -499,10 +504,13 @@ func (p *homePage) Update(msg tea.Msg) (page, tea.Cmd) {
 		return p, nil
 
 	case initPromptDoneMsg:
-		if msg.tab != tabHome || msg.err != nil {
+		if msg.tab != tabHome {
 			return p, nil
 		}
 		p.busy = false
+		if msg.err != nil {
+			return p, nil
+		}
 		return p, dispatchPrompt(tabHome, "prompt", msg.data)
 
 	case jobStartedMsg:

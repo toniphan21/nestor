@@ -474,6 +474,7 @@ func (s *sandboxImpl) startCopyScriptsAndMount(options *DockerRunOption) error {
 
 	hd := s.ContainerHomeDir()
 	for name, src := range scripts {
+		_ = fs.MkdirAll(s.ShareDir())
 		fp := s.ShareDir(name)
 		bash, err := Embed.ReadFile(src)
 		if err != nil {
@@ -680,47 +681,39 @@ func (s *sandboxImpl) makeWorktree(ctx context.Context) (bool, error) {
 		}
 	}
 
-	hasWorktree := func(repo string) bool {
-		for _, v := range s.data.Worktree {
-			if v.Repository == repo {
-				return true
-			}
-		}
-		return false
-	}
-
 	var changed bool
 	for _, m := range s.spec.Mounts {
-		if m.Type == MountTypeGitWorktree && !hasWorktree(m.Path) {
+		if m.Type == MountTypeGitWorktree {
 			id := s.runtime.Template.MakeWorktreeID(m.Path)
 			wtDir := s.Dir(id)
-
-			wt := SandboxWorktree{
-				ID:            id,
-				Dir:           wtDir,
-				Repository:    m.Path,
-				InitialBranch: s.runtime.Template.MakeInitialBranch(s.ID(), wtDir),
+			wt, have := s.data.Worktree[id]
+			if !have {
+				wt = SandboxWorktree{
+					ID:            id,
+					Dir:           wtDir,
+					Repository:    m.Path,
+					InitialBranch: s.runtime.Template.MakeInitialBranch(s.ID(), wtDir),
+				}
+				s.data.Worktree[wt.ID] = wt
+				changed = true
 			}
 
-			var hasGitWorktreee bool
+			var hasGitWorktree bool
 			if listWTs, err := s.git.ListWorktrees(ctx, m.Path); err == nil {
 				for _, v := range listWTs {
-					if v.Path == m.Path {
-						hasGitWorktreee = true
+					if v.Path == wtDir {
+						hasGitWorktree = true
 						break
 					}
 				}
 			}
-
-			if !hasGitWorktreee {
+			if !hasGitWorktree {
 				err := s.git.AddWorktree(ctx, wt.Repository, wt.Dir, wt.InitialBranch)
 				if err != nil {
 					cleanUp()
 					return false, fmt.Errorf("cannot create worktree for %s: %w", m.Path, err)
 				}
 			}
-			s.data.Worktree[wt.ID] = wt
-			changed = true
 		}
 	}
 	return changed, nil

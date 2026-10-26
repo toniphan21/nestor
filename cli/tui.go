@@ -68,7 +68,7 @@ func LaunchSpec(api nestor.API, args LaunchArgs) error {
 
 	sandboxes, err := freeSandboxes(api, spec, path)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot collect freeSandboxes: %w", err)
 	}
 
 	w := 25

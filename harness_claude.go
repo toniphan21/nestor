@@ -322,14 +322,18 @@ type harnessClaudeSyncer struct {
 func (h *harnessClaudeSyncer) Sync(ctx context.Context, sandbox Sandbox) error {
 	targetDir := sandbox.StateDir()
 	var err error
-	err = fs.MergeDir(h.profile.claudeDir, filepath.Join(targetDir, ClaudeDir))
-	if err != nil {
-		return err
+	if fs.HasDir(h.profile.claudeDir) {
+		err = fs.MergeDir(h.profile.claudeDir, filepath.Join(targetDir, ClaudeDir))
+		if err != nil {
+			return err
+		}
 	}
 
-	err = fs.CopyFile(h.profile.claudeConfigFile, filepath.Join(targetDir, ClaudeConfigFile))
-	if err != nil {
-		return err
+	if fs.HasFile(h.profile.claudeConfigFile) {
+		err = fs.CopyFile(h.profile.claudeConfigFile, filepath.Join(targetDir, ClaudeConfigFile))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
