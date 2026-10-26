@@ -654,12 +654,12 @@ func (s *sandboxImpl) addSessionToSharedScope(ctx context.Context, path, session
 }
 
 func (s *sandboxImpl) syncSpec(ctx context.Context) error {
-	mountsChanged, err := s.collectMounts()
+	worktreeChanged, err := s.makeWorktree(ctx)
 	if err != nil {
 		return err
 	}
 
-	worktreeChanged, err := s.makeWorktree(ctx)
+	mountsChanged, err := s.collectMounts()
 	if err != nil {
 		return err
 	}
