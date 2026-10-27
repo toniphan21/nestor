@@ -22,6 +22,7 @@ const (
 )
 
 type header struct {
+	onlyBanner      bool
 	active          tabID
 	actionBar       actionBar
 	width           int
@@ -111,6 +112,10 @@ func (h header) View() string {
 		return ""
 	}
 
+	if h.onlyBanner {
+		return h.banner()
+	}
+
 	tabs := h.tabs()
 	left := " " + strings.Join(tabs, " ")
 
@@ -129,6 +134,12 @@ func (h header) banner() string {
 			pterm.Yellow(displayVersion(h.latestVersion)+" available"), pterm.Blue(h.upgradeCommand),
 		)
 	}
+
+	if h.onlyBanner {
+		out.WriteString("\n")
+		return out.String()
+	}
+
 	out.WriteString("\n\n")
 
 	if h.showJobsWarning && h.HasJobs() {

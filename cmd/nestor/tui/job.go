@@ -145,16 +145,3 @@ func signalCmd(tab tabID, tag, id string, pid int, sig syscall.Signal) tea.Cmd {
 		return jobSignalErrMsg{tab: tab, tag: tag, id: id, err: err}
 	}
 }
-
-func exitState(err error, stopping bool) jobState {
-	if err == nil {
-		return jobSucceeded
-	}
-	var ee *exec.ExitError
-	if stopping && errors.As(err, &ee) {
-		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			return jobCancelled
-		}
-	}
-	return jobFailed
-}

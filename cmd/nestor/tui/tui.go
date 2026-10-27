@@ -18,6 +18,25 @@ type cronDataMsg struct {
 	lastestVersion string
 }
 
+func newTUI(provider *APIProvider, upgradeCommand string) tea.Model {
+	t := &TUI{
+		footer: footer{margin: 1},
+		pages: map[tabID]page{
+			tabHome:    &homePage{basePage: &basePage{}, provider: provider},
+			tabDocker:  &dockerPage{basePage: &basePage{}, provider: provider},
+			tabSpec:    &specPage{basePage: &basePage{}, provider: provider},
+			tabProfile: &profilePage{basePage: &basePage{}, provider: provider},
+			tabMCP:     &mcpPage{basePage: &basePage{}, provider: provider},
+		},
+	}
+	t.header.upgradeCommand = upgradeCommand
+	t.initCmd = tea.Batch(t.pages[t.header.ActiveTab()].Focus(), t.cronJob())
+
+	return t
+}
+
+var _ tea.Model = (TUI{})
+
 type TUI struct {
 	header header
 	body   body
@@ -83,6 +102,18 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.width, t.height = msg.Width, msg.Height
 		t.header.SetWidth(t.width)
 
+		hh := t.header.Height()
+		fh := t.footer.Height()
+		bh := t.height - hh - fh
+
+		t.body.SetSize(t.width, bh)
+		for _, v := range t.pages {
+			v.SetSize(t.width-2, bh) // scroll take 2 on the right
+		}
+		return t, nil
+
+	case setFooterMsg:
+		t.footer.SetMessage(msg.message)
 		hh := t.header.Height()
 		fh := t.footer.Height()
 		bh := t.height - hh - fh
@@ -162,9 +193,6 @@ func (t TUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.header.SetActions(msg.actions)
 		return t, nil
 
-	case setFooterMsg:
-		t.footer.SetMessage(msg.message)
-
 	case jobStartedMsg:
 		t.header.SetJobStarted(msg.job)
 		return passMsgToAllChildren(waitJob(msg.job))
@@ -225,24 +253,4 @@ func (t *TUI) switchPage(id tabID) tea.Cmd {
 	t.footer.SetMessage("")
 
 	return cmd
-}
-
-func Run(provider *APIProvider, upgradeCommand string) error {
-	t := &TUI{
-		footer: footer{margin: 1, message: "  test"},
-		pages: map[tabID]page{
-			tabHome:    &homePage{basePage: &basePage{}, provider: provider},
-			tabDocker:  &dockerPage{basePage: &basePage{}, provider: provider},
-			tabSpec:    &specPage{basePage: &basePage{}, provider: provider},
-			tabProfile: &profilePage{basePage: &basePage{}, provider: provider},
-			tabMCP:     &mcpPage{basePage: &basePage{}, provider: provider},
-		},
-	}
-	t.header.upgradeCommand = upgradeCommand
-	t.initCmd = tea.Batch(t.pages[t.header.ActiveTab()].Focus(), t.cronJob())
-
-	if _, err := tea.NewProgram(t).Run(); err != nil {
-		return err
-	}
-	return nil
 }
