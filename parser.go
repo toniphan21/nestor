@@ -23,12 +23,15 @@ func parseYML[T, R any](yml io.Reader, typ string, callback func(*ymlFile[T]) (R
 	dec.KnownFields(true)
 	if err := dec.Decode(&file); err != nil {
 		dv, _ := callback(nil)
-		return dv, err
+		return dv, &ParseError{DataType: typ, Err: err}
 	}
 
 	if file.Type != typ {
 		dv, _ := callback(nil)
-		return dv, fmt.Errorf("%w: type %q, want %q", ErrNotSupported, file.Type, typ)
+		return dv, &ParseError{
+			DataType: typ,
+			Err:      fmt.Errorf("%w: type %q, want %q", ErrNotSupported, file.Type, typ),
+		}
 	}
 
 	if len(versions) == 0 {
@@ -39,7 +42,10 @@ func parseYML[T, R any](yml io.Reader, typ string, callback func(*ymlFile[T]) (R
 
 	if !hasVersion {
 		dv, _ := callback(nil)
-		return dv, fmt.Errorf("%w: version %q, want %q", ErrNotSupported, file.Version, versions)
+		return dv, &ParseError{
+			DataType: typ,
+			Err:      fmt.Errorf("%w: version %q, want %q", ErrNotSupported, file.Version, versions),
+		}
 	}
 	return callback(&file)
 }

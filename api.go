@@ -218,6 +218,12 @@ func (a *api) initProfilesFromYmlIfRuntimeHasNoProfiles() error {
 	}
 	hss, err := ParseProfiles(bytes.NewBuffer(yml))
 	if err != nil {
+		if e, ok := errors.AsType[*ParseError](err); ok {
+			e.File = fp
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+			return e
+		}
+
 		e := fmt.Errorf("cannot parse profile.yml file: %w", err)
 		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
 		return e
@@ -259,12 +265,24 @@ func (a *api) initMCPFromYmlIfRuntimeHasNoMCPs() error {
 
 	yml, err := fs.AtomicReadFile(fp)
 	if err != nil {
+		if e, ok := errors.AsType[*ParseError](err); ok {
+			e.File = fp
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+			return e
+		}
+
 		e := fmt.Errorf("cannot read mcp.yml file: %w", err)
 		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
 		return e
 	}
 	mcps, err := ParseMCPs(bytes.NewBuffer(yml))
 	if err != nil {
+		if e, ok := errors.AsType[*ParseError](err); ok {
+			e.File = fp
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+			return e
+		}
+
 		e := fmt.Errorf("cannot parse mcp.yml file: %w", err)
 		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
 		return e
@@ -301,6 +319,12 @@ func (a *api) initSpecsFromYmlIfRuntimeHasNoSpecs() error {
 	}
 	sbs, err := ParseSandboxSpecs(a.Runtime(), bytes.NewBuffer(yml))
 	if err != nil {
+		if e, ok := errors.AsType[*ParseError](err); ok {
+			e.File = fp
+			a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
+			return e
+		}
+
 		e := fmt.Errorf("cannot parse sandbox.yml file: %w", err)
 		a.log.Error(e.Error(), slog.Any("error", e), slog.String("path", fp))
 		return e

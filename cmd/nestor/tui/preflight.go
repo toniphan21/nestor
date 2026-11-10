@@ -1,10 +1,16 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pterm/pterm"
+	"nhatp.com/go/nestor"
+	"nhatp.com/go/nestor/infra/fs"
 )
 
 type preflightDoneMsg struct{}
@@ -34,7 +40,9 @@ type Preflight struct {
 	width    int
 	height   int
 
-	apiErr error
+	busy              bool
+	apiErr            error
+	invalidConfigFile string
 }
 
 func (p Preflight) check() tea.Cmd {
@@ -68,6 +76,10 @@ func (p Preflight) Init() tea.Cmd {
 func (p Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case preflightTickMsg:
+		if p.busy {
+			return p, nil
+		}
+
 		return p, p.check()
 
 	case preflightDataMsg:
@@ -75,10 +87,14 @@ func (p Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, p.done()
 		}
 		if msg.apiErr != nil {
-			p.body.SetContent(msg.apiErr.Error())
+			p.apiErr = msg.apiErr
+			if pe, ok := errors.AsType[*nestor.ParseError](msg.apiErr); ok {
+				p.invalidConfigFile = pe.File
+			}
+			return p, p.tick()
 		}
 
-		return p, p.tick()
+		return p, p.done()
 
 	case tea.WindowSizeMsg:
 		p.width, p.height = msg.Width, msg.Height
@@ -94,7 +110,35 @@ func (p Preflight) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c", "ctrl+d":
 			return p, tea.Quit
+
+		case "e":
+			if p.invalidConfigFile == "" {
+				return p, nil
+			}
+
+			content, err := fs.AtomicReadFile(p.invalidConfigFile)
+			if err != nil {
+				return p, nil
+			}
+			p.busy = true
+			return p, openEditorWithInitial(0, "edit-invalid-config", "*.yml", string(content))
 		}
+
+	case editorDoneMsg:
+		p.busy = false
+		if p.invalidConfigFile == "" {
+			return p, nil
+		}
+
+		if msg.tag != "edit-invalid-config" {
+			return p, nil
+		}
+		_ = fs.AtomicWriteFile(p.invalidConfigFile, []byte(msg.content), 0o644)
+
+		p.apiErr = nil
+		p.invalidConfigFile = ""
+		return p, p.check()
+
 	}
 	return p, nil
 }
@@ -104,6 +148,15 @@ func (p Preflight) View() tea.View {
 		return tea.NewView("")
 	}
 
+	var bc strings.Builder
+	if p.apiErr != nil {
+		bc.WriteString(p.apiErr.Error())
+	}
+	if p.invalidConfigFile != "" {
+		fmt.Fprintf(&bc, "\npress %s to edit the config file", pterm.Blue("e"))
+	}
+
+	p.body.SetContent(bc.String())
 	content := lipgloss.JoinVertical(lipgloss.Left, p.header.View(), p.body.View())
 
 	v := tea.NewView(content)
